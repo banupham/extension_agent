@@ -3,9 +3,19 @@
   "name": "Stealth Executor",
   "version": "1.5.0",
   "description": "Remote controlled browser automation executor",
-  "permissions": ["debugger", "activeTab", "scripting", "tabs", "storage"],
-  "host_permissions": ["<all_urls>"],
-  "background": {"service_worker": "background.js"},
+  "permissions": [
+    "debugger",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {},
   "web_accessible_resources": []
 }
