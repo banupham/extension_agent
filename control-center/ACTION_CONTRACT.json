@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "extensionVersion": "1.4.1",
+  "actions": {
+    "navigation": ["openUrl", "reload", "goBack", "goForward", "waitForUrl"],
+    "pointer": ["click", "clickSelector", "clickFirstMatch", "doubleClickSelector", "hoverSelector", "moveMouse", "dragAndDrop", "scroll", "scrollTo", "scrollBy"],
+    "keyboard": ["type", "replaceText", "clearInput", "pressKey", "keyCombo"],
+    "forms": ["focusSelector", "selectOption", "setChecked"],
+    "wait": ["wait", "waitForSelector", "waitForUrl"],
+    "inspection": ["getElementPosition", "getActiveTab", "getElementText", "getPageInfo", "listTabs", "getCapabilities"],
+    "lifecycle": ["detach"]
+  },
+  "keyboardKeys": ["Enter", "Tab", "Escape", "Backspace", "Delete", "ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown", "Home", "End", "PageUp", "PageDown", "Insert", "Space", "F1-F12"]
+}
