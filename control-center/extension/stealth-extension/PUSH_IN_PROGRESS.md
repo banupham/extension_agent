@@ -1,0 +1,1 @@
+Runtime background.js is being restored from the tested local V3.9/V3.10 source. Do not load this extension directory until this marker is removed.
