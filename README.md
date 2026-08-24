@@ -9,7 +9,7 @@ Local Chrome/GPM automation framework gồm 2 phần:
 
 - Control Center: **V3.8 Observable Queue Fix**
 - Stealth Executor extension: source trong `control-center/extension/stealth-extension/`
-- Recorder: **V3.5 Deterministic**
+- Recorder: **V3.6 Deterministic**
 
 ## Cài Control Center
 
