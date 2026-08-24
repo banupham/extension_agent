@@ -1,7 +1,7 @@
 {
-  "name": "browser-debug-agent-control-center-v3-1-slim",
+  "name": "browser-debug-agent-control-center-v3-10",
   "private": true,
-  "version": "3.8.0",
+  "version": "3.10.0",
   "dependencies": {
     "ws": "^8.18.0"
   },
