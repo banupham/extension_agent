@@ -1,6 +1,7 @@
 const SESSION_KEY = 'bar_v3_sessions';
 const LAST_RECORDING_KEY = 'bar_v3_last_recording';
 
+// In-memory cache, mirrored to storage so MV3 service-worker restarts do not lose a recording.
 let sessions = {};
 
 async function loadSessions() {
@@ -160,6 +161,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
+// Keep a tab-scoped recording alive across navigation/reload.
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const s = sessionFor(tabId);
   if (!s || !s.active) return;
@@ -171,6 +173,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     s.currentUrl = changeInfo.url;
     s.currentTitle = tab.title || s.currentTitle;
 
+    // Navigation is recorded as metadata. Exporter decides whether it needs an explicit openUrl.
     const nowT = Date.now() - s.startedAtEpoch;
     const last = s.events[s.events.length - 1];
     const recentTrigger =
