@@ -22,6 +22,7 @@
   function looksDynamicId(id) {
     const s = String(id || '');
     if (!s) return true;
+    // Common generated-id characteristics: long opaque ids, many digits, underscore-prefixed tokens.
     if (/^[_:-]/.test(s) && s.length > 10) return true;
     if (s.length > 48) return true;
     if ((s.match(/\d/g) || []).length >= 5) return true;
@@ -56,6 +57,7 @@
         if (document.querySelectorAll(s).length === 1) out.push(s);
       } catch {}
     }
+
 
     if (el instanceof HTMLAnchorElement && el.getAttribute('href')) {
       const rawHref = el.getAttribute('href');
@@ -121,6 +123,7 @@
       }
     };
   }
+
 
   function fieldKey(el) {
     if (!(el instanceof Element)) return null;
@@ -237,8 +240,12 @@
     }
 
     if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el.isContentEditable)) return;
+
+    // Semantic mode: keep only the latest value while the user is still editing.
+    // We flush on blur / Enter / Tab / navigation / Stop.
     queueFieldValue(el, e.inputType || null);
   }, true);
+
 
   document.addEventListener('change', e => {
     if (!S.active) return;
@@ -259,6 +266,7 @@
       });
     }
   }, true);
+
 
   document.addEventListener('focusout', e => {
     if (!S.active) return;
@@ -295,6 +303,8 @@
 
     const editableTarget = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target?.isContentEditable;
     if (editableTarget && ['Backspace', 'Delete'].includes(e.key)) {
+      // Text editing is represented by the final replaceText value.
+      // Do not emit a separate Backspace/Delete here or replay would apply the edit twice.
       return;
     }
 
@@ -326,6 +336,8 @@
   window.addEventListener('scroll', () => {
     if (!S.active) return;
     clearTimeout(S.scrollTimer);
+    // One scroll gesture can fire dozens of DOM scroll events. Record only the
+    // final position after the gesture settles.
     S.scrollTimer = setTimeout(() => {
       sendEvent('scroll', {
         x: Math.round(window.scrollX),
@@ -346,6 +358,7 @@
     if (!S.active) S.pendingInputs.clear();
   });
 
+  // Critical fix: every newly loaded document asks background whether this tab is already recording.
   chrome.runtime.sendMessage({ scope: 'BAR_V3', cmd: 'contentReady' })
     .then(r => {
       if (!r?.ok) return;
