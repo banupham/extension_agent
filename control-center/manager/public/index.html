@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Browser Debug Agent Control Center V3.7</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">LOCAL AUTOMATION MANAGER</div>
+      <h1>Browser Debug Agent Control Center V3.7</h1>
+      <p>agent-first • browser online là chạy được • launcher/API cho browser custom</p>
+    </div>
+    <div class="top-actions">
+      <span id="brokerBadge" class="badge muted">Broker...</span>
+      <button id="openExtension" class="btn secondary">Extension folder</button>
+      <button id="refresh" class="btn secondary">Refresh</button>
+    </div>
+  </header>
+
+  <div id="notice" class="toast" aria-live="polite"></div>
+
+  <main class="layout">
+    <section class="panel span-2">
+      <div class="panel-head">
+        <div><div class="module-no">01</div><h2>Connected browsers</h2><p>Chrome nào có extension online sẽ xuất hiện trực tiếp tại đây. Không cần bind profile.</p></div>
+        <div class="toolbar"><button id="selectAllAgents" class="btn ghost">Chọn tất cả online</button><button id="clearAgents" class="btn ghost">Bỏ chọn</button></div>
+      </div>
+      <div id="agents" class="browser-grid"></div>
+    </section>
+
+    <section class="panel span-2">
+      <div class="panel-head">
+        <div><div class="module-no">02</div><h2>Browser Launcher Registry</h2><p>Đăng ký chrome.exe/GPM/portable browser ở bất kỳ thư mục nào để mở lại từ dashboard hoặc API.</p></div>
+        <button id="addLauncher" class="btn secondary">+ Thêm launcher</button>
+      </div>
+      <div id="launchers" class="launcher-grid"></div>
+      <details class="api-box"><summary>Local launch API</summary><div class="api-inner"><code>POST http://127.0.0.1:8788/api/v1/launch</code><p>Header: <code>X-Control-Token: <span id="apiToken"></span></code></p><pre id="apiExample"></pre></div></details>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head compact"><div><div class="module-no">03</div><h2>Scenarios</h2></div><label class="btn secondary file-btn">Import .js<input id="importFile" type="file" accept=".js"></label></div>
+      <div class="toolbar compact-toolbar"><button id="selectAllScenarios" class="btn ghost">Chọn tất cả</button><button id="clearScenarios" class="btn ghost">Bỏ chọn</button></div>
+      <div id="scenarios" class="scenario-list"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head compact"><div><div class="module-no">04</div><h2>Run queue</h2></div></div>
+      <div class="form-grid two">
+        <label>Phân công
+          <select id="assignmentMode">
+            <option value="all">Mọi browser × mọi scenario</option>
+            <option value="pair">Ghép theo thứ tự</option>
+            <option value="random">Ngẫu nhiên 1 scenario / browser</option>
+            <option value="manual">Tự gán từng browser</option>
+          </select>
+        </label>
+        <label>Thực thi
+          <select id="mode">
+            <option value="parallel">Song song giữa browser</option>
+            <option value="sequential">Lần lượt toàn bộ</option>
+          </select>
+        </label>
+        <label class="switch-row"><input id="trace" type="checkbox"><span>TRACE_PLAN</span></label>
+      </div>
+      <div id="manualAssignments" class="manual-assignments" hidden></div>
+      <div id="assignmentPreview" class="selection-summary"></div>
+      <div id="selectionSummary" class="selection-summary">Chưa chọn</div>
+      <button id="run" class="btn primary wide">Chạy lựa chọn hiện tại</button>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head compact"><div><div class="module-no">05</div><h2>Scenario variants</h2></div></div>
+      <div class="form-grid two">
+        <label class="full">Scenario gốc<select id="variantBase"></select></label>
+        <label>Số bản<input id="variantCount" type="number" min="1" max="30" value="5"></label>
+        <label>Jitter max %<input id="maxJitter" type="number" min="0" max="50" value="15"></label>
+        <label>Scale min<input id="minScale" type="number" step="0.05" value="0.85"></label>
+        <label>Scale max<input id="maxScale" type="number" step="0.05" value="1.15"></label>
+      </div>
+      <button id="makeVariants" class="btn secondary wide">Generate timing variants</button>
+      <p class="hint">Giữ nguyên workflow/target; chỉ thay timing cho robustness testing.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head compact"><div><div class="module-no">06</div><h2>Scheduler</h2></div></div>
+      <div class="form-grid two">
+        <label class="full">Tên lịch<input id="scheduleName" placeholder="Night batch"></label>
+        <label class="full">Bắt đầu<input id="scheduleAt" type="datetime-local"></label>
+        <label>Lặp lại (phút)<input id="repeatMinutes" type="number" min="0" value="0"></label>
+        <label>Chế độ<select id="scheduleMode"><option value="parallel">Song song</option><option value="sequential">Lần lượt</option></select></label>
+      </div>
+      <button id="saveSchedule" class="btn secondary wide">Tạo lịch từ lựa chọn hiện tại</button>
+      <div id="schedules" class="stack spaced"></div>
+    </section>
+
+    <section class="panel span-2">
+      <div class="panel-head compact"><div><div class="module-no">07</div><h2>Runs & logs</h2><p>Trạng thái kỹ thuật của workflow theo thời gian thực.</p></div></div>
+      <div id="runOverview" class="run-overview"></div>
+      <div class="run-toolbar" role="group" aria-label="Lọc run">
+        <button class="btn secondary run-filter active" data-filter="all" type="button">Tất cả</button>
+        <button class="btn secondary run-filter" data-filter="running" type="button">Đang chạy</button>
+        <button class="btn secondary run-filter" data-filter="queued" type="button">Đang chờ</button>
+        <button class="btn secondary run-filter" data-filter="done" type="button">Hoàn tất</button>
+        <button class="btn secondary run-filter" data-filter="failed" type="button">Lỗi</button>
+      </div>
+      <div id="runs" class="run-list"></div>
+      <details class="log-details manager-diagnostics"><summary>Manager diagnostics</summary><pre id="managerDiagnostics">(chưa có log)</pre></details>
+    </section>
+  </main>
+
+  <dialog id="renameDialog"><form method="dialog" id="renameForm"><div class="dialog-head"><span class="module-no">BROWSER</span><h3>Đặt tên browser online</h3></div><input id="renameAgentId" type="hidden"><label>Tên dễ nhớ<input id="renameAgentName" placeholder="GPM Profile 6942"></label><div class="dialog-actions"><button value="cancel" class="btn ghost">Huỷ</button><button id="confirmRename" value="default" class="btn primary">Lưu</button></div></form></dialog>
+
+  <dialog id="launcherDialog"><form method="dialog" id="launcherForm"><div class="dialog-head"><span class="module-no">LAUNCHER</span><h3 id="launcherTitle">Thêm browser launcher</h3></div><input id="launcherId" type="hidden"><label>Tên<input id="launcherName" placeholder="GPM Profile 6942"></label><label>Đường dẫn executable<input id="launcherExe" placeholder="D:\\GPM\\...\\chrome.exe" required></label><label>Arguments<input id="launcherArgs" placeholder='--user-data-dir="D:\\GPM\\profiles\\6942"'></label><label>Working directory (tuỳ chọn)<input id="launcherCwd"></label><label>Ghi chú<input id="launcherNotes"></label><div class="dialog-actions"><button value="cancel" class="btn ghost">Huỷ</button><button id="confirmLauncher" value="default" class="btn primary">Lưu</button></div></form></dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>
