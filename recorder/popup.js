@@ -25,10 +25,7 @@ function slug(s) {
     .replace(/^-|-$/g, '') || 'recorded-scenario';
 }
 
-function clamp(n, min, max) {
-  return Math.max(min, Math.min(max, n));
-}
-
+function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 function gap(current, previous, fallback = 300) {
   if (!previous) return fallback;
   const d = Math.round((current.t || 0) - (previous.tEnd || previous.t || 0));
@@ -38,10 +35,7 @@ function gap(current, previous, fallback = 300) {
 function effectiveStartUrl(recording) {
   const original = String(recording?.url || '');
   if (/^https?:\/\//i.test(original)) return original;
-
-  const firstNav = (recording?.events || []).find(ev =>
-    ev?.type === 'navigation' && /^https?:\/\//i.test(String(ev.url || ''))
-  );
+  const firstNav = (recording?.events || []).find(ev => ev?.type === 'navigation' && /^https?:\/\//i.test(String(ev.url || '')));
   return firstNav ? String(firstNav.url) : original;
 }
 
@@ -54,14 +48,12 @@ function toInteractions(recording) {
 
   for (const ev of events) {
     const delay = gap(ev, previous);
-
     if (ev.type === 'navigation') {
       if (!consumedStartNavigation && ev.url === startUrl && startUrl !== String(recording?.url || '')) {
         consumedStartNavigation = true;
         previous = ev;
         continue;
       }
-
       if (!['likely-click', 'likely-enter'].includes(ev.trigger) && ev.url) {
         interactions.push({ action: 'openUrl', url: ev.url, newTab: false, delay });
       }
@@ -70,18 +62,12 @@ function toInteractions(recording) {
     }
 
     if (ev.type === 'clickRecorded') {
-      const selectors = Array.isArray(ev.selectors) && ev.selectors.length
-        ? ev.selectors
-        : [ev.selector].filter(Boolean);
-
+      const selectors = Array.isArray(ev.selectors) && ev.selectors.length ? ev.selectors : [ev.selector].filter(Boolean);
       interactions.push({
         action: 'clickRecorded',
         selectors,
         texts: ev.text ? [String(ev.text).toLowerCase()] : [],
-        point: {
-          rx: Number(ev.point?.rx ?? 0.5),
-          ry: Number(ev.point?.ry ?? 0.5)
-        },
+        point: { rx: Number(ev.point?.rx ?? 0.5), ry: Number(ev.point?.ry ?? 0.5) },
         fallback: {
           clientX: Number(ev.clientX ?? 0),
           clientY: Number(ev.clientY ?? 0),
@@ -92,66 +78,26 @@ function toInteractions(recording) {
       });
     }
 
-    if (ev.type === 'replaceText') {
-      interactions.push({
-        action: 'replaceText',
-        selector: ev.selector || (Array.isArray(ev.selectors) ? ev.selectors[0] : null),
-        text: ev.value || '',
-        delay
-      });
-    }
-
-    if (ev.type === 'setChecked') {
-      interactions.push({
-        action: 'setChecked',
-        selector: ev.selector || (Array.isArray(ev.selectors) ? ev.selectors[0] : null),
-        checked: !!ev.checked,
-        delay
-      });
-    }
-
-    if (ev.type === 'selectOption') {
-      interactions.push({
-        action: 'selectOption',
-        selector: ev.selector || (Array.isArray(ev.selectors) ? ev.selectors[0] : null),
-        value: ev.value == null ? null : ev.value,
-        text: ev.optionText || null,
-        index: Number.isInteger(ev.index) ? ev.index : null,
-        delay
-      });
-    }
-
-    if (ev.type === 'keyCombo') {
-      interactions.push({ action: 'keyCombo', keys: Array.isArray(ev.keys) ? ev.keys : [], delay });
-    }
-
-    if (ev.type === 'key') {
-      interactions.push({ action: 'pressKey', key: ev.key, delay });
-    }
-
+    if (ev.type === 'replaceText') interactions.push({ action: 'replaceText', selector: ev.selector || (Array.isArray(ev.selectors) ? ev.selectors[0] : null), text: ev.value || '', delay });
+    if (ev.type === 'setChecked') interactions.push({ action: 'setChecked', selector: ev.selector || (Array.isArray(ev.selectors) ? ev.selectors[0] : null), checked: !!ev.checked, delay });
+    if (ev.type === 'selectOption') interactions.push({ action: 'selectOption', selector: ev.selector || (Array.isArray(ev.selectors) ? ev.selectors[0] : null), value: ev.value == null ? null : ev.value, text: ev.optionText || null, index: Number.isInteger(ev.index) ? ev.index : null, delay });
+    if (ev.type === 'keyCombo') interactions.push({ action: 'keyCombo', keys: Array.isArray(ev.keys) ? ev.keys : [], delay });
+    if (ev.type === 'key') interactions.push({ action: 'pressKey', key: ev.key, delay });
     if (ev.type === 'scroll') {
       const x = Math.round(Number(ev.x) || 0);
       const y = Math.round(Number(ev.y) || 0);
       const last = interactions[interactions.length - 1];
-
-      if (last && last.action === 'scrollTo') {
-        last.x = x;
-        last.y = y;
-      } else {
-        interactions.push({ action: 'scrollTo', x, y, delay });
-      }
+      if (last && last.action === 'scrollTo') { last.x = x; last.y = y; }
+      else interactions.push({ action: 'scrollTo', x, y, delay });
     }
-
     previous = ev;
   }
-
   return interactions;
 }
 
 function scenarioSource(recording) {
   const interactions = toInteractions(recording);
   const name = slug(recording?.title || 'recorded-scenario');
-
   return `const { runCheck } = require('./run_check');\n\nrunCheck({\n  name: ${JSON.stringify(name)},\n  url: ${JSON.stringify(effectiveStartUrl(recording))},\n  loadWaitMs: 3000,\n  resultWaitMs: 2000,\n  interactions: ${JSON.stringify(interactions, null, 2)}\n});\n`;
 }
 
@@ -162,78 +108,41 @@ const EXPORT_DIR_KEY = 'export-directory';
 function openExportDb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(EXPORT_DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(EXPORT_STORE)) db.createObjectStore(EXPORT_STORE);
-    };
+    req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains(EXPORT_STORE)) db.createObjectStore(EXPORT_STORE); };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
-
 async function getSavedExportDirectory() {
   const db = await openExportDb();
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(EXPORT_STORE, 'readonly');
-      const req = tx.objectStore(EXPORT_STORE).get(EXPORT_DIR_KEY);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  } finally { db.close(); }
+  try { return await new Promise((resolve, reject) => { const tx = db.transaction(EXPORT_STORE, 'readonly'); const req = tx.objectStore(EXPORT_STORE).get(EXPORT_DIR_KEY); req.onsuccess = () => resolve(req.result || null); req.onerror = () => reject(req.error); }); }
+  finally { db.close(); }
 }
-
 async function saveExportDirectory(handle) {
   const db = await openExportDb();
-  try {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(EXPORT_STORE, 'readwrite');
-      tx.objectStore(EXPORT_STORE).put(handle, EXPORT_DIR_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    });
-  } finally { db.close(); }
+  try { await new Promise((resolve, reject) => { const tx = db.transaction(EXPORT_STORE, 'readwrite'); tx.objectStore(EXPORT_STORE).put(handle, EXPORT_DIR_KEY); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error); }); }
+  finally { db.close(); }
 }
-
 async function forgetExportDirectory() {
   const db = await openExportDb();
-  try {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(EXPORT_STORE, 'readwrite');
-      tx.objectStore(EXPORT_STORE).delete(EXPORT_DIR_KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    });
-  } finally { db.close(); }
+  try { await new Promise((resolve, reject) => { const tx = db.transaction(EXPORT_STORE, 'readwrite'); tx.objectStore(EXPORT_STORE).delete(EXPORT_DIR_KEY); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error); }); }
+  finally { db.close(); }
 }
-
 async function ensureExportDirectory() {
   if (!window.showDirectoryPicker) return null;
-
   let handle = null;
   try { handle = await getSavedExportDirectory(); } catch { handle = null; }
-
   if (handle) {
     try {
       let permission = await handle.queryPermission({ mode: 'readwrite' });
       if (permission === 'prompt') permission = await handle.requestPermission({ mode: 'readwrite' });
       if (permission === 'granted') return handle;
-    } catch {
-      await forgetExportDirectory().catch(() => {});
-    }
+    } catch { await forgetExportDirectory().catch(() => {}); }
   }
-
-  const picked = await window.showDirectoryPicker({
-    id: 'browser-action-recorder-export',
-    mode: 'readwrite',
-    startIn: 'downloads'
-  });
+  const picked = await window.showDirectoryPicker({ id: 'browser-action-recorder-export', mode: 'readwrite', startIn: 'downloads' });
   await saveExportDirectory(picked);
   return picked;
 }
-
 async function downloadJs(filename, text) {
   if (window.showDirectoryPicker) {
     try {
@@ -250,7 +159,6 @@ async function downloadJs(filename, text) {
       await forgetExportDirectory().catch(() => {});
     }
   }
-
   const blob = new Blob([text], { type: 'text/javascript' });
   const url = URL.createObjectURL(blob);
   await new Promise((resolve, reject) => {
@@ -265,34 +173,26 @@ async function downloadJs(filename, text) {
 
 $('start').addEventListener('click', async () => {
   try {
-    const tab = await getActiveTab();
-    currentTabId = tab.id;
+    const tab = await getActiveTab(); currentTabId = tab.id;
     const r = await bg('start', { tabId: tab.id });
     if (!r?.ok) throw new Error(r?.error || 'Không thể bắt đầu');
     lastRecording = null;
     status('Đang ghi tab này. Có thể đổi URL hoặc reload mà không mất phiên ghi.', 'recording');
   } catch (e) { status(`Lỗi: ${e.message}`, 'error'); }
 });
-
 $('stop').addEventListener('click', async () => {
   try {
-    const tab = await getActiveTab();
-    currentTabId = tab.id;
+    const tab = await getActiveTab(); currentTabId = tab.id;
     const r = await bg('stop', { tabId: tab.id });
     if (!r?.ok) throw new Error(r?.error || 'Không thể dừng');
     lastRecording = r.recording;
     status(`Đã dừng • ${lastRecording?.events?.length || 0} sự kiện`, 'stopped');
   } catch (e) { status(`Lỗi: ${e.message}`, 'error'); }
 });
-
 $('exportJs').addEventListener('click', async () => {
   try {
-    if (!lastRecording) {
-      const r = await bg('lastRecording');
-      lastRecording = r?.recording || null;
-    }
+    if (!lastRecording) { const r = await bg('lastRecording'); lastRecording = r?.recording || null; }
     if (!lastRecording) throw new Error('Chưa có phiên ghi đã Stop');
-
     const source = scenarioSource(lastRecording);
     const filename = `${slug(lastRecording.title)}.scenario.js`;
     const saved = await downloadJs(filename, source);
@@ -303,13 +203,10 @@ $('exportJs').addEventListener('click', async () => {
 
 (async () => {
   try {
-    const tab = await getActiveTab();
-    currentTabId = tab.id;
+    const tab = await getActiveTab(); currentTabId = tab.id;
     const r = await bg('status', { tabId: tab.id });
     if (r?.active) status(`Đang ghi • ${r.count || 0} sự kiện • phiên vẫn tiếp tục qua URL/reload`, 'recording');
     else status('Sẵn sàng. Start để ghi thao tác trên tab hiện tại.', 'stopped');
-
-    const lr = await bg('lastRecording');
-    lastRecording = lr?.recording || null;
+    const lr = await bg('lastRecording'); lastRecording = lr?.recording || null;
   } catch (e) { status(`Lỗi: ${e.message}`, 'error'); }
 })();
