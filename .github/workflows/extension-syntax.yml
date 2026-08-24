@@ -1,13 +1,15 @@
-name: extension-syntax
+name: runtime-syntax
 
 on:
   push:
     paths:
-      - 'control-center/extension/stealth-extension/**'
+      - 'control-center/**'
+      - 'recorder/**'
       - '.github/workflows/extension-syntax.yml'
   pull_request:
     paths:
-      - 'control-center/extension/stealth-extension/**'
+      - 'control-center/**'
+      - 'recorder/**'
 
 jobs:
   syntax:
@@ -17,11 +19,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Check extension JavaScript syntax
+      - name: Check JavaScript syntax
         run: |
           node --check control-center/extension/stealth-extension/background.js
-          node --check control-center/extension/stealth-extension/core.js
-          node --check control-center/extension/stealth-extension/input.js
-          node --check control-center/extension/stealth-extension/recorded_click.js
-          node --check control-center/extension/stealth-extension/actions.js
-          node --check control-center/extension/stealth-extension/runtime.js
+          node --check control-center/manager/control_center.js
+          node --check control-center/manager/public/app.js
+          node --check control-center/server/server.js
+          node --check control-center/script/checks/run_check.js
+          node --check control-center/script/checks/device_behavior.js
+          node --check recorder/background.js
+          node --check recorder/content.js
+          node --check recorder/popup.js
