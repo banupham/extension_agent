@@ -1,0 +1,11 @@
+{
+  "name": "browser-debug-agent-control-center-v3-1-slim",
+  "private": true,
+  "version": "3.8.0",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "scripts": {
+    "start": "node manager/control_center.js"
+  }
+}
