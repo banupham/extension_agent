@@ -1,1 +1,11 @@
-The tested full background.js runtime has not yet been pushed to this directory. Do not load this directory as an unpacked extension until background.js is restored.
+# Runtime restored
+
+The extension runtime is now present and loaded through `background.js` using modular scripts:
+
+- `core.js`
+- `input.js`
+- `recorded_click.js`
+- `actions.js`
+- `runtime.js`
+
+This file previously warned that `background.js` was missing; that warning is no longer applicable.
