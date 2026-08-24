@@ -5,23 +5,39 @@ Local Chrome/GPM automation framework gồm 2 phần:
 - `control-center/`: broker WebSocket, dashboard, runner và Stealth Executor extension.
 - `recorder/`: Browser Action Recorder để ghi workflow và export scenario `.js` deterministic.
 
-## Bản hiện tại
+## Source of truth
 
-- Control Center: **V3.9 Recorded Click**
+Từ V3.10 trở đi ưu tiên repo GitHub này. Khi có bản mới, dùng:
+
+```bat
+git pull
+```
+
+thay vì tải ZIP thủ công.
+
+## Bản hiện tại / đang triển khai
+
+- Control Center runtime ổn định gần nhất: **V3.9 Recorded Click**
+- Control Center đang triển khai: **V3.10 Browser ↔ Scenario Assignment**
 - Stealth Executor: **1.5.0**
 - Recorder: **V3.7 Recorded Click**
 
 ## Cài Control Center
 
 ```bat
-cd control-center
+git clone https://github.com/banupham/extension_agent.git
+cd extension_agent\control-center
 npm install
 START_CONTROL_CENTER.bat
 ```
 
-Dashboard: `http://127.0.0.1:8788`
+Dashboard:
 
-Load/reload extension tại:
+```text
+http://127.0.0.1:8788
+```
+
+Load/reload Stealth Executor tại:
 
 ```text
 control-center/extension/stealth-extension
@@ -29,19 +45,53 @@ control-center/extension/stealth-extension
 
 trong `chrome://extensions` của Chrome/GPM cần điều khiển.
 
-## Cài Recorder
+## START_CONTROL_CENTER.bat
 
-Load unpacked thư mục:
+Mẫu launcher ưu tiên:
 
-```text
-recorder/
+```bat
+@echo off
+cd /d "%~dp0"
+call STOP_CONTROL_CENTER.bat >nul 2>&1
+timeout /t 1 /nobreak >nul
+start "Browser Debug Agent Control Center V3.10" /min node manager\control_center.js
+timeout /t 2 /nobreak >nul
+start "" http://127.0.0.1:8788
 ```
 
-Recorder có 3 nút: **Start / Stop / Export .js**.
+## V3.10 — Phân công Browser ↔ Scenario
 
-## Nguyên tắc scenario
+Phân công và thực thi là 2 lựa chọn độc lập.
 
-Scenario gốc do Recorder tạo là deterministic. Click đã ghi dùng `clickRecorded`: lưu điểm tương đối `rx/ry` trong element và phát lại đúng điểm đó, không random offset. Scroll dùng `scrollTo` tuyệt đối và được gộp theo gesture/burst. Random chỉ được áp dụng khi chủ động tạo Scenario Variant.
+Phân công:
+
+- `all`: mọi browser × mọi scenario.
+- `pair`: Chrome 1 → A, Chrome 2 → B, quay vòng nếu cần.
+- `random`: mỗi browser nhận ngẫu nhiên 1 scenario đã chọn.
+- `manual`: tự gán scenario cho từng browser.
+
+Thực thi:
+
+- `parallel`: song song giữa browser.
+- `sequential`: chạy lần lượt toàn bộ task.
+
+Logic phân công nằm tại:
+
+```text
+control-center/manager/assignment.js
+```
+
+Xem thêm [docs/ASSIGNMENT_MODES.md](docs/ASSIGNMENT_MODES.md).
+
+## Recorder scenario
+
+Scenario gốc do Recorder tạo là deterministic:
+
+- `clickRecorded` lưu điểm tương đối `rx/ry` trong element;
+- `scrollTo` lưu vị trí tuyệt đối và được coalesce theo gesture;
+- text edit được gộp thành final-value semantic.
+
+Random chỉ được áp dụng khi chủ động tạo Scenario Variant hoặc chọn **random assignment**; random assignment chỉ chọn scenario cho browser, không sửa nội dung scenario.
 
 ## Tài liệu theo dõi
 
@@ -49,4 +99,5 @@ Scenario gốc do Recorder tạo là deterministic. Click đã ghi dùng `clickR
 - [CHANGELOG.md](CHANGELOG.md): lịch sử thay đổi.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): kiến trúc.
 - [docs/KEYBOARD.md](docs/KEYBOARD.md): keyboard/Backspace.
-- [docs/RECORDED_CLICK.md](docs/RECORDED_CLICK.md): contract click deterministic.
+- [docs/RECORDED_CLICK.md](docs/RECORDED_CLICK.md): click deterministic.
+- [docs/ASSIGNMENT_MODES.md](docs/ASSIGNMENT_MODES.md): phân công browser/scenario.
