@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Stealth Executor",
+  "version": "1.4.1",
+  "description": "Remote controlled browser automation executor",
+  "permissions": ["debugger", "activeTab", "scripting", "tabs", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": {"service_worker": "background.js"},
+  "action": {},
+  "web_accessible_resources": []
+}
