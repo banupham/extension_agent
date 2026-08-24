@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Browser Action Recorder V3.7 Recorded Click",
-  "version": "3.7.0",
-  "description": "Deterministic recorder with recorded relative click points and coalesced scroll gestures.",
+  "name": "Browser Action Recorder V3.8 Rich Timing",
+  "version": "3.8.0",
+  "description": "Deterministic recorder with exact waits plus rich click, text-edit and scroll traces for later variant generation.",
   "permissions": [
     "storage",
     "downloads",
@@ -15,7 +15,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Browser Action Recorder V3"
+    "default_title": "Browser Action Recorder V3.8"
   },
   "background": {
     "service_worker": "background.js"
