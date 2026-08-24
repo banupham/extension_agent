@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Browser Action Recorder V3</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    width: 320px;
+    margin: 0;
+    padding: 14px;
+    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+    background: #0b0d10;
+    color: #f3f4f6;
+  }
+  .panel {
+    border: 1px solid #252a33;
+    background: #11151b;
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .title { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .status {
+    min-height: 38px;
+    padding: 9px 10px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    background: #0a0d12;
+    border: 1px solid #252a33;
+    color: #b8c0cc;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  button {
+    min-height: 42px;
+    border-radius: 9px;
+    border: 1px solid #303744;
+    background: #171c24;
+    color: #f7f7f8;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  button:hover { background: #202733; }
+  button:disabled { opacity: .45; cursor: default; }
+  #exportJs { grid-column: 1 / -1; }
+  .recording { color: #58d68d; }
+  .stopped { color: #c9d1dc; }
+  .error { color: #ff8e8e; }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <div class="title">Browser Action Recorder V3</div>
+    <div id="status" class="status">Đang kiểm tra tab...</div>
+    <div class="buttons">
+      <button id="start" type="button">Start</button>
+      <button id="stop" type="button">Stop</button>
+      <button id="exportJs" type="button">Export .js</button>
+    </div>
+  </div>
+<script src="popup.js"></script>
+</body>
+</html>
