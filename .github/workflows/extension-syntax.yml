@@ -1,0 +1,27 @@
+name: extension-syntax
+
+on:
+  push:
+    paths:
+      - 'control-center/extension/stealth-extension/**'
+      - '.github/workflows/extension-syntax.yml'
+  pull_request:
+    paths:
+      - 'control-center/extension/stealth-extension/**'
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check extension JavaScript syntax
+        run: |
+          node --check control-center/extension/stealth-extension/background.js
+          node --check control-center/extension/stealth-extension/core.js
+          node --check control-center/extension/stealth-extension/input.js
+          node --check control-center/extension/stealth-extension/recorded_click.js
+          node --check control-center/extension/stealth-extension/actions.js
+          node --check control-center/extension/stealth-extension/runtime.js
