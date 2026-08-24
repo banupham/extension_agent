@@ -1,50 +1,65 @@
-# Browser Action Recorder V3.7 Recorded Click
+# Browser Action Recorder V3.8 Rich Timing
 
 ## Mục tiêu
 
-Scenario gốc phải deterministic: ghi thế nào thì phát lại đúng mục tiêu và đúng điểm click tương đối trong element.
+Scenario gốc vẫn deterministic, nhưng Recorder không còn nén mất dữ liệu thời gian và hành vi cần thiết cho bước tạo variant sau này.
 
-## Click
+## Exact waits
 
-Recorder không còn xuất `clickFirstMatch + offset` cho click đã ghi.
+V3.7 từng clamp khoảng cách giữa hai event vào tối đa 5000 ms. V3.8 bỏ giới hạn này.
 
-Nó xuất:
+Khoảng nghỉ từ 1200 ms trở lên được xuất thành action riêng:
 
 ```js
 {
-  action: "clickRecorded",
-  selectors: ["..."],
-  texts: ["..."],
-  point: { rx: 0.72, ry: 0.41 },
-  fallback: {
-    clientX: 481,
-    clientY: 327,
-    viewportWidth: 681,
-    viewportHeight: 640
+  action: "wait",
+  ms: 8420,
+  delay: 0,
+  timing: {
+    recordedGapMs: 8420,
+    kind: "idle",
+    randomizable: true
   }
 }
 ```
 
-`rx/ry` là vị trí click tương đối bên trong element.
+Các khoảng ngắn hơn vẫn được giữ ở `delay` của action kế tiếp.
 
-Khi replay, executor:
-1. tìm element;
-2. lấy rect hiện tại;
-3. tính lại x/y từ rx/ry;
-4. click đúng điểm đó;
-5. không thêm offset/random point.
+Navigation do click/Enter tạo ra không còn làm reset timing anchor, vì vậy thời gian load/chờ sau click không bị mất.
 
-Recorder ưu tiên clickable ancestor (`a`, `button`, role button/link...) thay vì node con mà con trỏ vô tình chạm vào.
+## Rich action metadata
 
-Các ID có dấu hiệu generated/dynamic sẽ không được ưu tiên làm selector.
+Mỗi action có thêm `timing` và `recorded`. Executor hiện tại có thể bỏ qua các field này; chúng dành cho diagnostics và variant generator.
 
-## Scroll
+`recorded` có thể chứa:
+- `seq`, `atMs`, `gapFromPreviousMs`, `pageUrl`;
+- target tag/text/selectors/rect/attributes;
+- `pointerGesture` cho click;
+- `editTrace` cho nhập/sửa text;
+- `scrollTrace` cho từng scroll gesture;
+- keyboard code/modifier metadata.
 
-DOM `scroll` event được debounce 420 ms. Exporter cũng gộp các `scrollTo` liên tiếp và chỉ giữ đích cuối của cùng burst.
+## Click
+
+`clickRecorded` vẫn replay theo điểm tương đối `rx/ry` trong element, không thêm random offset vào scenario gốc.
+
+Click còn lưu thời gian `pointerdown -> pointerup` và điểm bắt đầu/kết thúc để sau này có thể tạo variant click có kiểm soát.
 
 ## Text / keyboard
 
-Giữ nguyên semantic mode:
-- sửa/xóa text trong field -> một `replaceText` cuối;
-- Backspace/Delete ngoài text field -> `pressKey`;
-- popup: Start / Stop / Export .js.
+Semantic mode vẫn giữ nguyên:
+- sửa/xóa trong field -> một `replaceText` cuối để replay không bị áp dụng Backspace/Delete hai lần;
+- nhưng toàn bộ chuỗi edit được giữ trong `editTrace.changes` gồm timestamp, `inputType`, value, selectionStart/End;
+- Backspace/Delete ngoài field vẫn là `pressKey`.
+
+## Scroll
+
+DOM scroll vẫn debounce 420 ms để một gesture không sinh hàng chục action.
+
+Khác V3.7, exporter không gộp nhiều gesture `scrollTo` liên tiếp nữa. Mỗi gesture giữ action riêng và kèm `scrollTrace.samples` để variant generator có thể thay tốc độ/độ dài gesture sau này.
+
+## Recording metadata
+
+Scenario export có thêm `recordingMeta` gồm Recorder version, timing model, duration, source event count, exported action count và idle wait threshold.
+
+Popup vẫn chỉ có 3 nút: Start / Stop / Export .js, và vẫn nhớ thư mục export đã chọn.
