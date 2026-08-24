@@ -7,9 +7,9 @@ Local Chrome/GPM automation framework gồm 2 phần:
 
 ## Bản hiện tại
 
-- Control Center: **V3.8 Observable Queue Fix**
-- Stealth Executor extension: source trong `control-center/extension/stealth-extension/`
-- Recorder: **V3.6 Deterministic**
+- Control Center: **V3.9 Recorded Click**
+- Stealth Executor: **1.5.0**
+- Recorder: **V3.7 Recorded Click**
 
 ## Cài Control Center
 
@@ -21,7 +21,7 @@ START_CONTROL_CENTER.bat
 
 Dashboard: `http://127.0.0.1:8788`
 
-Sau đó load/reload extension tại:
+Load/reload extension tại:
 
 ```text
 control-center/extension/stealth-extension
@@ -41,11 +41,12 @@ Recorder có 3 nút: **Start / Stop / Export .js**.
 
 ## Nguyên tắc scenario
 
-Scenario do Recorder tạo là deterministic: lưu workflow/timing/scroll đã ghi. Random chỉ được áp dụng khi chủ động tạo Scenario Variant từ Control Center.
+Scenario gốc do Recorder tạo là deterministic. Click đã ghi dùng `clickRecorded`: lưu điểm tương đối `rx/ry` trong element và phát lại đúng điểm đó, không random offset. Scroll dùng `scrollTo` tuyệt đối và được gộp theo gesture/burst. Random chỉ được áp dụng khi chủ động tạo Scenario Variant.
 
 ## Tài liệu theo dõi
 
-- [STATUS.md](STATUS.md): trạng thái công việc hiện tại, bug đã fix, bug cần test tiếp.
-- [CHANGELOG.md](CHANGELOG.md): lịch sử thay đổi quan trọng.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): kiến trúc và luồng dữ liệu.
-- [docs/KEYBOARD.md](docs/KEYBOARD.md): mapping keyboard/Backspace và lưu ý Recorder.
+- [STATUS.md](STATUS.md): trạng thái công việc hiện tại và điểm tiếp tục.
+- [CHANGELOG.md](CHANGELOG.md): lịch sử thay đổi.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): kiến trúc.
+- [docs/KEYBOARD.md](docs/KEYBOARD.md): keyboard/Backspace.
+- [docs/RECORDED_CLICK.md](docs/RECORDED_CLICK.md): contract click deterministic.
