@@ -3,12 +3,33 @@
   "name": "Browser Action Recorder V3.7 Recorded Click",
   "version": "3.7.0",
   "description": "Deterministic recorder with recorded relative click points and coalesced scroll gestures.",
-  "permissions": ["storage", "downloads", "activeTab", "scripting", "tabs"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "storage",
+    "downloads",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Browser Action Recorder V3"
   },
-  "background": {"service_worker": "background.js"},
-  "content_scripts": [{"matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_start", "all_frames": false}]
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ]
 }
