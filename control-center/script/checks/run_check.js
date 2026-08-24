@@ -32,6 +32,12 @@ function resolveDelay(value, fallback = 0) {
   return Math.max(0, Math.round(result));
 }
 
+function asStep(item, defaultDelay = 300) {
+  const delay = resolveDelay(item.delay, defaultDelay);
+  const data = item.data || {};
+  return { action: item.action, data, delay };
+}
+
 function runCheck(config) {
   const TARGET_URL = config.url;
   const LOAD_WAIT_MS = Number(process.env.WAIT_MS || config.loadWaitMs || 8000);
@@ -52,7 +58,7 @@ function runCheck(config) {
 
       const skippedInteractions = [];
       const SUPPORTED_INTERACTIONS = new Set([
-        'click', 'moveMouse', 'clickSelector', 'clickFirstMatch', 'doubleClickSelector',
+        'click', 'moveMouse', 'clickSelector', 'clickFirstMatch', 'clickRecorded', 'doubleClickSelector',
         'hoverSelector', 'dragAndDrop', 'type', 'replaceText', 'clearInput',
         'pressKey', 'keyCombo', 'scroll', 'scrollTo', 'scrollBy', 'focusSelector', 'selectOption',
         'setChecked', 'wait', 'waitForSelector', 'waitForUrl', 'openUrl',
@@ -69,7 +75,11 @@ function runCheck(config) {
         let data = {};
         switch (item.action) {
           case 'click':
-            data = { x: resolveNumber(item.x, 0), y: resolveNumber(item.y, 0), offset: resolveNumber(item.offset, 4) };
+            data = {
+              x: resolveNumber(item.x, 0),
+              y: resolveNumber(item.y, 0),
+              offset: resolveNumber(item.offset, 4)
+            };
             break;
           case 'moveMouse':
             data = {
@@ -88,16 +98,42 @@ function runCheck(config) {
             data = { selector: item.selector || null };
             break;
           case 'clickFirstMatch':
-            data = { selectors: item.selectors || [], texts: item.texts || [], offset: resolveNumber(item.offset, 4) };
+            data = {
+              selectors: item.selectors || [],
+              texts: item.texts || [],
+              offset: resolveNumber(item.offset, 4)
+            };
+            break;
+          case 'clickRecorded':
+            data = {
+              selectors: item.selectors || [],
+              texts: item.texts || [],
+              point: {
+                rx: resolveNumber(item.point && item.point.rx, 0.5),
+                ry: resolveNumber(item.point && item.point.ry, 0.5)
+              },
+              fallback: {
+                clientX: resolveNumber(item.fallback && item.fallback.clientX, 0),
+                clientY: resolveNumber(item.fallback && item.fallback.clientY, 0),
+                viewportWidth: resolveNumber(item.fallback && item.fallback.viewportWidth, 0),
+                viewportHeight: resolveNumber(item.fallback && item.fallback.viewportHeight, 0)
+              }
+            };
             break;
           case 'dragAndDrop':
-            data = { sourceSelector: item.sourceSelector, targetSelector: item.targetSelector };
+            data = {
+              sourceSelector: item.sourceSelector,
+              targetSelector: item.targetSelector
+            };
             break;
           case 'type':
             data = { text: String(item.text ?? '') };
             break;
           case 'replaceText':
-            data = { selector: item.selector || null, text: String(item.text ?? '') };
+            data = {
+              selector: item.selector || null,
+              text: String(item.text ?? '')
+            };
             break;
           case 'pressKey':
             data = { key: String(item.key || 'Enter') };
@@ -108,25 +144,47 @@ function runCheck(config) {
           case 'scroll':
           case 'scrollTo':
           case 'scrollBy':
-            data = { x: resolveNumber(item.x, 0), y: resolveNumber(item.y, 0) };
+            data = {
+              x: resolveNumber(item.x, 0),
+              y: resolveNumber(item.y, 0)
+            };
             break;
           case 'selectOption':
-            data = { selector: item.selector, value: item.value == null ? null : String(item.value), text: item.text == null ? null : String(item.text), index: Number.isInteger(item.index) ? item.index : null };
+            data = {
+              selector: item.selector,
+              value: item.value == null ? null : String(item.value),
+              text: item.text == null ? null : String(item.text),
+              index: Number.isInteger(item.index) ? item.index : null
+            };
             break;
           case 'setChecked':
-            data = { selector: item.selector, checked: !!item.checked };
+            data = {
+              selector: item.selector,
+              checked: !!item.checked
+            };
             break;
           case 'wait':
             data = { ms: resolveNumber(item.ms, 0) };
             break;
           case 'waitForSelector':
-            data = { selector: item.selector, timeoutMs: Number(item.timeoutMs || 10000) };
+            data = {
+              selector: item.selector,
+              timeoutMs: Number(item.timeoutMs || 10000)
+            };
             break;
           case 'waitForUrl':
-            data = { contains: item.contains ?? null, equals: item.equals ?? null, regex: item.regex ?? null, timeoutMs: Number(item.timeoutMs || 10000) };
+            data = {
+              contains: item.contains ?? null,
+              equals: item.equals ?? null,
+              regex: item.regex ?? null,
+              timeoutMs: Number(item.timeoutMs || 10000)
+            };
             break;
           case 'openUrl':
-            data = { url: String(item.url || ''), newTab: !!item.newTab };
+            data = {
+              url: String(item.url || ''),
+              newTab: !!item.newTab
+            };
             break;
           case 'reload':
           case 'goBack':
@@ -141,10 +199,16 @@ function runCheck(config) {
             break;
         }
 
-        steps.push({ action: item.action, data, delay: resolveDelay(item.delay, item.action === 'wait' ? 0 : 300) });
+        steps.push({
+          action: item.action,
+          data,
+          delay: resolveDelay(item.delay, item.action === 'wait' ? 0 : 300)
+        });
       }
 
-      if (skippedInteractions.length) console.warn('⚠️ Unsupported interactions kept out of sequence:', skippedInteractions.join(', '));
+      if (skippedInteractions.length) {
+        console.warn('⚠️ Unsupported interactions kept out of sequence:', skippedInteractions.join(', '));
+      }
       if (process.env.TRACE_PLAN === '1') {
         console.log('\n=== RESOLVED STEP PLAN ===');
         console.log(JSON.stringify(steps, null, 2));
@@ -157,7 +221,17 @@ function runCheck(config) {
       );
 
       emitRunEvent({ type: 'plan', commandId, scenario: config.name, totalSteps: steps.length });
-      ws.send(JSON.stringify({ type: 'command', commandId, agentId: TARGET_AGENT_ID || undefined, payload: { action: 'sequence', tabId: null, data: { steps } } }));
+
+      ws.send(JSON.stringify({
+        type: 'command',
+        commandId,
+        agentId: TARGET_AGENT_ID || undefined,
+        payload: {
+          action: 'sequence',
+          tabId: null,
+          data: { steps }
+        }
+      }));
     }, 400);
   });
 
@@ -166,8 +240,11 @@ function runCheck(config) {
     try { msg = JSON.parse(raw.toString()); } catch { return; }
 
     if (msg.type === 'status') {
-      if (msg.commandId === commandId && msg.progress) emitRunEvent({ type: 'progress', commandId, ...msg.progress });
-      else console.log('ℹ️', msg.message || msg);
+      if (msg.commandId === commandId && msg.progress) {
+        emitRunEvent({ type: 'progress', commandId, ...msg.progress });
+      } else {
+        console.log('ℹ️', msg.message || msg);
+      }
       return;
     }
 
@@ -179,24 +256,54 @@ function runCheck(config) {
 
     if (msg.type === 'result' && msg.commandId === commandId) {
       const result = msg.result;
-      emitRunEvent({ type: 'summary', commandId, ok: !!(result && result.ok), failedStep: result && result.failedStep, error: result && result.error ? String(result.error) : null, totalResults: result && Array.isArray(result.results) ? result.results.length : 0 });
+      emitRunEvent({
+        type: 'summary',
+        commandId,
+        ok: !!(result && result.ok),
+        failedStep: result && result.failedStep,
+        error: result && result.error ? String(result.error) : null,
+        totalResults: result && Array.isArray(result.results) ? result.results.length : 0
+      });
 
       console.log('\n=== SUMMARY ===');
-      console.log(JSON.stringify({ ok: result && result.ok, failedStep: result && result.failedStep, tabId: result && result.tabId, error: result && result.error }, null, 2));
+      console.log(JSON.stringify({
+        ok: result && result.ok,
+        failedStep: result && result.failedStep,
+        tabId: result && result.tabId,
+        error: result && result.error
+      }, null, 2));
 
       if (result && Array.isArray(result.results)) {
-        const trace = result.results.filter(x => ['clickFirstMatch', 'clickSelector', 'doubleClickSelector', 'hoverSelector', 'dragAndDrop', 'type', 'replaceText', 'clearInput', 'pressKey', 'keyCombo', 'scroll', 'scrollTo', 'scrollBy', 'selectOption', 'setChecked', 'waitForSelector', 'waitForUrl', 'openUrl', 'reload', 'goBack', 'goForward'].includes(x.action));
+        const trace = result.results.filter(x =>
+          ['clickFirstMatch', 'clickRecorded', 'clickSelector', 'doubleClickSelector', 'hoverSelector', 'dragAndDrop', 'type', 'replaceText', 'clearInput', 'pressKey', 'keyCombo', 'scroll', 'scrollTo', 'scrollBy', 'selectOption', 'setChecked', 'waitForSelector', 'waitForUrl', 'openUrl', 'reload', 'goBack', 'goForward'].includes(x.action)
+        );
+
         console.log('\n=== INTERACTION TRACE ===');
-        for (const row of trace) console.log(JSON.stringify({ step: row.step, action: row.action, tabId: row.tabId, delayMs: row.delayMs, startedAt: row.startedAt, endedAt: row.endedAt, durationMs: row.durationMs, result: row.result }, null, 2));
+        for (const row of trace) {
+          console.log(JSON.stringify({
+            step: row.step,
+            action: row.action,
+            tabId: row.tabId,
+            delayMs: row.delayMs,
+            startedAt: row.startedAt,
+            endedAt: row.endedAt,
+            durationMs: row.durationMs,
+            result: row.result
+          }, null, 2));
+        }
 
         const lastText = [...result.results].reverse().find(x => x.action === 'getElementText');
         if (lastText) {
           console.log('\n=== PAGE RESULT TEXT ===');
           const value = lastText.result;
-          const printable = typeof value === 'string' ? value : (value && typeof value.text === 'string' ? value.text : JSON.stringify(value, null, 2));
+          const printable =
+            typeof value === 'string'
+              ? value
+              : (value && typeof value.text === 'string' ? value.text : JSON.stringify(value, null, 2));
           console.log(String(printable).slice(0, Number(process.env.BODY_LIMIT || 16000)));
         }
       }
+
       ws.close();
     }
   });
