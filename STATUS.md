@@ -1,5 +1,34 @@
 # STATUS — 2026-08-25
 
+## Extension runtime — restored
+
+`control-center/extension/stealth-extension/` is no longer missing its service-worker runtime.
+
+Current runtime layout:
+
+```text
+control-center/extension/stealth-extension/
+├─ manifest.json
+├─ background.js
+├─ core.js
+├─ input.js
+├─ recorded_click.js
+├─ actions.js
+└─ runtime.js
+```
+
+`background.js` is now a small loader using `importScripts(...)`; the runtime is split into maintainable modules instead of one large file.
+
+A GitHub Actions workflow was added at:
+
+```text
+.github/workflows/extension-syntax.yml
+```
+
+It runs `node --check` for every extension JavaScript runtime file on push/PR.
+
+The obsolete `PUSH_IN_PROGRESS.md` and `README_RUNTIME_MISSING.md` markers were removed.
+
 ## Source of truth
 
 Từ V3.10 trở đi ưu tiên repo GitHub này làm source chính. Không yêu cầu tải ZIP thủ công nếu thay đổi đã được commit lên repo.
