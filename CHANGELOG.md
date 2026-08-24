@@ -1,5 +1,16 @@
 # Changelog
 
+## V3.9 — 2026-08-25
+
+- Add deterministic `clickRecorded` action across Recorder → runner → executor.
+- Recorder stores click position as element-relative `rx/ry` plus viewport-coordinate fallback.
+- Executor re-resolves the target element and clicks `rect.left + width*rx`, `rect.top + height*ry`.
+- `clickRecorded` does not use random click offset or a generated random mouse path.
+- Recorder prefers clickable ancestors and adds unique anchor `href` selectors.
+- Recorder stops prioritizing IDs that look generated/dynamic.
+- Scroll recording debounce increased to 420 ms and exporter coalesces consecutive `scrollTo` destinations.
+- Extension version bumped to 1.5.0.
+
 ## V3.8 — 2026-08-25
 
 - Fix root cause Runs & Logs stale `queued`: `saveState()` no longer replaces live run object references.
