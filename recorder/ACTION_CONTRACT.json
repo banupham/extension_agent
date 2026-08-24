@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "extensionVersion": "1.4.0",
+  "extensionVersion": "1.5.0",
   "actions": {
     "navigation": [
       "openUrl",
@@ -18,7 +18,9 @@
       "hoverSelector",
       "moveMouse",
       "dragAndDrop",
-      "scroll"
+      "scroll",
+      "scrollTo",
+      "scrollBy"
     ],
     "keyboard": [
       "type",
@@ -49,5 +51,12 @@
       "detach"
     ]
   },
-  "recorderVersion": "3.7.0"
+  "recorderVersion": "3.8.0",
+  "recordingMetadata": {
+    "timing": ["seq", "t", "recordedAtEpoch", "gapFromPreviousMs", "timing.recordedGapMs", "timing.kind"],
+    "pointer": ["pointerGesture", "point", "fallback", "recorded.target"],
+    "text": ["editTrace"],
+    "scroll": ["scrollTrace"],
+    "scenario": ["recordingMeta"]
+  }
 }
