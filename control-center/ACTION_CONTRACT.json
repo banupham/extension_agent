@@ -2,14 +2,72 @@
   "version": 1,
   "extensionVersion": "1.5.0",
   "actions": {
-    "navigation": ["openUrl", "reload", "goBack", "goForward", "waitForUrl"],
-    "pointer": ["clickRecorded", "click", "clickSelector", "clickFirstMatch", "doubleClickSelector", "hoverSelector", "moveMouse", "dragAndDrop", "scroll", "scrollTo", "scrollBy"],
-    "keyboard": ["type", "replaceText", "clearInput", "pressKey", "keyCombo"],
-    "forms": ["focusSelector", "selectOption", "setChecked"],
-    "wait": ["wait", "waitForSelector", "waitForUrl"],
-    "inspection": ["getElementPosition", "getActiveTab", "getElementText", "getPageInfo", "listTabs", "getCapabilities"],
-    "lifecycle": ["detach"]
+    "navigation": [
+      "openUrl",
+      "reload",
+      "goBack",
+      "goForward",
+      "waitForUrl"
+    ],
+    "pointer": [
+      "clickRecorded",
+      "click",
+      "clickSelector",
+      "clickFirstMatch",
+      "doubleClickSelector",
+      "hoverSelector",
+      "moveMouse",
+      "dragAndDrop",
+      "scroll",
+      "scrollTo",
+      "scrollBy"
+    ],
+    "keyboard": [
+      "type",
+      "replaceText",
+      "clearInput",
+      "pressKey",
+      "keyCombo"
+    ],
+    "forms": [
+      "focusSelector",
+      "selectOption",
+      "setChecked"
+    ],
+    "wait": [
+      "wait",
+      "waitForSelector",
+      "waitForUrl"
+    ],
+    "inspection": [
+      "getElementPosition",
+      "getActiveTab",
+      "getElementText",
+      "getPageInfo",
+      "listTabs",
+      "getCapabilities"
+    ],
+    "lifecycle": [
+      "detach"
+    ]
   },
-  "keyboardKeys": ["Enter", "Tab", "Escape", "Backspace", "Delete", "ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown", "Home", "End", "PageUp", "PageDown", "Insert", "Space", "F1-F12"],
-  "controlCenterVersion": "3.9"
+  "keyboardKeys": [
+    "Enter",
+    "Tab",
+    "Escape",
+    "Backspace",
+    "Delete",
+    "ArrowLeft",
+    "ArrowUp",
+    "ArrowRight",
+    "ArrowDown",
+    "Home",
+    "End",
+    "PageUp",
+    "PageDown",
+    "Insert",
+    "Space",
+    "F1-F12"
+  ],
+  "controlCenterVersion": "3.10"
 }
