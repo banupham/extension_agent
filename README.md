@@ -5,6 +5,30 @@ Local Chrome/GPM automation framework gồm 2 phần:
 - `control-center/`: broker WebSocket, dashboard, runner và Stealth Executor extension.
 - `recorder/`: Browser Action Recorder để ghi workflow và export scenario `.js` deterministic.
 
+## Tìm theo kiểu ZIP cũ
+
+Nếu bạn quen với tên các file ZIP mình từng gửi, vào:
+
+```text
+packages/
+```
+
+Hiện có:
+
+```text
+packages/
+├─ CURRENT.md
+├─ browser_debug_agent_control_center_v3_10_assignment/
+└─ browser_action_recorder_v3_7_recorded_click/
+```
+
+Mỗi thư mục package có cây thư mục giống gói ZIP cũ và chỉ rõ source thật nằm ở đâu.
+
+- Control Center source thật: `control-center/`
+- Recorder source thật: `recorder/`
+
+Không nhân đôi runtime source vào `packages/` để tránh hai bản code bị lệch nhau.
+
 ## Source of truth
 
 Từ V3.10 trở đi ưu tiên repo GitHub này. Khi có bản mới, dùng:
