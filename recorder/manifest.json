@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Browser Action Recorder V3.6 Deterministic",
-  "version": "3.6.0",
-  "description": "Tab-persistent semantic recorder with remembered export directory.",
+  "name": "Browser Action Recorder V3.7 Recorded Click",
+  "version": "3.7.0",
+  "description": "Deterministic recorder with recorded relative click points and coalesced scroll gestures.",
   "permissions": ["storage", "downloads", "activeTab", "scripting", "tabs"],
   "host_permissions": ["<all_urls>"],
   "action": {
