@@ -1,14 +1,65 @@
 # STATUS — 2026-08-25
 
-## Điểm bắt đầu cho phiên làm việc tiếp theo
+## Source of truth
 
-Source chuẩn hiện tại nằm trong repo này. Không dùng các ZIP cũ làm nguồn chính nếu repo đã có commit mới hơn.
+Từ V3.10 trở đi ưu tiên repo GitHub này làm source chính. Không yêu cầu tải ZIP thủ công nếu thay đổi đã được commit lên repo.
 
-### Control Center V3.9 Recorded Click
+Workflow người dùng:
 
-Kế thừa toàn bộ fix queue/log của V3.8 và thêm replay click deterministic.
+```bat
+git pull
+cd control-center
+npm install
+START_CONTROL_CENTER.bat
+```
 
-#### `clickRecorded`
+`START_CONTROL_CENTER.bat` ưu tiên mẫu ngắn đã chốt:
+
+```bat
+@echo off
+cd /d "%~dp0"
+call STOP_CONTROL_CENTER.bat >nul 2>&1
+timeout /t 1 /nobreak >nul
+start "Browser Debug Agent Control Center V3.10" /min node manager\control_center.js
+timeout /t 2 /nobreak >nul
+start "" http://127.0.0.1:8788
+```
+
+## Control Center V3.10 — Browser ↔ Scenario Assignment
+
+Yêu cầu mới: không chỉ chạy mọi scenario trên mọi browser. Cần chọn cách phân công scenario cho browser.
+
+Các mode:
+
+- `all`: mọi browser × mọi scenario.
+- `pair`: Chrome 1 → scenario A, Chrome 2 → scenario B, sau đó quay vòng.
+- `random`: mỗi browser nhận ngẫu nhiên đúng 1 scenario trong tập đã tick.
+- `manual`: tự chọn scenario cho từng browser.
+
+Cách phân công độc lập với cách thực thi:
+
+- `parallel`: browser khác nhau chạy song song.
+- `sequential`: toàn bộ task chạy lần lượt.
+
+Logic thuần đã commit tại:
+
+```text
+control-center/manager/assignment.js
+```
+
+Tài liệu:
+
+```text
+docs/ASSIGNMENT_MODES.md
+```
+
+Random trong `assignmentMode=random` chỉ chọn **scenario nào giao cho browser nào**; không chỉnh nội dung scenario. Scenario Recorder vẫn deterministic.
+
+## Control Center V3.9 — Recorded Click
+
+Kế thừa fix queue/log V3.8 và thêm replay click deterministic.
+
+### `clickRecorded`
 
 Recorder lưu:
 
@@ -27,70 +78,46 @@ Recorder lưu:
 }
 ```
 
-Executor tìm lại element và tính lại điểm click:
+Executor tìm lại element và tính:
 
 ```text
 x = rect.left + rect.width  * rx
 y = rect.top  + rect.height * ry
 ```
 
-Không dùng random click offset và không tự tạo random mouse path cho `clickRecorded`.
+Không random click offset cho scenario gốc.
 
-Fallback tọa độ viewport chỉ dùng khi selector/text không tìm thấy và viewport hiện tại gần giống viewport đã record.
+## Recorder V3.7 — Recorded Click
 
-### Recorder V3.7 Recorded Click
+- Click gắn vào clickable ancestor (`a`, `button`, role button/link...).
+- Lưu `clientX/clientY`, viewport và `rx/ry`.
+- Không ưu tiên ID có dấu hiệu generated/dynamic.
+- Anchor có `href` duy nhất được thêm làm selector candidate.
+- Scroll debounce 420 ms và exporter gộp `scrollTo` liên tiếp.
+- Sửa text trong field → một `replaceText` cuối.
+- Backspace/Delete ngoài field → `pressKey`.
+- Navigation classifier nhận cả `click` và `clickRecorded`, tránh `openUrl` dư.
 
-- Click được gắn vào clickable ancestor (`a`, `button`, role button/link...) thay vì node con bất kỳ.
-- Lưu `clientX/clientY`, viewport và `rx/ry` theo rect element.
-- ID có dấu hiệu generated/dynamic không còn được ưu tiên làm selector.
-- Anchor có `href` duy nhất được thêm làm candidate selector.
-- Scroll event debounce 420 ms.
-- Exporter gộp các `scrollTo` liên tiếp, giữ đích cuối của cùng burst.
-- Text/Backspace semantic giữ nguyên: sửa text trong field -> một `replaceText` cuối; Backspace/Delete độc lập ngoài field -> `pressKey`.
-- Đã sửa navigation classifier để cả event cũ `click` và event mới `clickRecorded` đều được nhận là `likely-click`; tránh export dư `openUrl` sau một click đã tự điều hướng.
+## Runs & logs V3.8/V3.9
 
-### Runs & logs V3.8/V3.9
+Nguyên nhân gốc đã fix là `saveState()` từng thay live run object bằng clone. Worker cập nhật object cũ trong khi UI đọc clone `queued`.
 
-Nguyên nhân gốc đã fix:
+Fix: giữ object identity trong RAM, chỉ clone khi serialize JSON.
 
-```js
-state.runs = state.runs.map(r => ({ ...r }))
-```
+Smoke tests đã pass:
 
-trong `saveState()` từng thay live object bằng clone khiến worker cập nhật object cũ trong khi UI đọc clone `queued`.
+1. 1 browser + 1 scenario / parallel → `done 14/14`.
+2. 1 browser + 2 scenario / sequential → cả hai `done 14/14`.
 
-Fix giữ object identity trong RAM và chỉ clone khi serialize ra JSON.
+## Việc tiếp theo
 
-Smoke tests trước đó đã pass:
+- [ ] Tích hợp `buildAssignmentTasks()` vào runtime `manager/control_center.js` trên repo.
+- [ ] Commit UI V3.10: dropdown `Phân công` + `Thực thi` + manual mapping per browser.
+- [ ] Test 2 browser + 2 scenario với `pair`.
+- [ ] Test 3 browser + 2 scenario với `random`.
+- [ ] Test manual assignment và scheduler giữ nguyên mapping.
+- [ ] Tiếp tục test `clickRecorded` với element lớn/lệch tâm.
 
-1. 1 browser + 1 scenario / parallel -> `done 14/14`.
-2. 1 browser + 2 scenario / sequential -> cả hai `done 14/14`.
+## Không làm
 
-### Source đã đồng bộ lên GitHub cho V3.9/V3.7
-
-- `control-center/script/checks/run_check.js`: map `clickRecorded`.
-- `control-center/ACTION_CONTRACT.json`: contract V3.9 / executor 1.5.0.
-- `control-center/extension/stealth-extension/manifest.json`: executor 1.5.0.
-- `control-center/extension/stealth-extension/recorded_click.js`: implementation `clickRecorded` tách riêng để review/theo dõi.
-- `recorder/background.js`: session/navigation logic.
-- `recorder/content.js`: capture `rx/ry`, selector candidates, semantic keyboard/text, scroll debounce.
-- `recorder/popup.js`: export `clickRecorded`, scroll coalescing, remembered export directory.
-- `recorder/manifest.json` + `recorder/ACTION_CONTRACT.json`.
-- `docs/RECORDED_CLICK.md`.
-
-Bản ZIP Control Center V3.9 đã tích hợp `clickRecorded` trực tiếp vào extension `background.js`.
-
-### Việc cần test trên Windows/GPM
-
-- [ ] Reload Stealth Executor 1.5.0 từ Control Center V3.9.
-- [ ] Reload Recorder V3.7.
-- [ ] Record click vào element lớn (video/card/link) ở vị trí lệch tâm; scenario phải xuất `clickRecorded` với `rx/ry` khác 0.5.
-- [ ] Replay và kiểm tra click đúng vùng tương đối đã record.
-- [ ] Record Google/YouTube và kiểm tra selector không còn phụ thuộc ID động dạng opaque.
-- [ ] Click link có navigation và kiểm tra scenario không bị thêm `openUrl` dư ngay sau click.
-- [ ] Record một scroll gesture dài; scenario không được sinh nhiều `scrollTo` gần như trùng nhau.
-- [ ] Nếu Runs & logs vẫn sai, gửi event cuối trong `Log chẩn đoán / stdout`.
-
-## Không làm trong nhánh hiện tại
-
-Không tối ưu theo feedback của bot detector hoặc thêm hành vi nhằm né anti-bot detection. Các sửa đổi tập trung vào correctness, deterministic replay, queue reliability và observability.
+Không tối ưu theo feedback của bot detector hoặc thêm cơ chế nhằm né anti-bot detection. Các sửa đổi tập trung vào deterministic replay, correctness, scheduling, queue reliability và observability.
