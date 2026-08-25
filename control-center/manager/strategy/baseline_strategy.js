@@ -30,7 +30,7 @@ function resultSignalsMatch(task, observation) {
 function createBaselineStrategy() {
   return {
     name: 'baseline',
-    version: '0.1.0',
+    version: '0.1.1',
 
     async decide({ task, observation, history = [] }) {
       if (resultSignalsMatch(task, observation)) {
@@ -54,15 +54,15 @@ function createBaselineStrategy() {
         }
 
         const previousActions = history.map(x => x?.decision?.action?.action).filter(Boolean);
+        const focusedAlready = previousActions.includes('focusSelector');
         const typedAlready = previousActions.includes('type');
+        const submittedAlready = history.some(x => x?.decision?.action?.action === 'pressKey' && x?.decision?.action?.key === 'Enter');
+        const selector = searchInput.selector || searchInput.selectors?.[0] || null;
 
-        if (!typedAlready) {
+        if (!focusedAlready) {
           return {
             status: 'act',
-            action: {
-              action: 'focusSelector',
-              selector: searchInput.selector || searchInput.selectors?.[0] || null
-            },
+            action: { action: 'focusSelector', selector },
             targetRef: searchInput.id || null,
             confidence: 0.85,
             reasonCode: 'focus_search_input',
@@ -70,19 +70,33 @@ function createBaselineStrategy() {
           };
         }
 
-        const submitted = previousActions.some(a => a === 'pressKey');
-        if (!submitted) {
+        if (!typedAlready) {
           return {
             status: 'act',
-            action: {
-              action: 'pressKey',
-              key: 'Enter'
-            },
+            action: { action: 'type', text: String(task.args?.query || '') },
+            targetRef: searchInput.id || null,
+            confidence: 0.9,
+            reasonCode: 'type_search_query',
+            expectedOutcome: { fieldContainsTaskArg: 'query' }
+          };
+        }
+
+        if (!submittedAlready) {
+          return {
+            status: 'act',
+            action: { action: 'pressKey', key: 'Enter' },
             confidence: 0.8,
             reasonCode: 'submit_search',
             expectedOutcome: { navigationOrResults: true }
           };
         }
+
+        return {
+          status: 'blocked',
+          confidence: 0.35,
+          reasonCode: 'awaiting_goal_signal',
+          recovery: { suggested: 'reobserve' }
+        };
       }
 
       return {
