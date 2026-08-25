@@ -5,7 +5,9 @@
 
   function createDomCapture(options = {}) {
     const observer = options.observer;
+    const resolver = options.resolver || null;
     const emitBatch = typeof options.emitBatch === 'function' ? options.emitBatch : () => {};
+    const decorateEvent = typeof options.decorateEvent === 'function' ? options.decorateEvent : event => event;
     const queue = [];
     const listeners = [];
     const describedRefs = new Set();
@@ -41,7 +43,9 @@
 
     function push(event) {
       if (!running || !event) return;
-      queue.push(event);
+      let decorated = event;
+      try { decorated = decorateEvent(event, 'dom') || event; } catch {}
+      queue.push(decorated);
       if (queue.length >= 80) flush();
       else if (!flushTimer) flushTimer = setTimeout(flush, 300);
     }
@@ -73,6 +77,25 @@
       };
     }
 
+    function clickTargetFields(event, rawEl) {
+      if (!resolver?.resolve) return {};
+      try {
+        const result = resolver.resolve(event);
+        if (!result) return {};
+        return {
+          rawTargetRef: result.rawTargetRef || null,
+          resolvedTargetRef: result.resolvedTargetRef || result.rawTargetRef || null,
+          targetResolution: result.resolution || null,
+          ...(result.resolvedSemantic && result.resolvedTargetRef && result.resolvedTargetRef !== result.rawTargetRef
+            ? { resolvedTargetDescriptor: descriptor(result.resolvedSemantic) }
+            : {})
+        };
+      } catch {
+        const raw = semantic(rawEl);
+        return raw ? { rawTargetRef: raw.ref, resolvedTargetRef: raw.ref } : {};
+      }
+    }
+
     function start() {
       if (running) return;
       running = true;
@@ -80,7 +103,13 @@
       on(document, 'click', event => {
         const el = event.target instanceof Element ? event.target : null;
         const item = base('dom-click', event, el);
-        if (item) push({ ...item, button: Number(event.button || 0), x: Math.round(event.clientX), y: Math.round(event.clientY) });
+        if (item) push({
+          ...item,
+          ...clickTargetFields(event, el),
+          button: Number(event.button || 0),
+          x: Math.round(event.clientX),
+          y: Math.round(event.clientY)
+        });
       }, true);
 
       on(document, 'focusin', event => {
@@ -122,9 +151,7 @@
     function stop() {
       flush();
       running = false;
-      for (const remove of listeners.splice(0)) {
-        try { remove(); } catch {}
-      }
+      for (const remove of listeners.splice(0)) { try { remove(); } catch {} }
     }
 
     return { start, stop, flush };
