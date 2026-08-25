@@ -17,22 +17,39 @@
     return fallbackRefs.get(el);
   }
 
-  function visible(el) {
+  function renderState(el) {
     const r = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
-    return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity || 1) !== 0;
+    const rendered = r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity || 1) !== 0;
+    const inViewport = rendered && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth;
+    const enabled = !el.matches(':disabled,[aria-disabled="true"]');
+    const pointerBlocked = cs.pointerEvents === 'none';
+    const interactable = rendered && inViewport && enabled && !pointerBlocked;
+    return { rendered, inViewport, enabled, interactable };
+  }
+
+  function visible(el) { return renderState(el).rendered; }
+
+  function selectorCandidates(el) {
+    if (!(el instanceof Element)) return [];
+    const out = [];
+    const add = (type, value, score) => {
+      if (!value || out.some(x => x.value === value)) return;
+      out.push({ type, value, score });
+    };
+    if (el.id) add('id', `#${CSS.escape(el.id)}`, 1);
+    const testId = el.getAttribute('data-testid');
+    if (testId) add('testid', `[data-testid="${CSS.escape(testId)}"]`, 0.98);
+    const name = el.getAttribute('name');
+    if (name) add('name', `${el.tagName.toLowerCase()}[name="${CSS.escape(name)}"]`, 0.9);
+    const role = el.getAttribute('role');
+    if (role) add('role', `${el.tagName.toLowerCase()}[role="${CSS.escape(role)}"]`, 0.65);
+    add('tag', el.tagName.toLowerCase(), 0.2);
+    return out.sort((a, b) => b.score - a.score).slice(0, 5);
   }
 
   function cssSelector(el) {
-    if (!(el instanceof Element)) return null;
-    if (el.id) return `#${CSS.escape(el.id)}`;
-    const testId = el.getAttribute('data-testid');
-    if (testId) return `[data-testid="${CSS.escape(testId)}"]`;
-    const name = el.getAttribute('name');
-    if (name) return `${el.tagName.toLowerCase()}[name="${CSS.escape(name)}"]`;
-    const role = el.getAttribute('role');
-    if (role) return `${el.tagName.toLowerCase()}[role="${CSS.escape(role)}"]`;
-    return el.tagName.toLowerCase();
+    return selectorCandidates(el)[0]?.value || null;
   }
 
   function rawMeta(el) {
@@ -47,31 +64,31 @@
     };
   }
 
-  function privacyFor(el) {
-    return Privacy.classifyElementMeta(rawMeta(el));
-  }
-
-  function isSensitive(el) {
-    return !!privacyFor(el).sensitive;
-  }
+  function privacyFor(el) { return Privacy.classifyElementMeta(rawMeta(el)); }
+  function isSensitive(el) { return !!privacyFor(el).sensitive; }
 
   function semanticElement(el) {
     if (!(el instanceof Element)) return null;
-    const rect = el.getBoundingClientRect();
     const meta = rawMeta(el);
-    const privacy = Privacy.classifyElementMeta(meta);
-    if (privacy.sensitive) return null;
+    if (Privacy.classifyElementMeta(meta).sensitive) return null;
+    const rect = el.getBoundingClientRect();
+    const state = renderState(el);
     const label = meta.ariaLabel || meta.placeholder || meta.label || '';
     const tag = el.tagName.toLowerCase();
+    const candidates = selectorCandidates(el);
     return {
       ref: getRef(el),
       tag,
       role: el.getAttribute('role') || null,
       label: Privacy.redactText(label, false),
       editable: !!(el.isContentEditable || ['input', 'textarea', 'select'].includes(tag)),
-      enabled: !el.matches(':disabled'),
-      visible: visible(el),
-      selector: cssSelector(el),
+      enabled: state.enabled,
+      rendered: state.rendered,
+      inViewport: state.inViewport,
+      interactable: state.interactable,
+      visible: state.rendered,
+      selector: candidates[0]?.value || null,
+      selectorCandidates: candidates,
       rect: {
         x: Math.round(rect.x), y: Math.round(rect.y),
         width: Math.round(rect.width), height: Math.round(rect.height)
@@ -81,10 +98,10 @@
 
   function snapshot() {
     const candidates = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]'))
-      .filter(visible).slice(0, 500);
+      .filter(el => renderState(el).rendered).slice(0, 500);
     const active = document.activeElement && document.activeElement !== document.body && !isSensitive(document.activeElement) ? document.activeElement : null;
     return {
-      schemaVersion: '0.4.0',
+      schemaVersion: '0.5.0',
       pageInstanceId: NS2.pageInstanceId,
       page: Privacy.sanitizeUrl(location.href),
       titleMetrics: Privacy.safePageTitle(document.title),
@@ -96,5 +113,5 @@
     };
   }
 
-  NS2.SemanticObserver = { getRef, semanticElement, snapshot, cssSelector, isSensitive };
+  NS2.SemanticObserver = { getRef, semanticElement, snapshot, cssSelector, selectorCandidates, renderState, isSensitive };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
