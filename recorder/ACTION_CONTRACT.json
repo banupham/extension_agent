@@ -2,61 +2,40 @@
   "version": 1,
   "extensionVersion": "1.5.0",
   "actions": {
-    "navigation": [
-      "openUrl",
-      "reload",
-      "goBack",
-      "goForward",
-      "waitForUrl"
-    ],
-    "pointer": [
-      "clickRecorded",
-      "click",
-      "clickSelector",
-      "clickFirstMatch",
-      "doubleClickSelector",
-      "hoverSelector",
-      "moveMouse",
-      "dragAndDrop",
-      "scroll",
-      "scrollTo",
-      "scrollBy"
-    ],
-    "keyboard": [
-      "type",
-      "replaceText",
-      "clearInput",
-      "pressKey",
-      "keyCombo"
-    ],
-    "forms": [
-      "focusSelector",
-      "selectOption",
-      "setChecked"
-    ],
-    "wait": [
-      "wait",
-      "waitForSelector",
-      "waitForUrl"
-    ],
-    "inspection": [
-      "getElementPosition",
-      "getActiveTab",
-      "getElementText",
-      "getPageInfo",
-      "listTabs",
-      "getCapabilities"
-    ],
-    "lifecycle": [
-      "detach"
-    ]
+    "navigation": ["openUrl", "reload", "goBack", "goForward", "waitForUrl"],
+    "pointer": ["clickRecorded", "click", "clickSelector", "clickFirstMatch", "doubleClickSelector", "hoverSelector", "moveMouse", "dragAndDrop", "scroll", "scrollTo", "scrollBy"],
+    "keyboard": ["type", "replaceText", "clearInput", "pressKey", "keyCombo"],
+    "forms": ["focusSelector", "selectOption", "setChecked"],
+    "wait": ["wait", "waitForSelector", "waitForUrl"],
+    "inspection": ["getElementPosition", "getActiveTab", "getElementText", "getPageInfo", "listTabs", "getCapabilities"],
+    "lifecycle": ["detach"]
   },
-  "recorderVersion": "3.8.0",
+  "recorderVersion": "3.9.0",
+  "timingModel": "rich-gesture-v2",
   "recordingMetadata": {
     "timing": ["seq", "t", "recordedAtEpoch", "gapFromPreviousMs", "timing.recordedGapMs", "timing.kind"],
     "pointer": ["pointerGesture", "point", "fallback", "recorded.target"],
     "text": ["editTrace"],
-    "scroll": ["scrollTrace"],
+    "scroll": [
+      "scrollTrace.startedAtMs",
+      "scrollTrace.endedAtMs",
+      "scrollTrace.durationMs",
+      "scrollTrace.samples",
+      "scrollTrace.wheelSamples",
+      "scrollTrace.metrics.start",
+      "scrollTrace.metrics.end",
+      "scrollTrace.metrics.displacementX",
+      "scrollTrace.metrics.displacementY",
+      "scrollTrace.metrics.straightDistancePx",
+      "scrollTrace.metrics.pathDistancePx",
+      "scrollTrace.metrics.averageSpeedPxPerSec",
+      "scrollTrace.metrics.peakSpeedPxPerSec",
+      "scrollTrace.metrics.direction",
+      "scrollTrace.metrics.sourceHint",
+      "scrollTrace.metrics.wheelTotalDeltaX",
+      "scrollTrace.metrics.wheelTotalDeltaY",
+      "scrollTrace.metrics.speedSamples"
+    ],
     "scenario": ["recordingMeta"]
   }
 }
