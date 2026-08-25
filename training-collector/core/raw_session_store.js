@@ -41,7 +41,7 @@
         dom: 'compact-targetRef-events-with-first-seen-descriptors',
         mutation: '120ms-structural-mutation-bursts',
         correlation: 'targetRef-at-capture-time-with-first-seen-descriptor',
-        timeline: 'tsEpochMs-is-capture-time-storageSeq-is-persistence-order',
+        timeline: 'tsEpochMs-is-capture-time-sessionSeq-is-persistence-order',
         export: 'debug-json-and-jsonl-adapters-temporary'
       }
     };
