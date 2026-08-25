@@ -42,5 +42,7 @@ function createStrategy(options = {}) {
 
 module.exports = {
   createStrategy,
-  ...require('./contracts')
+  ...require('./contracts'),
+  ...require('./agent_action_contract'),
+  ...require('./execution_behavior_contract')
 };
