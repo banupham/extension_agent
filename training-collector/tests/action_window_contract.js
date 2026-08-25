@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const Windows = require('../tools/build_action_windows.js');
+const Analyzer = require('../tools/analyze_action_windows.js');
 
 const raw = {
   session: { sessionId: 'browser-action-window-test' },
@@ -119,6 +120,16 @@ assert(hover);
 assert.strictEqual(hover.outcome.previewLikeStateChange, true);
 assert.strictEqual(hover.target.label, 'Video đề xuất');
 assert.ok(!result.windows.some(x => x.target?.targetRef === 'bodyBg'));
+
+const quality = Analyzer.summarizeActionWindows(result);
+assert.strictEqual(quality.sourceSessionId, 'browser-action-window-test');
+assert.ok(quality.totalWindows >= 10);
+assert.ok(quality.targetQuality.labelCoverage > 0.5);
+assert.ok(quality.targetQuality.enriched >= 1);
+assert.ok(quality.behaviorEvidence.dragCount >= 1);
+assert.ok(quality.behaviorEvidence.horizontalScrollCount >= 1);
+assert.strictEqual(quality.privacy.printableLeakSuspected, 0);
+assert.strictEqual(quality.privacy.printableContentContractOk, true);
 
 const scrambled = [
   { type: 'pointer', tsEpochMs: 2000, sessionSeq: 1 },
