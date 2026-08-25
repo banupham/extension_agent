@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Training Collector V0.6 IndexedDB Reliable Raw",
-  "version": "0.6.0",
-  "description": "Privacy-first continuous physical and semantic DOM capture with IndexedDB chunk persistence, ACK retry, compact target refs and mutation bursts.",
-  "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage", "downloads"],
+  "name": "Training Collector V0.6.1 IndexedDB Auto Export",
+  "version": "0.6.1",
+  "description": "Privacy-first continuous physical and semantic DOM capture with IndexedDB chunks, ACK retry, integrity verification and temporary automatic JSONL.gz development export.",
+  "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage", "downloads", "offscreen", "alarms"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background.js"},
   "content_scripts": [
@@ -27,6 +27,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Training Collector V0.6"
+    "default_title": "Training Collector V0.6.1"
   }
 }
