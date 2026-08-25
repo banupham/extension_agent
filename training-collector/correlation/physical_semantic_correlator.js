@@ -5,6 +5,7 @@
 
   function createCorrelator(options = {}) {
     const observer = options.observer;
+    const describedRefs = new Set();
 
     function targetForEvent(event) {
       if (!event || !observer) return null;
@@ -20,10 +21,7 @@
       return active instanceof Element && active !== document.body ? active : null;
     }
 
-    function compactSemantic(el) {
-      if (!(el instanceof Element) || observer.isSensitive(el)) return null;
-      const semantic = observer.semanticElement(el);
-      if (!semantic) return null;
+    function descriptor(semantic) {
       return {
         elementRef: semantic.ref,
         tag: semantic.tag,
@@ -31,15 +29,28 @@
         label: semantic.label,
         editable: semantic.editable,
         selector: semantic.selector,
-        rect: semantic.rect
+        selectorCandidates: semantic.selectorCandidates,
+        rect: semantic.rect,
+        rendered: semantic.rendered,
+        inViewport: semantic.inViewport,
+        interactable: semantic.interactable
       };
     }
 
     function correlate(event) {
       if (!event || typeof event !== 'object') return event;
       const el = targetForEvent(event);
-      const semanticTarget = compactSemantic(el);
-      return semanticTarget ? { ...event, semanticTarget } : event;
+      if (!(el instanceof Element) || observer.isSensitive(el)) return event;
+      const semantic = observer.semanticElement(el);
+      if (!semantic) return event;
+
+      const firstDescription = !describedRefs.has(semantic.ref);
+      if (firstDescription) describedRefs.add(semantic.ref);
+      return {
+        ...event,
+        targetRef: semantic.ref,
+        ...(firstDescription ? { targetDescriptor: descriptor(semantic) } : {})
+      };
     }
 
     function correlateBatch(events) {
