@@ -4,7 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const Semantics = require('./build_action_semantics.js');
 
-const DERIVED_VERSION = '0.1.0';
+const DERIVED_VERSION = '0.1.1';
+const GENERIC_HOVER_TAGS = new Set(['html', 'body', 'main', 'ytd-app', 'ytd-browse', 'tp-yt-app-drawer']);
+const ACTIONABLE_TAGS = new Set(['a', 'button', 'input', 'textarea', 'select', 'video', 'audio']);
 
 function chronologicalOrder(a, b) {
   const at = Number(a?.tsEpochMs || 0);
@@ -41,25 +43,104 @@ function targetRefFor(event) {
   return event?.resolvedTargetRef || event?.targetRef || event?.rawTargetRef || null;
 }
 
-function targetContext(event) {
-  const descriptor = event?.resolvedTarget || event?.target || event?.semanticTarget || event?.targetDescriptor || null;
-  const raw = event?.rawTarget || null;
-  function pick(source, key) {
-    if (!source || typeof source !== 'object') return null;
-    const value = source[key];
-    return typeof value === 'string' && value.trim() ? value.trim().slice(0, 200) : null;
+function contextKey(event, ref) {
+  return [event?.tabId ?? '?', event?.frameId ?? '?', event?.pageInstanceId || '?', ref || '?'].join('::');
+}
+
+function cleanString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 200) : null;
+}
+
+function descriptorLabel(descriptor) {
+  if (!descriptor || typeof descriptor !== 'object') return null;
+  return cleanString(descriptor.label) || cleanString(descriptor.accessibleName) || cleanString(descriptor.ariaLabel) || cleanString(descriptor.placeholder);
+}
+
+function descriptorQuality(descriptor) {
+  if (!descriptor || typeof descriptor !== 'object') return -1;
+  let score = 0;
+  if (descriptorLabel(descriptor)) score += 8;
+  if (cleanString(descriptor.role)) score += 4;
+  if (cleanString(descriptor.tag)) score += 2;
+  if (descriptor.rect && typeof descriptor.rect === 'object') score += 1;
+  return score;
+}
+
+function buildDescriptorIndex(ordered) {
+  const index = new Map();
+  function put(event, ref, descriptor, source) {
+    if (!ref || !descriptor || typeof descriptor !== 'object') return;
+    const key = contextKey(event, ref);
+    const next = { descriptor, source, quality: descriptorQuality(descriptor) };
+    const prev = index.get(key);
+    if (!prev || next.quality > prev.quality) index.set(key, next);
   }
+
+  for (const event of ordered) {
+    put(event, event.resolvedTargetRef, event.resolvedTarget || event.resolvedSemantic, 'resolved-event');
+    put(event, event.rawTargetRef, event.rawTarget || event.rawSemantic, 'raw-event');
+    put(event, event.targetRef, event.target || event.semanticTarget || event.targetDescriptor, 'target-event');
+
+    if (event.type === 'semantic-snapshot') {
+      const elements = event.observation?.interactiveElements || event.snapshot?.interactiveElements || event.interactiveElements || [];
+      for (const element of elements) put(event, element?.ref, element, 'semantic-snapshot');
+    }
+  }
+  return index;
+}
+
+function indexedDescriptor(index, event, ref) {
+  return ref ? index?.get(contextKey(event, ref)) || null : null;
+}
+
+function targetContext(event, descriptorIndex = null) {
+  const resolved = event?.resolvedTarget || event?.resolvedSemantic || null;
+  const raw = event?.rawTarget || event?.rawSemantic || null;
+  const direct = event?.target || event?.semanticTarget || event?.targetDescriptor || null;
+  const resolvedRef = event?.resolvedTargetRef || null;
+  const rawRef = event?.rawTargetRef || event?.targetRef || null;
+  const targetRef = targetRefFor(event);
+  const resolvedIndexed = indexedDescriptor(descriptorIndex, event, resolvedRef || targetRef);
+  const rawIndexed = indexedDescriptor(descriptorIndex, event, rawRef);
+
+  const descriptor = resolved || resolvedIndexed?.descriptor || direct || raw || rawIndexed?.descriptor || null;
+  const labelCandidates = [
+    [descriptorLabel(resolved), 'resolved'],
+    [descriptorLabel(resolvedIndexed?.descriptor), resolvedIndexed?.source || 'resolved-index'],
+    [descriptorLabel(direct), 'target'],
+    [descriptorLabel(raw), rawRef && rawRef !== resolvedRef ? 'raw-descendant' : 'raw'],
+    [descriptorLabel(rawIndexed?.descriptor), rawRef && rawRef !== resolvedRef ? 'raw-descendant-index' : (rawIndexed?.source || 'raw-index')]
+  ];
+  const labelEntry = labelCandidates.find(([label]) => !!label) || [null, null];
+  const role = cleanString(resolved?.role) || cleanString(resolvedIndexed?.descriptor?.role) || cleanString(direct?.role) || cleanString(raw?.role) || cleanString(rawIndexed?.descriptor?.role);
+  const tag = cleanString(resolved?.tag) || cleanString(resolvedIndexed?.descriptor?.tag) || cleanString(direct?.tag) || cleanString(raw?.tag) || cleanString(rawIndexed?.descriptor?.tag);
+  const rect = resolved?.rect || resolvedIndexed?.descriptor?.rect || direct?.rect || raw?.rect || rawIndexed?.descriptor?.rect || null;
+
   return {
-    targetRef: targetRefFor(event),
-    rawTargetRef: event?.rawTargetRef || event?.targetRef || null,
-    resolvedTargetRef: event?.resolvedTargetRef || null,
-    role: pick(descriptor, 'role') || pick(raw, 'role'),
-    label: pick(descriptor, 'label') || pick(descriptor, 'accessibleName') || pick(raw, 'label') || null,
-    tag: pick(descriptor, 'tag') || pick(raw, 'tag'),
-    rect: descriptor?.rect && typeof descriptor.rect === 'object' ? descriptor.rect : (raw?.rect && typeof raw.rect === 'object' ? raw.rect : null),
+    targetRef,
+    rawTargetRef: rawRef,
+    resolvedTargetRef: resolvedRef,
+    role,
+    label: labelEntry[0],
+    labelSource: labelEntry[1],
+    labelEnriched: !!labelEntry[0] && !descriptorLabel(resolved),
+    tag,
+    rect: rect && typeof rect === 'object' ? rect : null,
     frameId: event?.frameId ?? null,
     pageInstanceId: event?.pageInstanceId || null
   };
+}
+
+function isMeaningfulHoverTarget(target, action) {
+  if (!target) return false;
+  const tag = String(target.tag || '').toLowerCase();
+  const role = String(target.role || '').toLowerCase();
+  const hasLabel = !!target.label;
+  const previewOutcome = !!action?.outcome?.previewLikeStateChange;
+  if (hasLabel || role || ACTIONABLE_TAGS.has(tag) || previewOutcome) return true;
+  if (GENERIC_HOVER_TAGS.has(tag)) return false;
+  // Unknown custom elements are retained unless they are proven generic. Raw facts stay untouched.
+  return !!target.targetRef;
 }
 
 function collectWindow(ordered, anchor, beforeMs, afterMs) {
@@ -81,7 +162,7 @@ function outcomeFrom(events, anchorTs) {
   };
 }
 
-function clickWindows(ordered, options) {
+function clickWindows(ordered, options, descriptorIndex) {
   const beforeMs = Number(options.beforeMs || 1200);
   const afterMs = Number(options.afterMs || 1200);
   return ordered.filter(event => event.type === 'dom-click').map((anchor, index) => {
@@ -91,12 +172,8 @@ function clickWindows(ordered, options) {
       actionId: `click-${index + 1}-${Number(anchor.sessionSeq || anchor.pageSeq || 0)}`,
       actionType: 'click',
       anchorTsEpochMs: Number(anchor.tsEpochMs || 0),
-      context: {
-        tabId: anchor.tabId ?? null,
-        frameId: anchor.frameId ?? null,
-        pageInstanceId: anchor.pageInstanceId || null
-      },
-      target: targetContext(anchor),
+      context: { tabId: anchor.tabId ?? null, frameId: anchor.frameId ?? null, pageInstanceId: anchor.pageInstanceId || null },
+      target: targetContext(anchor, descriptorIndex),
       before: windowEvents.filter(event => Number(event.tsEpochMs || 0) < Number(anchor.tsEpochMs || 0)).map(eventRef),
       action: eventRef(anchor),
       after: windowEvents.filter(event => Number(event.tsEpochMs || 0) > Number(anchor.tsEpochMs || 0)).map(eventRef),
@@ -105,7 +182,7 @@ function clickWindows(ordered, options) {
   });
 }
 
-function scrollWindows(ordered, options) {
+function scrollWindows(ordered, options, descriptorIndex) {
   const gapMs = Number(options.scrollGapMs || 220);
   const wheels = ordered.filter(event => event.type === 'wheel');
   const groups = [];
@@ -127,12 +204,8 @@ function scrollWindows(ordered, options) {
     actionId: `scroll-${index + 1}-${Number(group.anchor.sessionSeq || group.anchor.pageSeq || 0)}`,
     actionType: group.axis === 'horizontal' ? 'scrollHorizontal' : 'scrollVertical',
     anchorTsEpochMs: Number(group.anchor.tsEpochMs || 0),
-    context: {
-      tabId: group.anchor.tabId ?? null,
-      frameId: group.anchor.frameId ?? null,
-      pageInstanceId: group.anchor.pageInstanceId || null
-    },
-    target: targetContext(group.anchor),
+    context: { tabId: group.anchor.tabId ?? null, frameId: group.anchor.frameId ?? null, pageInstanceId: group.anchor.pageInstanceId || null },
+    target: targetContext(group.anchor, descriptorIndex),
     before: [],
     action: {
       startTsEpochMs: Number(group.events[0]?.tsEpochMs || 0),
@@ -148,7 +221,7 @@ function scrollWindows(ordered, options) {
   }));
 }
 
-function keyboardWindows(ordered, options) {
+function keyboardWindows(ordered, options, descriptorIndex) {
   const gapMs = Number(options.keyboardGapMs || 450);
   const keys = ordered.filter(event => event.type === 'keyboard');
   const groups = [];
@@ -171,12 +244,8 @@ function keyboardWindows(ordered, options) {
       actionId: `keyboard-${index + 1}-${Number(group.anchor.sessionSeq || group.anchor.pageSeq || 0)}`,
       actionType: typeTextLike ? 'typeText' : 'pressKey',
       anchorTsEpochMs: Number(group.anchor.tsEpochMs || 0),
-      context: {
-        tabId: group.anchor.tabId ?? null,
-        frameId: group.anchor.frameId ?? null,
-        pageInstanceId: group.anchor.pageInstanceId || null
-      },
-      target: targetContext(group.anchor),
+      context: { tabId: group.anchor.tabId ?? null, frameId: group.anchor.frameId ?? null, pageInstanceId: group.anchor.pageInstanceId || null },
+      target: targetContext(group.anchor, descriptorIndex),
       before: [],
       action: {
         startTsEpochMs: Number(group.events[0]?.tsEpochMs || 0),
@@ -192,52 +261,71 @@ function keyboardWindows(ordered, options) {
   });
 }
 
-function hoverWindows(raw, ordered) {
+function hoverWindows(raw, ordered, descriptorIndex, options = {}) {
   const derived = Semantics.buildActionSemantics(raw);
-  return (derived.hoverActions || []).map((action, index) => ({
-    actionWindowVersion: DERIVED_VERSION,
-    actionId: `hover-${index + 1}-${Number(action.evidence?.enterPageSeq || 0)}`,
-    actionType: action.actionType === 'hover-preview' ? 'hoverAndObserve' : 'hover',
-    anchorTsEpochMs: Number(action.startedAtEpochMs || 0),
-    context: { pageInstanceId: action.pageInstanceId || null },
-    target: { targetRef: action.targetRef || null, pageInstanceId: action.pageInstanceId || null },
-    before: [],
-    action: {
-      startTsEpochMs: action.startedAtEpochMs,
-      endTsEpochMs: action.endedAtEpochMs,
-      dwellMs: action.dwellMs,
-      derivedHoverType: action.actionType
-    },
-    after: [],
-    outcome: action.outcome || {}
-  }));
+  const hoverEvents = ordered.filter(event => event.type === 'dom-hover-enter');
+  const anchorsByPageRef = new Map();
+  for (const event of hoverEvents) {
+    const key = `${event.pageInstanceId || '?'}::${event.targetRef || '?'}`;
+    if (!anchorsByPageRef.has(key)) anchorsByPageRef.set(key, []);
+    anchorsByPageRef.get(key).push(event);
+  }
+
+  let filteredNoiseCount = 0;
+  const windows = [];
+  for (let index = 0; index < (derived.hoverActions || []).length; index += 1) {
+    const action = derived.hoverActions[index];
+    const key = `${action.pageInstanceId || '?'}::${action.targetRef || '?'}`;
+    const candidates = anchorsByPageRef.get(key) || [];
+    const anchor = candidates.find(event => Math.abs(Number(event.tsEpochMs || 0) - Number(action.startedAtEpochMs || 0)) <= 10) || candidates[0] || {
+      pageInstanceId: action.pageInstanceId,
+      targetRef: action.targetRef,
+      tsEpochMs: action.startedAtEpochMs
+    };
+    const target = targetContext(anchor, descriptorIndex);
+    if (options.filterHoverNoise !== false && !isMeaningfulHoverTarget(target, action)) {
+      filteredNoiseCount += 1;
+      continue;
+    }
+    windows.push({
+      actionWindowVersion: DERIVED_VERSION,
+      actionId: `hover-${index + 1}-${Number(action.evidence?.enterPageSeq || 0)}`,
+      actionType: action.actionType === 'hover-preview' ? 'hoverAndObserve' : 'hover',
+      anchorTsEpochMs: Number(action.startedAtEpochMs || 0),
+      context: { tabId: anchor.tabId ?? null, frameId: anchor.frameId ?? null, pageInstanceId: action.pageInstanceId || null },
+      target,
+      before: [],
+      action: { startTsEpochMs: action.startedAtEpochMs, endTsEpochMs: action.endedAtEpochMs, dwellMs: action.dwellMs, derivedHoverType: action.actionType },
+      after: [],
+      outcome: action.outcome || {}
+    });
+  }
+  return { windows, filteredNoiseCount };
 }
 
 function buildActionWindows(raw, options = {}) {
   const ordered = [...(raw.events || [])].sort(chronologicalOrder);
+  const descriptorIndex = buildDescriptorIndex(ordered);
+  const hover = hoverWindows(raw, ordered, descriptorIndex, options);
   const windows = [
-    ...clickWindows(ordered, options),
-    ...hoverWindows(raw, ordered),
-    ...scrollWindows(ordered, options),
-    ...keyboardWindows(ordered, options)
+    ...clickWindows(ordered, options, descriptorIndex),
+    ...hover.windows,
+    ...scrollWindows(ordered, options, descriptorIndex),
+    ...keyboardWindows(ordered, options, descriptorIndex)
   ].sort((a, b) => Number(a.anchorTsEpochMs || 0) - Number(b.anchorTsEpochMs || 0));
 
   return {
     actionWindowVersion: DERIVED_VERSION,
     sourceSessionId: raw.session?.sessionId || null,
-    ordering: {
-      primary: 'tsEpochMs',
-      local: ['pageSeq', 'sourceSeq'],
-      durabilityOnly: 'sessionSeq'
+    ordering: { primary: 'tsEpochMs', local: ['pageSeq', 'sourceSeq'], durabilityOnly: 'sessionSeq' },
+    privacy: { printableHumanKeyContentStored: false, rawCredentialValuesExpected: false },
+    derivation: {
+      targetLabelEnrichment: 'resolved -> snapshot/index -> direct -> raw descendant',
+      rawFactsMutated: false,
+      hoverNoiseFilter: options.filterHoverNoise === false ? 'disabled' : 'generic-background-derived-filter',
+      filteredHoverNoiseCount: hover.filteredNoiseCount
     },
-    privacy: {
-      printableHumanKeyContentStored: false,
-      rawCredentialValuesExpected: false
-    },
-    counts: windows.reduce((out, item) => {
-      out[item.actionType] = (out[item.actionType] || 0) + 1;
-      return out;
-    }, {}),
+    counts: windows.reduce((out, item) => { out[item.actionType] = (out[item.actionType] || 0) + 1; return out; }, {}),
     windows
   };
 }
@@ -253,13 +341,7 @@ function main(argv = process.argv.slice(2)) {
   const result = buildActionWindows(raw);
   const output = argv[1] || `${input.replace(/\.raw\.jsonl(?:\.gz)?$/i, '')}.action-windows.v01.json`;
   fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
-  console.log(JSON.stringify({
-    input: path.resolve(input),
-    output: path.resolve(output),
-    sourceEvents: raw.events.length,
-    windows: result.windows.length,
-    counts: result.counts
-  }, null, 2));
+  console.log(JSON.stringify({ input: path.resolve(input), output: path.resolve(output), sourceEvents: raw.events.length, windows: result.windows.length, counts: result.counts, filteredHoverNoiseCount: result.derivation.filteredHoverNoiseCount }, null, 2));
 }
 
 if (require.main === module) main();
@@ -268,9 +350,12 @@ module.exports = {
   DERIVED_VERSION,
   chronologicalOrder,
   sameContext,
+  buildDescriptorIndex,
   targetContext,
+  isMeaningfulHoverTarget,
   clickWindows,
   scrollWindows,
   keyboardWindows,
+  hoverWindows,
   buildActionWindows
 };
