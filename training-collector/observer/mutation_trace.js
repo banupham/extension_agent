@@ -74,7 +74,11 @@
         subtree: true,
         childList: true,
         attributes: true,
-        attributeFilter: ['role', 'aria-expanded', 'aria-hidden', 'aria-disabled', 'disabled', 'checked', 'selected', 'class', 'style']
+        attributeFilter: [
+          'role', 'hidden', 'open', 'disabled', 'checked', 'selected',
+          'aria-expanded', 'aria-hidden', 'aria-disabled', 'aria-selected',
+          'aria-checked', 'aria-pressed'
+        ]
       });
     }
 
