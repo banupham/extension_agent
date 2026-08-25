@@ -1,15 +1,19 @@
 'use strict';
 
-if (!window.__TRAINING_COLLECTOR_V03__) {
-  window.__TRAINING_COLLECTOR_V03__ = true;
+if (!window.__TRAINING_COLLECTOR_V04__) {
+  window.__TRAINING_COLLECTOR_V04__ = true;
 
   const NS2 = window.TrainingCollectorV02 = window.TrainingCollectorV02 || {};
   const NS3 = window.TrainingCollectorV03 = window.TrainingCollectorV03 || {};
+  const NS4 = window.TrainingCollectorV04 = window.TrainingCollectorV04 || {};
   NS2.pageInstanceId = `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const Observer = NS2.SemanticObserver;
   const Normalizer = NS2.ActionNormalizer;
   const PhysicalCapture = NS3.PhysicalCapture;
+  const CorrelatorFactory = NS4.PhysicalSemanticCorrelator;
+  const DomCaptureFactory = NS4.DomCapture;
+  const MutationTraceFactory = NS4.MutationTrace;
 
   const S = {
     rawActive: false,
@@ -20,7 +24,10 @@ if (!window.__TRAINING_COLLECTOR_V03__) {
     beforeInputByRef: new Map(),
     scrollTimer: null,
     browserSessionId: null,
-    physical: null
+    physical: null,
+    domCapture: null,
+    mutationTrace: null,
+    correlator: null
   };
 
   function relTime() {
@@ -29,6 +36,18 @@ if (!window.__TRAINING_COLLECTOR_V03__) {
 
   function send(type, payload = {}) {
     return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...payload }).catch(() => null);
+  }
+
+  function rawBatch(events, source) {
+    if (!events?.length) return;
+    send('RAW_BATCH', {
+      batch: {
+        browserSessionId: S.browserSessionId,
+        pageInstanceId: NS2.pageInstanceId,
+        source: source || 'unknown',
+        events
+      }
+    });
   }
 
   function transitionId() {
@@ -74,6 +93,9 @@ if (!window.__TRAINING_COLLECTOR_V03__) {
   function startRawCapture() {
     if (S.rawActive || !PhysicalCapture?.createPhysicalCapture) return;
     S.rawActive = true;
+
+    S.correlator = CorrelatorFactory?.createCorrelator?.({ observer: Observer }) || null;
+
     S.physical = PhysicalCapture.createPhysicalCapture({
       isSensitiveTarget(target) {
         return target instanceof Element && Observer.isSensitive(target);
@@ -86,17 +108,31 @@ if (!window.__TRAINING_COLLECTOR_V03__) {
         };
       },
       emitBatch(events) {
-        if (!events?.length) return;
-        send('RAW_BATCH', {
-          batch: {
-            browserSessionId: S.browserSessionId,
-            pageInstanceId: NS2.pageInstanceId,
-            events
-          }
-        });
+        const correlated = S.correlator ? S.correlator.correlateBatch(events) : events;
+        rawBatch(correlated, 'physical');
       }
     });
+
+    S.domCapture = DomCaptureFactory?.createDomCapture?.({
+      observer: Observer,
+      emitBatch(events) { rawBatch(events, 'dom'); }
+    }) || null;
+
+    S.mutationTrace = MutationTraceFactory?.createMutationTrace?.({
+      observer: Observer,
+      emitBatch(events) { rawBatch(events, 'mutation'); }
+    }) || null;
+
     S.physical.start();
+    S.domCapture?.start();
+    S.mutationTrace?.start();
+
+    rawBatch([{
+      type: 'semantic-snapshot',
+      tsEpochMs: Date.now(),
+      tPageMs: Math.round(performance.now() * 1000) / 1000,
+      observation: Observer.snapshot()
+    }], 'semantic');
   }
 
   addEventListener('click', event => {
