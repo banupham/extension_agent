@@ -12,6 +12,7 @@
       "js": [
         "core/privacy.js",
         "core/action_normalizer.js",
+        "core/state_diff.js",
         "observer/element_registry.js",
         "observer/semantic_observer.js",
         "correlation/physical_semantic_correlator.js",
