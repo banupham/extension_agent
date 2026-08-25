@@ -1,6 +1,6 @@
 'use strict';
 
-const PLAN_VERSION = '0.1.0';
+const PLAN_VERSION = '0.1.1';
 
 function finite(value, fallback = null) {
   const n = Number(value);
@@ -94,9 +94,18 @@ function clickPlan(mappedAction, behavior, target, context = {}) {
   const steps = pointerPath(start, end, behavior, rng);
   const dwell = clamp(finite(behavior?.pointer?.dwellBeforeDownMs, 0), 0, 1500);
   const hold = clamp(finite(behavior?.pointer?.holdMs, 60), 10, 1200);
-  const clickCount = mappedAction.type === 'doubleClick' ? 2 : 1;
-  steps.push({ delayMs: dwell, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: end.x, y: end.y, button: 'left', clickCount } });
-  steps.push({ delayMs: hold, method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: end.x, y: end.y, button: 'left', clickCount } });
+
+  if (mappedAction.type === 'doubleClick') {
+    const interClickMs = clamp(finite(behavior?.pointer?.constraints?.interClickMs, 90), 40, 300);
+    steps.push({ delayMs: dwell, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: end.x, y: end.y, button: 'left', clickCount: 1 } });
+    steps.push({ delayMs: hold, method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: end.x, y: end.y, button: 'left', clickCount: 1 } });
+    steps.push({ delayMs: interClickMs, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: end.x, y: end.y, button: 'left', clickCount: 2 } });
+    steps.push({ delayMs: hold, method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: end.x, y: end.y, button: 'left', clickCount: 2 } });
+    return steps;
+  }
+
+  steps.push({ delayMs: dwell, method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: end.x, y: end.y, button: 'left', clickCount: 1 } });
+  steps.push({ delayMs: hold, method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: end.x, y: end.y, button: 'left', clickCount: 1 } });
   return steps;
 }
 
@@ -180,7 +189,7 @@ function buildCdpPlan({ mappedAction, behavior, target = null, context = {} }) {
   if (!mappedAction?.type) throw new Error('mappedAction required');
   let steps = [];
   const family = mappedAction.behaviorFamily || behavior?.metadata?.behaviorFamily || 'generic';
-  if (family === 'pointer-click') steps = clickPlan(mappedAction, behavior, target, context);
+  if (family === 'pointer-click' || family === 'focus-acquisition') steps = clickPlan(mappedAction, behavior, target, context);
   else if (family === 'pointer-hover') steps = hoverPlan(mappedAction, behavior, target, context);
   else if (family === 'scroll-vertical' || family === 'scroll-horizontal') steps = scrollPlan(mappedAction, behavior, context);
   else if (family === 'keyboard-text' || family === 'keyboard-key') steps = keyboardPlan(mappedAction, behavior);
