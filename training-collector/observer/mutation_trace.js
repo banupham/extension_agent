@@ -2,73 +2,85 @@
 
 (function initMutationTrace(root) {
   const NS = root.TrainingCollectorV04 = root.TrainingCollectorV04 || {};
+  const BURST_MS = 120;
 
   function createMutationTrace(options = {}) {
     const observer = options.observer;
     const emitBatch = typeof options.emitBatch === 'function' ? options.emitBatch : () => {};
-    const queue = [];
     let mo = null;
     let timer = null;
-
-    function push(item) {
-      if (!item) return;
-      queue.push(item);
-      if (queue.length >= 80) flush();
-      else if (!timer) timer = setTimeout(flush, 250);
-    }
-
-    function flush() {
-      if (timer) clearTimeout(timer);
-      timer = null;
-      if (!queue.length) return;
-      const batch = queue.splice(0, queue.length);
-      try { emitBatch(batch); } catch {}
-    }
+    let burst = null;
 
     function describe(el) {
       if (!(el instanceof Element) || !observer || observer.isSensitive(el)) return null;
       const s = observer.semanticElement(el);
       if (!s) return null;
-      return { elementRef: s.ref, tag: s.tag, role: s.role, selector: s.selector };
+      return { elementRef: s.ref, tag: s.tag, role: s.role };
     }
 
-    function summarizeRecord(record) {
-      const tsEpochMs = Date.now();
+    function ensureBurst() {
+      if (burst) return burst;
+      const now = Date.now();
+      burst = {
+        type: 'dom-mutation-burst',
+        tsEpochMs: now,
+        tPageMs: Math.round(performance.now() * 1000) / 1000,
+        windowMs: BURST_MS,
+        recordCount: 0,
+        addedCount: 0,
+        removedCount: 0,
+        attributes: {},
+        targetRefs: [],
+        addedRefs: [],
+        removedRefs: []
+      };
+      return burst;
+    }
+
+    function addUnique(list, value, cap = 40) {
+      if (!value || list.includes(value) || list.length >= cap) return;
+      list.push(value);
+    }
+
+    function absorb(record) {
+      const b = ensureBurst();
+      b.recordCount += 1;
       const target = describe(record.target instanceof Element ? record.target : null);
+      if (target) addUnique(b.targetRefs, target.elementRef);
+
       if (record.type === 'attributes') {
-        if (!target) return null;
-        return {
-          type: 'dom-mutation',
-          mutationType: 'attributes',
-          tsEpochMs,
-          tPageMs: Math.round(performance.now() * 1000) / 1000,
-          target,
-          attributeName: record.attributeName || null
-        };
+        const name = record.attributeName || 'unknown';
+        b.attributes[name] = (b.attributes[name] || 0) + 1;
+      } else if (record.type === 'childList') {
+        b.addedCount += Number(record.addedNodes?.length || 0);
+        b.removedCount += Number(record.removedNodes?.length || 0);
+        for (const node of Array.from(record.addedNodes || [])) {
+          const d = describe(node instanceof Element ? node : null);
+          if (d) addUnique(b.addedRefs, d.elementRef);
+        }
+        for (const node of Array.from(record.removedNodes || [])) {
+          const d = describe(node instanceof Element ? node : null);
+          if (d) addUnique(b.removedRefs, d.elementRef);
+        }
       }
-      if (record.type === 'childList') {
-        const added = Array.from(record.addedNodes || []).filter(n => n instanceof Element).map(describe).filter(Boolean).slice(0, 20);
-        const removed = Array.from(record.removedNodes || []).filter(n => n instanceof Element).map(describe).filter(Boolean).slice(0, 20);
-        if (!target && !added.length && !removed.length) return null;
-        return {
-          type: 'dom-mutation',
-          mutationType: 'childList',
-          tsEpochMs,
-          tPageMs: Math.round(performance.now() * 1000) / 1000,
-          target,
-          added,
-          removed,
-          addedCount: Number(record.addedNodes?.length || 0),
-          removedCount: Number(record.removedNodes?.length || 0)
-        };
-      }
-      return null;
+
+      clearTimeout(timer);
+      timer = setTimeout(flush, BURST_MS);
+    }
+
+    function flush() {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (!burst) return;
+      const out = burst;
+      burst = null;
+      try { emitBatch([out]); } catch {}
     }
 
     function start() {
       if (mo) return;
       mo = new MutationObserver(records => {
-        for (const record of records) push(summarizeRecord(record));
+        for (const record of records) absorb(record);
       });
       mo.observe(document.documentElement, {
         subtree: true,
@@ -91,5 +103,5 @@
     return { start, stop, flush };
   }
 
-  NS.MutationTrace = { createMutationTrace };
+  NS.MutationTrace = { createMutationTrace, BURST_MS };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
