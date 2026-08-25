@@ -48,6 +48,7 @@ jobs:
           node --check training-collector/observer/semantic_observer.js
           node --check training-collector/observer/mutation_trace.js
           node --check training-collector/observer/hover_trace.js
+          node --check training-collector/observer/route_trace.js
           node --check training-collector/correlation/physical_semantic_correlator.js
           node --check training-collector/correlation/action_target_resolver.js
           node --check training-collector/capture/physical_capture.js
@@ -63,6 +64,7 @@ jobs:
           node --check training-collector/tests/raw_analysis_contract.js
           node --check training-collector/tests/v06_storage_contract.js
           node --check training-collector/tests/v07_action_semantics_contract.js
+          node --check training-collector/tests/v072_frame_stream_contract.js
       - name: Validate extension manifests
         run: |
           node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8'))"
@@ -78,3 +80,5 @@ jobs:
         run: node training-collector/tests/v06_storage_contract.js
       - name: Run Collector V0.7 action semantics contract test
         run: node training-collector/tests/v07_action_semantics_contract.js
+      - name: Run Collector V0.7.2 frame stream diagnostics contract test
+        run: node training-collector/tests/v072_frame_stream_contract.js
