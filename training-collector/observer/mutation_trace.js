@@ -22,7 +22,7 @@
     function ensureBurst() {
       if (burst) return burst;
       const now = Date.now();
-      burst = {
+      const base = {
         type: 'dom-mutation-burst',
         tsEpochMs: now,
         tPageMs: Math.round(performance.now() * 1000) / 1000,
@@ -35,6 +35,7 @@
         addedRefs: [],
         removedRefs: []
       };
+      try { burst = decorateEvent(base, 'mutation') || base; } catch { burst = base; }
       return burst;
     }
 
@@ -75,9 +76,7 @@
       if (!burst) return;
       const out = burst;
       burst = null;
-      let decorated = out;
-      try { decorated = decorateEvent(out, 'mutation') || out; } catch {}
-      try { emitBatch([decorated]); } catch {}
+      try { emitBatch([out]); } catch {}
     }
 
     function start() {
