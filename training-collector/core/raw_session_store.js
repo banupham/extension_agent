@@ -3,7 +3,7 @@
 (function initRawSessionStore(root) {
   const NS = root.TrainingCollectorV03 = root.TrainingCollectorV03 || {};
 
-  const VERSION = '0.3.0';
+  const VERSION = '0.4.0';
   const SESSION_KEY_PREFIX = 'tcRawSessionV03:';
   const CHUNK_KEY_PREFIX = 'tcRawChunkV03:';
   const INDEX_KEY = 'tcRawSessionIndexV03';
@@ -37,7 +37,10 @@
         idle: 'timestamp-gaps-plus-idle-gap-markers',
         keyboard: 'timing-and-operation-class-without-printable-character-content',
         wheel: 'raw-delta-samples',
-        scroll: 'raw-position-samples'
+        scroll: 'raw-position-samples',
+        dom: 'privacy-safe-semantic-interaction-events',
+        mutation: 'privacy-safe-structural-mutation-summaries',
+        correlation: 'physical-events-may-carry-semanticTarget-at-capture-time'
       }
     };
   }
