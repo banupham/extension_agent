@@ -10,18 +10,25 @@ function finite(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function rounded(value, digits = 6) {
+  const n = finite(value);
+  if (n == null) return null;
+  const m = 10 ** digits;
+  return Math.round(n * m) / m;
+}
+
 function distribution(values) {
   const xs = values.map(finite).filter(Number.isFinite).sort((a, b) => a - b);
   const q = p => Features.percentile(xs, p);
   if (!xs.length) return { count: 0, min: null, median: null, p90: null, p99: null, max: null, mean: null };
   return {
     count: xs.length,
-    min: xs[0],
-    median: q(0.5),
-    p90: q(0.9),
-    p99: q(0.99),
-    max: xs.at(-1),
-    mean: xs.reduce((a, b) => a + b, 0) / xs.length
+    min: rounded(xs[0]),
+    median: rounded(q(0.5)),
+    p90: rounded(q(0.9)),
+    p99: rounded(q(0.99)),
+    max: rounded(xs.at(-1)),
+    mean: rounded(xs.reduce((a, b) => a + b, 0) / xs.length)
   };
 }
 
@@ -39,15 +46,15 @@ function summarizeBehaviorFeatures(featureSets) {
     if (row.quality?.targetSemanticPresent) bucket.semantic += 1;
   }
   for (const bucket of Object.values(byType)) {
-    bucket.physicalEvidenceRate = bucket.count ? bucket.physical / bucket.count : 0;
-    bucket.semanticTargetRate = bucket.count ? bucket.semantic / bucket.count : 0;
+    bucket.physicalEvidenceRate = bucket.count ? rounded(bucket.physical / bucket.count) : 0;
+    bucket.semanticTargetRate = bucket.count ? rounded(bucket.semantic / bucket.count) : 0;
   }
 
   const clickTypes = ['click', 'dismiss', 'toggle'];
   const hoverTypes = ['hover', 'hoverAndObserve'];
   const keyboardTypes = ['typeText', 'pressKey'];
   const select = (types, getter) => rows.filter(r => types.includes(r.actionType)).map(getter);
-  const rate = (subset, predicate) => subset.length ? subset.filter(predicate).length / subset.length : 0;
+  const rate = (subset, predicate) => subset.length ? rounded(subset.filter(predicate).length / subset.length) : 0;
   const clickRows = rows.filter(r => clickTypes.includes(r.actionType));
   const hoverRows = rows.filter(r => hoverTypes.includes(r.actionType));
   const keyRows = rows.filter(r => keyboardTypes.includes(r.actionType));
