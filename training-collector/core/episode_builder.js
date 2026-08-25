@@ -5,7 +5,8 @@
 
   function createEpisode({ task = {}, tabId = null, initialObservation = null, now = new Date().toISOString() } = {}) {
     return {
-      schemaVersion: '0.2.0',
+      schemaVersion: '0.5.0',
+      stateEncoding: 'initial-full-then-diff',
       episodeId: `ep-${Date.now()}`,
       task: {
         instruction: String(task.instruction || '').trim(),
@@ -39,8 +40,10 @@
       startedAtMs: Number(payload.startedAtMs || 0),
       endedAtMs: null,
       stateBefore: payload.stateBefore || null,
+      stateBeforeDiff: payload.stateBeforeDiff || null,
       action: payload.action || null,
       stateAfter: null,
+      stateAfterDiff: null,
       outcome: { actionSucceeded: null, partial: true }
     });
     return episode;
@@ -52,6 +55,7 @@
     item.status = 'complete';
     item.endedAtMs = Number(payload.endedAtMs || item.startedAtMs || 0);
     item.stateAfter = payload.stateAfter || null;
+    item.stateAfterDiff = payload.stateAfterDiff || null;
     item.outcome = {
       actionSucceeded: payload.actionSucceeded !== false,
       partial: false,
