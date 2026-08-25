@@ -15,7 +15,7 @@ const popup = read('popup.js');
 const offscreen = read('offscreen.js');
 const manifest = JSON.parse(read('manifest.json'));
 
-assert.equal(manifest.version, '0.7.0');
+assert.ok(/^0\.7\./.test(manifest.version));
 assert.ok(manifest.name.includes('V0.7'));
 assert.ok(manifest.permissions.includes('offscreen'));
 assert.ok(manifest.permissions.includes('alarms'));
@@ -29,6 +29,8 @@ assert.ok(idb.includes('checksumEvents'));
 assert.ok(idb.includes('fnv1a32:'));
 assert.ok(idb.includes('verifySession'));
 assert.ok(idb.includes('sequence_gap_between_chunks'));
+assert.ok(idb.includes('listSessionsByStatus'));
+assert.ok(idb.includes("index('status')"));
 
 assert.ok(sender.includes("send('RAW_BATCH'"));
 assert.ok(sender.includes('res?.ack'));
@@ -47,16 +49,23 @@ assert.ok(background.includes("reasons: ['BLOBS']"));
 assert.ok(background.includes('autoExportClosedSessions'));
 assert.ok(background.includes("status: 'complete'"));
 assert.ok(background.includes('temporaryDevelopmentAdapter'));
+assert.ok(background.includes('GET_RECENT_RAW_SESSIONS'));
+assert.ok(background.includes('RETRY_AUTO_EXPORT'));
+assert.ok(background.includes("listSessionsByStatus('active'"));
 
 assert.ok(popup.includes("new CompressionStream('gzip')"));
 assert.ok(popup.includes('GET_RAW_EXPORT_META'));
 assert.ok(popup.includes('GET_RAW_EXPORT_CHUNK'));
 assert.ok(popup.includes('.raw.jsonl.gz'));
+assert.ok(popup.includes('GET_RECENT_RAW_SESSIONS'));
+assert.ok(popup.includes('RETRY_AUTO_EXPORT'));
 
 assert.ok(offscreen.includes("new CompressionStream('gzip')"));
 assert.ok(offscreen.includes('AUTO_EXPORT_SESSION'));
 assert.ok(offscreen.includes('chrome.downloads.download'));
+assert.ok(offscreen.includes('chrome.downloads.onChanged'));
+assert.ok(offscreen.includes('waitForDownloadComplete'));
 assert.ok(offscreen.includes('training-collector/'));
 assert.ok(offscreen.includes('autoExport: true'));
 
-console.log('Training Collector inherited V0.6 storage reliability + temporary auto export contract OK under V0.7');
+console.log('Training Collector V0.7.1 storage reliability + temporary auto export recovery contract OK');
