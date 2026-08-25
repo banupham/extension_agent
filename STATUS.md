@@ -12,9 +12,9 @@ Trước khi sửa code: `STATUS.md` → `docs/PROJECT_JOURNAL.md` → source/te
 
 ---
 
-# CURRENT FOCUS — AGENT / Phase A2
+# CURRENT FOCUS — AGENT / Phase A3
 
-Training Collector V0.8 transport/capture gate đã đạt và chuyển sang stability/regression support.
+Collector V0.8 transport/capture gate đã đạt và chỉ còn stability/regression support.
 
 ```text
 continuous socket ingest      PASS
@@ -30,9 +30,7 @@ Không tiếp tục tối ưu Collector transport nếu không có regression m�
 
 ---
 
-# Agent Phase A0 — COMPLETE
-
-Execution boundary:
+# Agent execution boundary
 
 ```text
 TASK
@@ -57,6 +55,10 @@ Executor does NOT decide strategy.
 
 CDP is the standard in-page execution layer. `chrome.tabs.*` remains tab lifecycle control-plane.
 
+---
+
+# Phase A0 — COMPLETE
+
 Key files:
 
 ```text
@@ -73,7 +75,7 @@ Deterministic `control-center/ACTION_CONTRACT.json` remains separate.
 
 # Phase A1 — COMPLETE: Action Window Builder
 
-Main files:
+Current Action Window version: `0.1.4`.
 
 ```text
 training-collector/tools/build_action_windows.js
@@ -83,184 +85,187 @@ training-collector/tests/action_window_quality_contract.js
 docs/A1_NATIVE_DATASET_VALIDATION.md
 ```
 
-Current derived Action Window version: `0.1.4`.
-
-Window model:
+Families:
 
 ```text
-BEFORE
-→ physical/semantic lead-in
-→ SEMANTIC ACTION
-→ AFTER / mutation / route / state
-→ OUTCOME
-```
-
-Current families:
-
-```text
-click
-dismiss
-toggle
-focus
-selectOption
-submit
+click / dismiss / toggle
+focus / selectOption / submit
 drag
 hover / hoverAndObserve
-scrollVertical
-scrollHorizontal
-typeText
-pressKey
+scrollVertical / scrollHorizontal
+typeText / pressKey
 ```
 
-## A1 completed invariants
-
-### Real DOM descriptor alignment
-
-Native raw uses `targetDescriptor` / `resolvedTargetDescriptor`; A1 treats these as implementation truth and only keeps older aliases for compatibility.
-
-### Actionable-parent semantic label enrichment
+Important invariants:
 
 ```text
-resolvedTargetDescriptor
-→ descriptor index / semantic snapshot
-→ targetDescriptor
-→ raw descendant fallback
+raw remains unchanged
+resolvedTargetDescriptor is implementation truth
+missing semantic label is never invented
+hover background noise filtered only in derived dataset
+hover windows embed bounded pointer approach + leave
+safe physical facts preserved for A2
+Strategy eligibility != Behavior eligibility
+tsEpochMs is global reconstruction time
+sessionSeq is durability order only
 ```
 
-Derived output records `labelSource` and `labelEnriched`. Missing labels are never invented.
+Native A1 gate used five real V0.8 sessions covering Google/YouTube, Facebook login/post-login, TikTok/video/short-drama, horizontal carousel, hover, modal dismiss, multi-tab/multi-frame.
 
-### Hover noise filtering
+---
 
-Raw hover remains untouched. Derived Action Windows filter known generic background/container targets only when there is no stronger semantic/outcome evidence.
+# Phase A2 — COMPLETE: Behavior Feature Extractor
 
-### Hover physical trajectory — A1.4
-
-A1 now embeds bounded pointer facts around hover:
+Main files:
 
 ```text
-up to 1.2 s pointer approach before hover-enter
-→ dwell/outcome
-→ up to 0.5 s pointer leave trajectory after hover end
+training-collector/tools/extract_behavior_features.js
+training-collector/tools/analyze_behavior_features.js
+training-collector/tests/behavior_feature_contract.js
+training-collector/tests/behavior_feature_analysis_contract.js
+docs/A2_NATIVE_FEATURE_VALIDATION.md
 ```
 
-Native spot validation showed pointer approach evidence on roughly 85–89% of hover-enter events across the recent real sessions. A2 no longer needs a second raw reconstruction path just to recover hover approach.
+Behavior Feature version: `0.2.0`.
 
-### Physical facts preserved for A2
+Derived pointer features:
 
 ```text
-pointer: phase / x / y / movement / buttons / pressure / timing
-wheel: x / y / deltaX / deltaY / deltaMode / timing
-keyboard: phase / operation class / timing / modifiers
+sample count / duration
+start/end / displacement / path length
+straightness
+mean/median/P90/max speed
+mean absolute acceleration
+mean/P90 turn angle
+correction count >=45deg
+```
+
+Click adds:
+
+```text
+acquisition pause
+pointer down→up hold
+down→DOM-action / DOM-action→up timing
+endpoint distance to target center
+normalized endpoint distance by target diagonal
+```
+
+Hover adds:
+
+```text
+approach path
+leave path
+dwell
+preview-like outcome
+mutation count
+```
+
+Scroll adds:
+
+```text
+burst duration/event count
+signed + absolute delta
+median/P90 event delta
+inter-event gaps
+direction changes
+correction ratio
+```
+
+Keyboard adds:
+
+```text
+down/up timing
+operation classes
+key hold distribution
+down→down inter-key rhythm
+long pause count
+repeat count
 ```
 
 Printable human key content remains absent.
 
-### Training eligibility split
-
-Strategy and Behavior eligibility remain separate:
+Target context:
 
 ```text
-unlabeled click + strong pointer path
-→ Strategy: may reject
-→ Behavior: useful
+role/tag
+x/y/width/height
+center
+area/aspect ratio
 ```
 
-Real click label coverage remains site-dependent (roughly 40–67% in recent sessions); this is not a reason to fabricate semantics.
+A2 analyzer reports robust distributions, coverage and warnings across one or multiple sessions.
 
-### A1 native-data gate
-
-Five real V0.8 sessions were checked. Evidence includes Facebook login/post-login actions, horizontal carousel scroll, TikTok/video/short-drama flows, YouTube/Google, multi-tab/multi-frame, hover, dismiss/modal, and session lifecycle.
-
-Important data limitation carried forward: real drag demonstrations are still sparse. A2 supports drag extraction, but A3 must not fit a confident drag distribution from the current small sample.
-
-A1 hover trajectory CI:
+Native spot gate across five sessions:
 
 ```text
-commit: 5641b67a11c4b52dec9907ec320c3003ba1a1570
-run:    32878588181
+DOM clicks checked:              105
+click pointer lead-in:           104
+click down→up pair:               94 (~89.5%)
+hover-enter:                    1449
+vertical scroll bursts:          348
+horizontal scroll bursts:         27
+keyboard hold pairs:             227
+derived drag candidates:           1
+```
+
+Important observations:
+
+```text
+click hold median ~223 ms; long tail exists
+hover dwell median ~363 ms
+vertical/horizontal scroll have different burst distributions
+keyboard gap/hold distributions contain large idle/outlier tails
+drag is too sparse for confident fitting
+```
+
+These are dataset observations, NOT runtime constants.
+
+Latest full A2 CI:
+
+```text
+commit: 19a1865669f6ad3267e7e160f06560443648e4aa
+run:    32880751537
 result: SUCCESS
 ```
 
 ---
 
-# Phase A2 — IN PROGRESS: Behavior Feature Extractor
+# Phase A3 — IN PROGRESS: Empirical Behavior Baseline
 
-New files:
+Goal: create context-conditioned behavior sampling from A2 features without a complex learned model.
 
-```text
-training-collector/tools/extract_behavior_features.js
-training-collector/tests/behavior_feature_contract.js
-```
-
-Behavior Feature version: `0.1.0`.
-
-Current extractor derives:
+Initial families:
 
 ```text
-pointer click/hover/drag:
-  sample count
-  duration
-  displacement
-  path length
-  straightness
-  speed distribution
-  mean absolute acceleration
-  acquisition pause
-  hover dwell / leave path
-
-scroll:
-  burst duration
-  event count
-  total delta
-  absolute primary-axis delta
-  median/P90 delta
-  inter-event timing
-  direction changes
-
-keyboard:
-  event timing
-  key-down count
-  operation class counts
-  repeat count
-  no printable content
-
-target context:
-  role/tag
-  width/height/area/aspect ratio
+pointer-click
+pointer-hover
+scroll-vertical
+scroll-horizontal
+keyboard-text
+keyboard-key
 ```
 
-A2 is derived data only; Collector raw is unchanged.
+Drag remains supported only by conservative fallback until more real demonstrations exist.
 
-Latest A2-enabled CI:
+A3 rules:
 
 ```text
-commit: 0c450c8d1e7ff59d259eb65f26a3adff5e938df2
-run:    32878914977
-result: SUCCESS
+use robust empirical quantiles / bounded sampling
+condition by action family + target geometry/context where supported
+separate active typing gaps from idle pauses
+clip/reject extreme outliers before sampling
+never replay a human trajectory verbatim
+never use random jitter/delay everywhere
+natural behavior must not reduce action correctness
 ```
 
-## A2 next gate
-
-Run A2 on native A1 sessions and inspect distributions/missingness before adding more features. Especially measure:
-
-```text
-click approach path coverage
-hover approach/leave coverage
-pointer speed/acceleration stability
-scroll burst distributions by axis
-keyboard burst/gap distributions
-drag sample count and quality
-target geometry coverage
-outliers caused by tab/frame/context transitions
-```
-
-Do not add complex learned behavior models until these offline distributions are understood.
+Expected output is an Execution Behavior Contract that can later be compiled into an exact CDP plan.
 
 ---
 
 # “Tay chân” Agent — executor gap
 
-Current experimental runtime directly executes only:
+Experimental Agent Runtime still directly executes only:
 
 ```text
 openUrl
@@ -268,24 +273,24 @@ pressKey
 type
 ```
 
-The most important P0 gap remains the **Observation Target Registry**:
+P0 missing capability remains **Observation Target Registry**:
 
 ```text
 observationId + targetRef
 → tab/frame/document
-→ semantic descriptor / current rect
+→ semantic descriptor/current rect
 → resolvable CDP target
 ```
 
-The Brain must be able to emit `click e17`; stale refs must fail and trigger re-observation, never blind coordinate reuse.
+Brain should emit `click e17`; stale refs must fail and trigger re-observation, never blind coordinate reuse.
 
-P0 executor expansion after A2/A3 feature design stabilizes:
+P0 executor expansion after A3 baseline contract stabilizes:
 
 ```text
 target registry
 pointer move/hover/click/doubleClick
 vertical/horizontal wheel
-focus + text/key execution
+focus + text/key
 navigate/back/forward/reload
 ```
 
@@ -299,7 +304,7 @@ tab lifecycle
 hoverAndObserve/waitAndObserve
 ```
 
-Potential future action candidates, not yet core contract:
+Candidate future actions, not core yet:
 
 ```text
 contextClick
@@ -309,18 +314,15 @@ selectText
 uploadFile
 ```
 
-Media verbs compile to generic semantic click/drag; do not add site-specific YouTube/TikTok executor methods.
+Media verbs compile to generic semantic click/drag; no site-specific YouTube/TikTok executor methods.
 
 ---
 
 # Roadmap
 
 ```text
-A2 Behavior Feature Extractor
-→ native feature-distribution validation
-
 A3 Empirical Behavior Baseline
-→ context-conditioned distributions, no complex model yet
+→ robust/context-conditioned distributions
 
 P0 executor expansion
 → target registry + CDP input/navigation primitives
@@ -330,6 +332,8 @@ A4 One-action Agent Runtime Bridge
 
 A5 Goal Checker + Replan
 ```
+
+Do not train complex models before A3 offline sampling metrics are stable.
 
 ---
 
@@ -357,5 +361,6 @@ Human login demonstrations may contribute timing/semantic form behavior but neve
 6. Strategy and Behavior dataset eligibility are separate concepts.
 7. `tsEpochMs` is global dataset time; `sessionSeq` is durability order.
 8. Human demonstrations provide distributions/context, not literal replay.
-9. CI success != native Chrome Agent validation.
-10. Update STATUS/JOURNAL after architecture or dataset-contract milestones.
+9. Sparse families must remain explicitly sparse; do not manufacture confidence.
+10. CI success != native Chrome Agent validation.
+11. Update STATUS/JOURNAL after architecture or dataset-contract milestones.
