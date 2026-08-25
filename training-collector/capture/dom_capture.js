@@ -8,6 +8,7 @@
     const emitBatch = typeof options.emitBatch === 'function' ? options.emitBatch : () => {};
     const queue = [];
     const listeners = [];
+    const describedRefs = new Set();
     let flushTimer = null;
     let running = false;
 
@@ -20,6 +21,22 @@
     function semantic(el) {
       if (!(el instanceof Element) || !observer || observer.isSensitive(el)) return null;
       return observer.semanticElement(el);
+    }
+
+    function descriptor(s) {
+      return {
+        elementRef: s.ref,
+        tag: s.tag,
+        role: s.role,
+        label: s.label,
+        editable: s.editable,
+        selector: s.selector,
+        selectorCandidates: s.selectorCandidates,
+        rect: s.rect,
+        rendered: s.rendered,
+        inViewport: s.inViewport,
+        interactable: s.interactable
+      };
     }
 
     function push(event) {
@@ -45,20 +62,14 @@
     function base(type, event, el) {
       const s = semantic(el);
       if (!s) return null;
+      const firstDescription = !describedRefs.has(s.ref);
+      if (firstDescription) describedRefs.add(s.ref);
       return {
         type,
         tsEpochMs: epoch(event),
         tPageMs: Math.round(Number(event?.timeStamp || performance.now()) * 1000) / 1000,
-        elementRef: s.ref,
-        semanticTarget: {
-          elementRef: s.ref,
-          tag: s.tag,
-          role: s.role,
-          label: s.label,
-          editable: s.editable,
-          selector: s.selector,
-          rect: s.rect
-        }
+        targetRef: s.ref,
+        ...(firstDescription ? { targetDescriptor: descriptor(s) } : {})
       };
     }
 
@@ -73,14 +84,12 @@
       }, true);
 
       on(document, 'focusin', event => {
-        const el = event.target instanceof Element ? event.target : null;
-        const item = base('dom-focus', event, el);
+        const item = base('dom-focus', event, event.target instanceof Element ? event.target : null);
         if (item) push({ ...item, focused: true });
       }, true);
 
       on(document, 'focusout', event => {
-        const el = event.target instanceof Element ? event.target : null;
-        const item = base('dom-focus', event, el);
+        const item = base('dom-focus', event, event.target instanceof Element ? event.target : null);
         if (item) push({ ...item, focused: false });
       }, true);
 
@@ -103,8 +112,7 @@
       }, true);
 
       on(document, 'submit', event => {
-        const el = event.target instanceof Element ? event.target : null;
-        const item = base('dom-submit', event, el);
+        const item = base('dom-submit', event, event.target instanceof Element ? event.target : null);
         if (item) push(item);
       }, true);
 
