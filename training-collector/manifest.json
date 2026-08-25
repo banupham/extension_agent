@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Training Collector V0.4 DOM Core + Correlation",
-  "version": "0.4.0",
-  "description": "Privacy-first continuous raw physical plus semantic DOM interaction capture with physical/semantic correlation.",
-  "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage"],
+  "name": "Training Collector V0.4.1 Auto Export",
+  "version": "0.4.1",
+  "description": "Privacy-first continuous physical plus semantic DOM capture with automatic export of completed Chrome sessions.",
+  "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage", "downloads"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background.js"},
   "content_scripts": [
@@ -25,6 +25,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Training Collector V0.4"
+    "default_title": "Training Collector V0.4.1"
   }
 }
