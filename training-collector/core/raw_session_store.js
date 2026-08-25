@@ -3,13 +3,13 @@
 (function initRawSessionStore(root) {
   const NS = root.TrainingCollectorV03 = root.TrainingCollectorV03 || {};
 
-  const VERSION = '0.5.0';
+  const VERSION = '0.6.0';
   const SESSION_KEY_PREFIX = 'tcRawSessionV03:';
   const CHUNK_KEY_PREFIX = 'tcRawChunkV03:';
   const INDEX_KEY = 'tcRawSessionIndexV03';
-  const CURRENT_SESSION_KEY = 'tcCurrentBrowserSessionV03';
-  const CHUNK_SIZE = 500;
-  const MAX_SESSION_INDEX = 12;
+  const CURRENT_SESSION_KEY = 'tcCurrentBrowserSessionV06';
+  const CHUNK_SIZE = 1000;
+  const MAX_SESSION_INDEX = 24;
 
   function createSession(sessionId, startedAt) {
     return {
@@ -23,6 +23,7 @@
       eventCount: 0,
       chunkCount: 0,
       lastChunkSize: 0,
+      storageBackend: 'indexeddb',
       privacy: {
         rawTextValuesStored: false,
         passwordValuesStored: false,
@@ -42,7 +43,8 @@
         mutation: '120ms-structural-mutation-bursts',
         correlation: 'targetRef-at-capture-time-with-first-seen-descriptor',
         timeline: 'tsEpochMs-is-capture-time-sessionSeq-is-persistence-order',
-        export: 'debug-json-and-jsonl-adapters-temporary'
+        persistence: 'indexeddb-chunk-store-with-batch-ack',
+        export: 'chunked-jsonl-gzip-debug-adapter'
       }
     };
   }
