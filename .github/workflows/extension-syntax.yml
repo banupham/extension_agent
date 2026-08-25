@@ -30,10 +30,13 @@ jobs:
           node --check control-center/manager/strategy/index.js
           node --check control-center/manager/strategy/contracts.js
           node --check control-center/manager/strategy/baseline_strategy.js
+          node --check control-center/manager/strategy/agent_action_contract.js
+          node --check control-center/manager/strategy/execution_behavior_contract.js
           node --check control-center/server/server.js
           node --check control-center/script/checks/run_check.js
           node --check control-center/script/checks/device_behavior.js
           node --check control-center/script/checks/strategy_contract.js
+          node --check control-center/script/checks/agent_action_contract.js
           node --check recorder/background.js
           node --check recorder/content.js
           node --check recorder/popup.js
@@ -68,11 +71,13 @@ jobs:
           node --check training-collector/tests/v07_action_semantics_contract.js
           node --check training-collector/tests/v072_frame_stream_contract.js
           node --check training-collector/tests/v08_socket_mirror_contract.js
-      - name: Validate extension manifests
+      - name: Validate extension manifests and Agent action contract JSON
         run: |
-          node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/AGENT_ACTION_CONTRACT.json','utf8'))"
       - name: Run strategy contract smoke test
         run: node control-center/script/checks/strategy_contract.js
+      - name: Run Agent action + behavior contract smoke test
+        run: node control-center/script/checks/agent_action_contract.js
       - name: Run Collector architecture contract smoke test
         run: node training-collector/tests/architecture_contract.js
       - name: Run Collector raw session contract test
