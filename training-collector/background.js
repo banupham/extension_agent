@@ -3,9 +3,10 @@
 importScripts('core/episode_builder.js', 'core/raw_session_store.js', 'core/indexeddb_chunk_store.js');
 
 const EPISODE_STATE_KEY = 'trainingCollectorStateV03';
-const AUTO_EXPORT_ALARM = 'training-collector-v06-auto-export';
+const AUTO_EXPORT_ALARM = 'training-collector-v071-auto-export';
 const AUTO_EXPORT_SCOPE = 'TRAINING_COLLECTOR_OFFSCREEN_V06';
-const AUTO_EXPORT_MAX_ATTEMPTS = 3;
+const AUTO_EXPORT_MAX_ATTEMPTS = 5;
+const RECENT_SESSION_LIMIT = 20;
 const EpisodeBuilder = globalThis.TrainingCollectorV02.EpisodeBuilder;
 const RawStore = globalThis.TrainingCollectorV03.RawSessionStore;
 const ChunkStore = globalThis.TrainingCollectorV06.IndexedDbChunkStore.createChunkStore({ chunkSize: RawStore.CHUNK_SIZE });
@@ -31,16 +32,19 @@ async function requestSnapshot(tabId) {
 }
 
 async function closeDanglingSessions() {
-  const sessions = await ChunkStore.listSessions(RawStore.MAX_SESSION_INDEX);
+  const sessions = await ChunkStore.listSessionsByStatus('active', 500);
   const closed = [];
   for (const session of sessions) {
-    if (session.status !== 'active') continue;
     const integrity = await ChunkStore.verifySession(session, { tailCount: 3 }).catch(error => ({ ok: false, problems: [{ code: 'verification_error', error: String(error?.message || error) }] }));
     session.status = 'closed-inferred';
     session.endedAt = session.lastSeenAt || session.startedAt || nowIso();
     session.endReason = 'previous_browser_session_no_longer_active';
     session.integrity = { ...integrity, verifiedAt: nowIso(), scope: 'tail' };
     session.autoExport = session.autoExport || { status: 'pending', attempts: 0 };
+    if (!session.autoExport.status || ['verifying', 'preparing-download', 'downloading'].includes(session.autoExport.status)) {
+      session.autoExport.status = 'pending';
+      session.autoExport.recoveredAt = nowIso();
+    }
     await ChunkStore.putSession(session);
     closed.push(session);
   }
@@ -49,10 +53,7 @@ async function closeDanglingSessions() {
 
 async function hasOffscreenDocument() {
   if (typeof chrome.runtime.getContexts !== 'function') return false;
-  const contexts = await chrome.runtime.getContexts({
-    contextTypes: ['OFFSCREEN_DOCUMENT'],
-    documentUrls: [chrome.runtime.getURL('offscreen.html')]
-  });
+  const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [chrome.runtime.getURL('offscreen.html')] });
   return contexts.length > 0;
 }
 
@@ -71,7 +72,16 @@ async function ensureOffscreenDocument() {
   }
 }
 
-async function autoExportSession(sessionId) {
+function recoverableAutoExport(session, force = false) {
+  if (!session || session.status === 'active' || Number(session.eventCount || 0) <= 0) return false;
+  const state = session.autoExport?.status || 'pending';
+  if (state === 'complete' || state === 'skipped-empty') return false;
+  if (!force && Number(session.autoExport?.attempts || 0) >= AUTO_EXPORT_MAX_ATTEMPTS) return false;
+  return true;
+}
+
+async function autoExportSession(sessionId, options = {}) {
+  const force = !!options.force;
   if (autoExportInFlight.has(sessionId)) return { skipped: true, reason: 'already_in_flight' };
   autoExportInFlight.add(sessionId);
   let session = null;
@@ -83,11 +93,18 @@ async function autoExportSession(sessionId) {
       await ChunkStore.putSession(session);
       return { skipped: true, reason: 'empty_session' };
     }
-    if (session.autoExport?.status === 'complete') return { skipped: true, reason: 'already_exported' };
+    if (session.autoExport?.status === 'complete' && !force) return { skipped: true, reason: 'already_exported' };
     const attempts = Number(session.autoExport?.attempts || 0);
-    if (attempts >= AUTO_EXPORT_MAX_ATTEMPTS) return { skipped: true, reason: 'attempt_limit' };
+    if (!force && attempts >= AUTO_EXPORT_MAX_ATTEMPTS) return { skipped: true, reason: 'attempt_limit' };
 
-    session.autoExport = { ...(session.autoExport || {}), status: 'verifying', attempts: attempts + 1, attemptedAt: nowIso(), error: null };
+    session.autoExport = {
+      ...(session.autoExport || {}),
+      status: 'verifying',
+      attempts: attempts + 1,
+      attemptedAt: nowIso(),
+      error: null,
+      temporaryDevelopmentAdapter: true
+    };
     await ChunkStore.putSession(session);
 
     const integrity = await ChunkStore.verifySession(session, { full: true, tailCount: 3 });
@@ -107,6 +124,7 @@ async function autoExportSession(sessionId) {
       downloadId: result.downloadId ?? null,
       byteLength: Number(result.byteLength || 0),
       eventCount: Number(result.eventCount || session.eventCount || 0),
+      downloadState: result.downloadState || 'complete',
       error: null,
       temporaryDevelopmentAdapter: true
     };
@@ -135,17 +153,29 @@ async function autoExportSession(sessionId) {
 async function autoExportClosedSessions(extraSessions = []) {
   const candidates = new Map();
   for (const session of extraSessions || []) if (session?.sessionId) candidates.set(session.sessionId, session);
-  for (const session of await ChunkStore.listSessions(RawStore.MAX_SESSION_INDEX)) {
-    if (session?.sessionId && session.status !== 'active') candidates.set(session.sessionId, session);
+  for (const status of ['closed-inferred', 'closed']) {
+    for (const session of await ChunkStore.listSessionsByStatus(status, 500)) candidates.set(session.sessionId, session);
   }
   const results = [];
   for (const session of candidates.values()) {
-    const status = session.autoExport?.status;
-    if (status === 'complete' || status === 'skipped-empty') continue;
-    if (Number(session.autoExport?.attempts || 0) >= AUTO_EXPORT_MAX_ATTEMPTS) continue;
+    if (!recoverableAutoExport(session)) continue;
     results.push(await autoExportSession(session.sessionId));
   }
   return results;
+}
+
+async function recentSessions() {
+  return (await ChunkStore.listSessions(RECENT_SESSION_LIMIT)).map(session => ({
+    sessionId: session.sessionId,
+    schemaVersion: session.schemaVersion,
+    status: session.status,
+    startedAt: session.startedAt,
+    endedAt: session.endedAt,
+    eventCount: Number(session.eventCount || 0),
+    chunkCount: Number(session.chunkCount || 0),
+    integrity: session.integrity || null,
+    autoExport: session.autoExport || { status: session.status === 'active' ? 'not-applicable-active' : 'pending', attempts: 0 }
+  }));
 }
 
 async function createBrowserSession() {
@@ -194,32 +224,12 @@ async function appendRawBatchUnlocked(sender, batch) {
     const normalized = RawStore.normalizeEvent(raw);
     if (!normalized) continue;
     seq += 1;
-    normalizedEvents.push({
-      ...normalized,
-      captureSource,
-      sessionSeq: seq,
-      tabId: sender.tab?.id ?? null,
-      windowId: sender.tab?.windowId ?? null,
-      frameId: sender.frameId ?? 0
-    });
+    normalizedEvents.push({ ...normalized, captureSource, sessionSeq: seq, tabId: sender.tab?.id ?? null, windowId: sender.tab?.windowId ?? null, frameId: sender.frameId ?? 0 });
   }
   if (!normalizedEvents.length) return { ok: true, ack: true, batchId, sessionId: session.sessionId, appended: 0 };
-  const candidate = {
-    ...session,
-    eventCount: seq,
-    lastSeenAt: eventLastSeenIso(incoming),
-    integrity: { ok: true, verifiedAt: null, scope: 'pending-after-write' }
-  };
+  const candidate = { ...session, eventCount: seq, lastSeenAt: eventLastSeenIso(incoming), integrity: { ok: true, verifiedAt: null, scope: 'pending-after-write' } };
   const result = await ChunkStore.append(candidate, normalizedEvents, batchId);
-  return {
-    ok: true,
-    ack: true,
-    batchId,
-    sessionId: session.sessionId,
-    duplicate: !!result.duplicate,
-    appended: result.duplicate ? 0 : normalizedEvents.length,
-    eventCount: Number(result.session?.eventCount || session.eventCount || 0)
-  };
+  return { ok: true, ack: true, batchId, sessionId: session.sessionId, duplicate: !!result.duplicate, appended: result.duplicate ? 0 : normalizedEvents.length, eventCount: Number(result.session?.eventCount || session.eventCount || 0) };
 }
 function appendRawBatch(sender, batch) {
   const job = rawAppendChain.then(() => appendRawBatchUnlocked(sender, batch));
@@ -233,12 +243,11 @@ async function rawPreview(sessionId, limit = 100) {
   if (!session) return { session: null, events: [] };
   return { session, events: await ChunkStore.getTail(session, Math.max(1, Math.min(500, Number(limit || 100)))) };
 }
-
 async function exportMeta(sessionId) {
   await rawAppendChain;
   const session = await ChunkStore.getSession(sessionId);
   if (!session) throw new Error('raw_session_not_found');
-  return { exportVersion: '0.6.0', exportedAt: nowIso(), session };
+  return { exportVersion: session.schemaVersion || RawStore.VERSION, exportedAt: nowIso(), session };
 }
 async function exportChunk(sessionId, chunkIndex) {
   await rawAppendChain;
@@ -274,26 +283,30 @@ async function stopEpisode(outcome) {
   if (!state.active || !state.episode) return state;
   const tabId = state.episode.tabId;
   if (tabId) await chrome.tabs.sendMessage(tabId, { scope: 'TRAINING_COLLECTOR_V03', type: 'STOP_EPISODE_CAPTURE' }).catch(() => {});
-  state.active = false; state.episode.endedAt = nowIso(); state.episode.finalOutcome = outcome || { status: 'stopped' };
+  state.active = false;
+  state.episode.endedAt = nowIso();
+  state.episode.finalOutcome = outcome || { status: 'stopped' };
   return saveEpisodeState(state);
 }
 async function transitionStart(sender, transition) {
   const state = await loadEpisodeState();
   if (!state.active || !state.episode || sender.tab?.id !== state.episode.tabId) return { ok: true, ignored: true };
-  EpisodeBuilder.beginTransition(state.episode, transition || {}); EpisodeBuilder.capTransitions(state.episode); await saveEpisodeState(state); return { ok: true };
+  EpisodeBuilder.beginTransition(state.episode, transition || {});
+  EpisodeBuilder.capTransitions(state.episode);
+  await saveEpisodeState(state);
+  return { ok: true };
 }
 async function transitionEnd(sender, transition) {
   const state = await loadEpisodeState();
   if (!state.active || !state.episode || sender.tab?.id !== state.episode.tabId) return { ok: true, ignored: true };
-  const matched = EpisodeBuilder.finishTransition(state.episode, transition || {}); await saveEpisodeState(state); return { ok: true, matched };
+  const matched = EpisodeBuilder.finishTransition(state.episode, transition || {});
+  await saveEpisodeState(state);
+  return { ok: true, matched };
 }
 
 function bootstrap() {
-  ensureBrowserSession()
-    .then(() => autoExportClosedSessions())
-    .catch(() => scheduleAutoExportRetry(0.5));
+  ensureBrowserSession().then(() => autoExportClosedSessions()).catch(() => scheduleAutoExportRetry(0.5));
 }
-
 chrome.runtime.onStartup.addListener(bootstrap);
 chrome.runtime.onInstalled.addListener(bootstrap);
 chrome.alarms.onAlarm.addListener(alarm => {
@@ -306,7 +319,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.scope !== 'TRAINING_COLLECTOR_V03') return false;
   (async () => {
     if (message.type === 'HELLO') {
-      const session = await ensureBrowserSession(); const episodeState = await loadEpisodeState();
+      const session = await ensureBrowserSession();
+      const episodeState = await loadEpisodeState();
       return { ok: true, browserSessionId: session.sessionId, episodeActive: !!episodeState.active && episodeState.episode?.tabId === sender.tab?.id };
     }
     if (message.type === 'RAW_BATCH') return appendRawBatch(sender, message.batch || {});
@@ -315,6 +329,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'GET_RAW_EXPORT_META') { const current = await ensureBrowserSession(); return { ok: true, data: await exportMeta(message.sessionId || current.sessionId) }; }
     if (message.type === 'GET_RAW_EXPORT_CHUNK') { const current = await ensureBrowserSession(); return { ok: true, data: await exportChunk(message.sessionId || current.sessionId, message.chunkIndex) }; }
     if (message.type === 'VERIFY_RAW_SESSION') { const current = await ensureBrowserSession(); return { ok: true, data: await verifyRawSession(message.sessionId || current.sessionId, !!message.full) }; }
+    if (message.type === 'GET_RECENT_RAW_SESSIONS') return { ok: true, sessions: await recentSessions() };
+    if (message.type === 'RETRY_AUTO_EXPORT') return { ok: true, result: await autoExportSession(String(message.sessionId || ''), { force: true }) };
     if (message.type === 'GET_STATE') return { ok: true, state: await loadEpisodeState(), rawSession: await ensureBrowserSession() };
     if (message.type === 'START_EPISODE') return { ok: true, state: await startEpisode(message.task || {}) };
     if (message.type === 'STOP_EPISODE') return { ok: true, state: await stopEpisode(message.outcome) };
