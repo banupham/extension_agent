@@ -40,6 +40,7 @@ jobs:
           node --check control-center/manager/agent/one_action_bridge.js
           node --check control-center/manager/agent/broker_runtime_client.js
           node --check control-center/server/server.js
+          node --check control-center/script/agent_one_action.js
           node --check control-center/script/checks/run_check.js
           node --check control-center/script/checks/device_behavior.js
           node --check control-center/script/checks/strategy_contract.js
@@ -51,6 +52,7 @@ jobs:
           node --check control-center/script/checks/one_action_bridge.js
           node --check control-center/script/checks/agent_runtime_broker_client.js
           node --check control-center/script/checks/broker_runtime_client.js
+          node --check control-center/script/checks/agent_one_action_cli.js
           node --check recorder/background.js
           node --check recorder/content.js
           node --check recorder/popup.js
@@ -115,6 +117,8 @@ jobs:
         run: node control-center/script/checks/agent_runtime_broker_client.js
       - name: Run Manager broker runtime adapter contract test
         run: node control-center/script/checks/broker_runtime_client.js
+      - name: Run native one-action harness contract test
+        run: node control-center/script/checks/agent_one_action_cli.js
       - name: Run Phase A1 Action Window Builder contract test
         run: node training-collector/tests/action_window_contract.js
       - name: Run Phase A1 training eligibility contract test
