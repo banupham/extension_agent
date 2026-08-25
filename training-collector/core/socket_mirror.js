@@ -214,8 +214,12 @@
       socket = null;
     }
     function registerSession(session, options = {}) {
+      if (!session?.sessionId) return null;
+      const existed = sessions.has(session.sessionId);
       const row = rowFor(session, !!options.closeWhenSynced);
-      if (row && isOpen()) sendSessionOpen(row);
+      if (!row || !isOpen()) return row;
+      if (!existed) sendSessionOpen(row);
+      else if (options.closeWhenSynced && row.serverReady) syncRow(row);
       return row;
     }
     function publish(session, events) {
