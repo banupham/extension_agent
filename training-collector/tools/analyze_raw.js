@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 
 function percentile(sorted, p) {
   if (!sorted.length) return null;
@@ -10,11 +11,20 @@ function percentile(sorted, p) {
   return sorted[idx];
 }
 
+function increment(map, key, amount = 1) {
+  map[key] = (map[key] || 0) + amount;
+}
+
 function analyze(data) {
   const events = Array.isArray(data?.events) ? data.events : [];
   const typeCounts = {};
   const sourceCounts = {};
   const tabCounts = {};
+  const frameCounts = {};
+  const documentCounts = {};
+  const pageInstanceCounts = {};
+  const perFrameSources = {};
+  const latestHealthByPage = new Map();
   const pointer = [];
   const pointerGaps = [];
   let semanticCorrelated = 0;
@@ -25,6 +35,10 @@ function analyze(data) {
   let sensitiveRedFlags = 0;
   let seqProblems = 0;
   let timestampBackwards = 0;
+  let routeChanges = 0;
+  let semanticSnapshots = 0;
+  let frameContexts = 0;
+  let streamHealthEvents = 0;
   let lastSeq = null;
   let lastTs = null;
   let lastPointerTs = null;
@@ -46,11 +60,19 @@ function analyze(data) {
 
   for (const event of events) {
     const type = String(event?.type || 'unknown');
-    typeCounts[type] = (typeCounts[type] || 0) + 1;
+    increment(typeCounts, type);
     const source = String(event?.captureSource || 'unknown');
-    sourceCounts[source] = (sourceCounts[source] || 0) + 1;
+    increment(sourceCounts, source);
     const tab = String(event?.tabId ?? 'null');
-    tabCounts[tab] = (tabCounts[tab] || 0) + 1;
+    increment(tabCounts, tab);
+    const frame = `${tab}:${String(event?.frameId ?? 'null')}`;
+    increment(frameCounts, frame);
+    const documentId = String(event?.documentId || 'null');
+    increment(documentCounts, documentId);
+    const pageId = String(event?.pageInstanceId || 'null');
+    increment(pageInstanceCounts, pageId);
+    if (!perFrameSources[frame]) perFrameSources[frame] = {};
+    increment(perFrameSources[frame], source);
 
     const seq = Number(event?.sessionSeq);
     if (Number.isFinite(seq)) {
@@ -79,7 +101,38 @@ function analyze(data) {
       mutationEvents += 1;
       mutationRecords += type === 'dom-mutation-burst' ? Number(event.recordCount || 0) : 1;
     }
+    if (type === 'route-change') routeChanges += 1;
+    if (type === 'semantic-snapshot') semanticSnapshots += 1;
+    if (type === 'frame-context') frameContexts += 1;
+    if (type === 'collector-stream-start' || type === 'collector-stream-health' || type === 'collector-stream-stop') {
+      streamHealthEvents += 1;
+      if (event.pageInstanceId) latestHealthByPage.set(event.pageInstanceId, event);
+    }
     scanForbidden(event);
+  }
+
+  const streamPages = [];
+  let physicalOnlySuspicions = 0;
+  let missingInitialSemantic = 0;
+  for (const [pageInstanceId, event] of latestHealthByPage.entries()) {
+    const counts = event.sourceEventCounts || {};
+    const physical = Number(counts.physical || 0);
+    const semantic = Number(counts.semantic || 0);
+    const semanticSide = semantic + Number(counts.dom || 0) + Number(counts.hover || 0) + Number(counts.mutation || 0) + Number(counts.navigation || 0);
+    const missingSemantic = semantic === 0;
+    const suspicious = physical >= 50 && semanticSide === 0;
+    if (missingSemantic) missingInitialSemantic += 1;
+    if (suspicious) physicalOnlySuspicions += 1;
+    streamPages.push({
+      pageInstanceId,
+      frameId: event.frameId ?? null,
+      documentId: event.documentId || null,
+      isTopFrame: event.isTopFrame ?? null,
+      modules: event.modules || null,
+      sourceEventCounts: counts,
+      missingInitialSemantic: missingSemantic,
+      physicalOnlySuspicion: suspicious
+    });
   }
 
   const cleanPointerGaps = pointerGaps.filter(x => Number.isFinite(x) && x >= 0).sort((a, b) => a - b);
@@ -94,6 +147,22 @@ function analyze(data) {
     typeCounts,
     sourceCounts,
     tabCounts,
+    frames: {
+      uniqueTabFrames: Object.keys(frameCounts).length,
+      uniqueDocuments: Object.keys(documentCounts).filter(x => x !== 'null').length,
+      uniquePageInstances: Object.keys(pageInstanceCounts).filter(x => x !== 'null').length,
+      eventCounts: frameCounts,
+      sourceCountsByFrame: perFrameSources,
+      frameContextEvents: frameContexts
+    },
+    navigation: { routeChanges, semanticSnapshots },
+    streamHealth: {
+      events: streamHealthEvents,
+      pagesObserved: streamPages.length,
+      missingInitialSemantic,
+      physicalOnlySuspicions,
+      pages: streamPages
+    },
     pointer: {
       samples: pointer.length,
       gapMs: {
@@ -133,18 +202,23 @@ function parseInput(text) {
   };
 }
 
+function readInputFile(file) {
+  const full = path.resolve(file);
+  const buffer = fs.readFileSync(full);
+  const decoded = /\.gz$/i.test(full) ? zlib.gunzipSync(buffer) : buffer;
+  return parseInput(decoded.toString('utf8'));
+}
+
 function main(argv) {
   const file = argv[2];
   if (!file) {
-    console.error('Usage: node training-collector/tools/analyze_raw.js <export.raw.json|export.raw.jsonl>');
+    console.error('Usage: node training-collector/tools/analyze_raw.js <export.raw.json|export.raw.jsonl|export.raw.jsonl.gz>');
     process.exitCode = 2;
     return;
   }
-  const full = path.resolve(file);
-  const data = parseInput(fs.readFileSync(full, 'utf8'));
-  const report = analyze(data);
+  const report = analyze(readInputFile(file));
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }
 
 if (require.main === module) main(process.argv);
-module.exports = { analyze, parseInput };
+module.exports = { analyze, parseInput, readInputFile };
