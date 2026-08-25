@@ -26,16 +26,24 @@ function targetPoint(target, behavior, rng = Math.random) {
 }
 
 function pointerPath(start, end, behavior, rng = Math.random) {
-  const durationMs = clamp(finite(behavior?.pointer?.constraints?.approachDurationMs, 180), 32, 1800);
-  const straightness = clamp(finite(behavior?.pointer?.constraints?.straightness, 0.9), 0.35, 1);
+  const constraints = behavior?.pointer?.constraints || {};
+  const durationMs = clamp(finite(constraints.approachDurationMs, 180), 32, 1800);
+  const straightness = clamp(finite(constraints.straightness, 0.9), 0.35, 1);
+  const meanAbsTurnDeg = clamp(finite(constraints.meanAbsTurnDeg, 10), 0, 90);
+  const correctionCount = clamp(Math.round(finite(constraints.correctionCount45Deg, 0)), 0, 2);
   const dx = end.x - start.x, dy = end.y - start.y;
   const distance = Math.max(1, Math.hypot(dx, dy));
-  const nx = -dy / distance, ny = dx / distance;
-  const bendScale = (1 - straightness) * distance * 0.45;
+  const ux = dx / distance, uy = dy / distance;
+  const nx = -uy, ny = ux;
+  const turnFactor = meanAbsTurnDeg / 90;
+  const bendScale = (1 - straightness) * distance * (0.35 + turnFactor * 0.25);
   const bendSign = finite(rng(), 0.5) < 0.5 ? -1 : 1;
   const c1 = { x: start.x + dx * 0.32 + nx * bendScale * bendSign, y: start.y + dy * 0.32 + ny * bendScale * bendSign };
   const c2 = { x: start.x + dx * 0.72 - nx * bendScale * bendSign * 0.35, y: start.y + dy * 0.72 - ny * bendScale * bendSign * 0.35 };
-  const steps = clamp(Math.round(durationMs / 16), 2, 90);
+
+  const correctionBudgetMs = correctionCount ? Math.min(durationMs * 0.24, correctionCount * 36) : 0;
+  const curveDurationMs = Math.max(24, durationMs - correctionBudgetMs);
+  const steps = clamp(Math.round(curveDurationMs / 16), 2, 90);
   const out = [];
   for (let i = 1; i <= steps; i += 1) {
     const t = i / steps;
@@ -43,10 +51,36 @@ function pointerPath(start, end, behavior, rng = Math.random) {
     const x = u ** 3 * start.x + 3 * u ** 2 * t * c1.x + 3 * u * t ** 2 * c2.x + t ** 3 * end.x;
     const y = u ** 3 * start.y + 3 * u ** 2 * t * c1.y + 3 * u * t ** 2 * c2.y + t ** 3 * end.y;
     out.push({
-      delayMs: i === 1 ? 0 : durationMs / steps,
+      delayMs: i === 1 ? 0 : curveDurationMs / steps,
       method: 'Input.dispatchMouseEvent',
       params: { type: 'mouseMoved', x, y, button: 'none' }
     });
+  }
+
+  if (correctionCount > 0) {
+    const baseAmplitude = clamp(distance * 0.018 + meanAbsTurnDeg * 0.035, 2, 12);
+    for (let i = 0; i < correctionCount; i += 1) {
+      const sign = (i % 2 === 0 ? 1 : -1) * bendSign;
+      const amplitude = baseAmplitude * (1 - i * 0.25);
+      const backoff = Math.min(5, distance * 0.012) * (i + 1);
+      out.push({
+        delayMs: correctionBudgetMs / Math.max(1, correctionCount * 2),
+        method: 'Input.dispatchMouseEvent',
+        params: {
+          type: 'mouseMoved',
+          x: end.x - ux * backoff + nx * amplitude * sign,
+          y: end.y - uy * backoff + ny * amplitude * sign,
+          button: 'none'
+        },
+        behaviorPhase: 'micro-correction'
+      });
+      out.push({
+        delayMs: correctionBudgetMs / Math.max(1, correctionCount * 2),
+        method: 'Input.dispatchMouseEvent',
+        params: { type: 'mouseMoved', x: end.x, y: end.y, button: 'none' },
+        behaviorPhase: 'target-settle'
+      });
+    }
   }
   return out;
 }
@@ -84,14 +118,17 @@ function scrollPlan(mappedAction, behavior, context = {}) {
   const durationMs = clamp(finite(constraints.durationMs, 220), 16, 3000);
   const eventCount = clamp(Math.round(finite(constraints.eventCount, 4)), 1, 60);
   const absoluteDelta = Math.max(1, finite(constraints.absoluteDelta, 480));
+  const correctionRatio = clamp(finite(constraints.correctionRatio, 0), 0, 0.35);
   const direction = finite(mappedAction.args?.direction, 1) < 0 ? -1 : 1;
   const point = context.pointerStart || context.viewportCenter || { x: 400, y: 300 };
   const weights = Array.from({ length: eventCount }, (_, i) => Math.sin(Math.PI * (i + 1) / (eventCount + 1)));
   const sum = weights.reduce((a, b) => a + b, 0) || 1;
-  return weights.map(weight => {
-    const delta = direction * absoluteDelta * weight / sum;
+  const correctionEvents = correctionRatio > 0.04 && eventCount >= 3 ? 1 : 0;
+  const mainDelta = absoluteDelta / (1 + correctionRatio * 2);
+  const steps = weights.map(weight => {
+    const delta = direction * mainDelta * weight / sum;
     return {
-      delayMs: durationMs / eventCount,
+      delayMs: durationMs / (eventCount + correctionEvents),
       method: 'Input.dispatchMouseEvent',
       params: {
         type: 'mouseWheel', x: Number(point.x), y: Number(point.y),
@@ -100,6 +137,20 @@ function scrollPlan(mappedAction, behavior, context = {}) {
       }
     };
   });
+  if (correctionEvents) {
+    const delta = -direction * mainDelta * correctionRatio;
+    steps.push({
+      delayMs: durationMs / (eventCount + correctionEvents),
+      method: 'Input.dispatchMouseEvent',
+      params: {
+        type: 'mouseWheel', x: Number(point.x), y: Number(point.y),
+        deltaX: horizontal ? delta : 0,
+        deltaY: horizontal ? 0 : delta
+      },
+      behaviorPhase: 'scroll-correction'
+    });
+  }
+  return steps;
 }
 
 function keyboardPlan(mappedAction, behavior) {
