@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Training Collector V0.7 Action Semantics",
-  "version": "0.7.0",
-  "description": "Privacy-first continuous physical and semantic DOM capture with hover lifecycle facts, resolved action targets, page/source sequencing, IndexedDB persistence and temporary automatic JSONL.gz development export.",
+  "name": "Training Collector V0.7.1 Action Semantics + Export Recovery",
+  "version": "0.7.1",
+  "description": "Privacy-first continuous physical and semantic DOM capture with hover lifecycle facts, resolved action targets, page/source sequencing, IndexedDB persistence and hardened temporary automatic JSONL.gz recovery/export diagnostics.",
   "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage", "downloads", "offscreen", "alarms"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background.js"},
@@ -29,6 +29,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Training Collector V0.7"
+    "default_title": "Training Collector V0.7.1"
   }
 }
