@@ -43,29 +43,48 @@ const runtime = {
 };
 
 (async () => {
+  let brainSawObservationId = null;
   const result = await runOneAction({
     runtime,
     baseline,
-    agentAction: { type: 'click', targetRef: 'e17' },
+    decide: async observation => {
+      brainSawObservationId = observation.observationId;
+      const target = observation.interactiveElements.find(x => x.label === 'Like');
+      return { status: 'act', reason: 'semantic target found', action: { type: 'click', targetRef: target.ref } };
+    },
     rng: () => 0.5
   });
-  assert.strictEqual(result.bridgeVersion, '0.1.0');
+  assert.strictEqual(result.bridgeVersion, '0.2.0');
+  assert.strictEqual(brainSawObservationId, 'obs-1');
   assert.strictEqual(result.beforeObservationId, 'obs-1');
   assert.strictEqual(result.afterObservationId, 'obs-2');
+  assert.strictEqual(result.decision.status, 'act');
   assert.strictEqual(result.mappedAction.type, 'click');
   assert.strictEqual(result.behavior.metadata.behaviorFamily, 'pointer-click');
   assert.strictEqual(result.cdpPlan.actionType, 'click');
   assert.ok(result.cdpPlan.steps.length > 2);
   assert.strictEqual(executed.observationId, 'obs-1');
   assert.strictEqual(result.invariant.oneActionOnly, true);
+  assert.strictEqual(result.invariant.actionExecuted, true);
   assert.strictEqual(result.invariant.reObservedAfterExecution, true);
   assert.strictEqual(result.invariant.selectorUsedByStrategy, false);
   assert.strictEqual(observeCount, 2);
 
+  const beforeTerminalCount = observeCount;
+  const terminal = await runOneAction({
+    runtime,
+    baseline,
+    decide: async () => ({ status: 'blocked', reasonCode: 'human_verification_required' })
+  });
+  assert.strictEqual(terminal.decision.status, 'blocked');
+  assert.strictEqual(terminal.execution, null);
+  assert.strictEqual(terminal.invariant.actionExecuted, false);
+  assert.strictEqual(observeCount, beforeTerminalCount + 1);
+
   await assert.rejects(() => runOneAction({
     runtime,
     baseline,
-    agentAction: { type: 'click', targetRef: 'missing' },
+    decide: async () => ({ status: 'act', action: { type: 'click', targetRef: 'missing' } }),
     rng: () => 0.5
   }), /target_ref_not_in_observation/);
 
