@@ -14,9 +14,11 @@ const actionWindows = {
       before: [
         { type: 'pointer', tsEpochMs: 1000, phase: 'move', x: 0, y: 0 },
         { type: 'pointer', tsEpochMs: 1100, phase: 'move', x: 60, y: 80 },
-        { type: 'pointer', tsEpochMs: 1150, phase: 'move', x: 100, y: 100 }
+        { type: 'pointer', tsEpochMs: 1150, phase: 'move', x: 100, y: 100 },
+        { type: 'pointer', tsEpochMs: 1180, phase: 'down', pointerId: 1, x: 110, y: 110 }
       ],
-      action: { type: 'dom-click', tsEpochMs: 1200, button: 0 }, after: [], outcome: {}
+      action: { type: 'dom-click', tsEpochMs: 1200, button: 0 },
+      after: [{ type: 'pointer', tsEpochMs: 1250, phase: 'up', pointerId: 1, x: 110, y: 110 }], outcome: {}
     },
     {
       actionWindowVersion: '0.1.4', actionId: 'hover-1', actionType: 'hoverAndObserve', anchorTsEpochMs: 2000,
@@ -55,31 +57,40 @@ const actionWindows = {
       action: { events: [
         { type: 'keyboard', tsEpochMs: 5000, phase: 'down', operation: 'printable', keyClass: 'printable', code: null },
         { type: 'keyboard', tsEpochMs: 5070, phase: 'up', operation: 'printable', keyClass: 'printable', code: null },
-        { type: 'keyboard', tsEpochMs: 5150, phase: 'down', operation: 'backspace', keyClass: 'Backspace', code: 'Backspace' }
+        { type: 'keyboard', tsEpochMs: 5150, phase: 'down', operation: 'backspace', keyClass: 'Backspace', code: 'Backspace' },
+        { type: 'keyboard', tsEpochMs: 5220, phase: 'up', operation: 'backspace', keyClass: 'Backspace', code: 'Backspace' }
       ] }, before: [], after: [], outcome: {}
     }
   ]
 };
 
 const result = Features.extractBehaviorFeatures(actionWindows);
-assert.strictEqual(result.behaviorFeatureVersion, '0.1.0');
+assert.strictEqual(result.behaviorFeatureVersion, '0.2.0');
 assert.strictEqual(result.sourceActionWindowVersion, '0.1.4');
 assert.strictEqual(result.privacy.printableHumanKeyContentStored, false);
 assert.strictEqual(result.rows.length, 5);
 
 const click = result.rows.find(x => x.actionType === 'click');
 assert(click.features.approach.available);
-assert.strictEqual(click.features.approach.sampleCount, 3);
+assert.strictEqual(click.features.approach.sampleCount, 4);
 assert.ok(click.features.approach.pathLengthPx > 0);
 assert.ok(click.features.approach.meanSpeedPxS > 0);
+assert.ok(click.features.approach.correctionCount45Deg >= 0);
 assert.strictEqual(click.features.target.widthPx, 80);
-assert.strictEqual(click.features.acquisitionPauseMs, 50);
+assert.strictEqual(click.features.target.center.x, 140);
+assert.strictEqual(click.features.acquisitionPauseMs, 20);
+assert.strictEqual(click.features.press.available, true);
+assert.strictEqual(click.features.press.holdMs, 70);
+assert.strictEqual(click.features.press.downToActionMs, 20);
+assert.strictEqual(click.features.press.actionToUpMs, 50);
+assert.strictEqual(click.features.acquisition.available, true);
 
 const hover = result.rows.find(x => x.actionType === 'hoverAndObserve');
 assert(hover.features.approach.available);
 assert(hover.features.leave.available);
 assert.strictEqual(hover.features.dwellMs, 800);
 assert.strictEqual(hover.features.previewLikeStateChange, true);
+assert.strictEqual(hover.features.acquisition.available, true);
 
 const drag = result.rows.find(x => x.actionType === 'drag');
 assert(drag.features.path.available);
@@ -91,10 +102,15 @@ assert.strictEqual(scroll.features.eventCount, 3);
 assert.strictEqual(scroll.features.totalDeltaX, 240);
 assert.strictEqual(scroll.features.directionChanges, 1);
 assert.strictEqual(scroll.features.timing.durationMs, 140);
+assert.ok(scroll.features.correctionRatio > 0);
 
 const typing = result.rows.find(x => x.actionType === 'typeText');
 assert.strictEqual(typing.features.operationCounts.printable, 2);
-assert.strictEqual(typing.features.operationCounts.backspace, 1);
+assert.strictEqual(typing.features.operationCounts.backspace, 2);
+assert.strictEqual(typing.features.rhythm.downCount, 2);
+assert.strictEqual(typing.features.rhythm.holdCount, 2);
+assert.strictEqual(typing.features.rhythm.holdMeanMs, 70);
+assert.strictEqual(typing.features.rhythm.interKeyMeanMs, 150);
 assert.strictEqual(typing.features.printableContentStored, false);
 assert.ok(!JSON.stringify(typing).includes('"text"'));
 assert.ok(!JSON.stringify(typing).includes('"key"'));
