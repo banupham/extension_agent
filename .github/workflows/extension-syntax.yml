@@ -39,6 +39,7 @@ jobs:
           node --check recorder/popup.js
           node --check training-collector/core/privacy.js
           node --check training-collector/core/action_normalizer.js
+          node --check training-collector/core/state_diff.js
           node --check training-collector/core/episode_builder.js
           node --check training-collector/core/raw_session_store.js
           node --check training-collector/observer/element_registry.js
@@ -63,5 +64,5 @@ jobs:
         run: node training-collector/tests/architecture_contract.js
       - name: Run Collector raw session contract test
         run: node training-collector/tests/raw_session_contract.js
-      - name: Run Collector V0.4 raw analysis contract test
+      - name: Run Collector V0.5 raw analysis contract test
         run: node training-collector/tests/raw_analysis_contract.js
