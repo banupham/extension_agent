@@ -3,7 +3,7 @@
 importScripts('core/episode_builder.js', 'core/raw_session_store.js', 'core/indexeddb_chunk_store.js');
 
 const EPISODE_STATE_KEY = 'trainingCollectorStateV03';
-const AUTO_EXPORT_ALARM = 'training-collector-v071-auto-export';
+const AUTO_EXPORT_ALARM = 'training-collector-v072-auto-export';
 const AUTO_EXPORT_SCOPE = 'TRAINING_COLLECTOR_OFFSCREEN_V06';
 const AUTO_EXPORT_MAX_ATTEMPTS = 5;
 const RECENT_SESSION_LIMIT = 20;
@@ -194,7 +194,16 @@ async function ensureBrowserSessionUnlocked() {
   const sessionId = current[RawStore.CURRENT_SESSION_KEY];
   if (sessionId) {
     const session = await ChunkStore.getSession(sessionId);
-    if (session?.status === 'active') return session;
+    if (session?.status === 'active' && session.schemaVersion === RawStore.VERSION) return session;
+    if (session?.status === 'active' && session.schemaVersion !== RawStore.VERSION) {
+      session.status = 'closed';
+      session.endedAt = nowIso();
+      session.endReason = `schema_upgrade_to_${RawStore.VERSION}`;
+      session.autoExport = session.autoExport || { status: 'pending', attempts: 0 };
+      await ChunkStore.putSession(session);
+      await chrome.storage.session.remove(RawStore.CURRENT_SESSION_KEY);
+      autoExportClosedSessions([session]).catch(() => scheduleAutoExportRetry(0.5));
+    }
   }
   return createBrowserSession();
 }
@@ -224,7 +233,16 @@ async function appendRawBatchUnlocked(sender, batch) {
     const normalized = RawStore.normalizeEvent(raw);
     if (!normalized) continue;
     seq += 1;
-    normalizedEvents.push({ ...normalized, captureSource, sessionSeq: seq, tabId: sender.tab?.id ?? null, windowId: sender.tab?.windowId ?? null, frameId: sender.frameId ?? 0 });
+    normalizedEvents.push({
+      ...normalized,
+      captureSource,
+      sessionSeq: seq,
+      tabId: sender.tab?.id ?? null,
+      windowId: sender.tab?.windowId ?? null,
+      frameId: sender.frameId ?? 0,
+      documentId: sender.documentId || null,
+      documentLifecycle: sender.documentLifecycle || null
+    });
   }
   if (!normalizedEvents.length) return { ok: true, ack: true, batchId, sessionId: session.sessionId, appended: 0 };
   const candidate = { ...session, eventCount: seq, lastSeenAt: eventLastSeenIso(incoming), integrity: { ok: true, verifiedAt: null, scope: 'pending-after-write' } };
@@ -290,7 +308,7 @@ async function stopEpisode(outcome) {
 }
 async function transitionStart(sender, transition) {
   const state = await loadEpisodeState();
-  if (!state.active || !state.episode || sender.tab?.id !== state.episode.tabId) return { ok: true, ignored: true };
+  if (sender.frameId !== 0 || !state.active || !state.episode || sender.tab?.id !== state.episode.tabId) return { ok: true, ignored: true };
   EpisodeBuilder.beginTransition(state.episode, transition || {});
   EpisodeBuilder.capTransitions(state.episode);
   await saveEpisodeState(state);
@@ -298,7 +316,7 @@ async function transitionStart(sender, transition) {
 }
 async function transitionEnd(sender, transition) {
   const state = await loadEpisodeState();
-  if (!state.active || !state.episode || sender.tab?.id !== state.episode.tabId) return { ok: true, ignored: true };
+  if (sender.frameId !== 0 || !state.active || !state.episode || sender.tab?.id !== state.episode.tabId) return { ok: true, ignored: true };
   const matched = EpisodeBuilder.finishTransition(state.episode, transition || {});
   await saveEpisodeState(state);
   return { ok: true, matched };
@@ -321,7 +339,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'HELLO') {
       const session = await ensureBrowserSession();
       const episodeState = await loadEpisodeState();
-      return { ok: true, browserSessionId: session.sessionId, episodeActive: !!episodeState.active && episodeState.episode?.tabId === sender.tab?.id };
+      return {
+        ok: true,
+        browserSessionId: session.sessionId,
+        episodeActive: sender.frameId === 0 && !!episodeState.active && episodeState.episode?.tabId === sender.tab?.id,
+        frameId: sender.frameId ?? 0,
+        documentId: sender.documentId || null
+      };
     }
     if (message.type === 'RAW_BATCH') return appendRawBatch(sender, message.batch || {});
     if (message.type === 'GET_RAW_STATUS') return { ok: true, session: await ensureBrowserSession() };
