@@ -1,37 +1,43 @@
 'use strict';
 
-if (!window.__TRAINING_COLLECTOR_V02__) {
-  window.__TRAINING_COLLECTOR_V02__ = true;
-  const NS = window.TrainingCollectorV02 = window.TrainingCollectorV02 || {};
-  NS.pageInstanceId = `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+if (!window.__TRAINING_COLLECTOR_V03__) {
+  window.__TRAINING_COLLECTOR_V03__ = true;
 
-  const Observer = NS.SemanticObserver;
-  const Normalizer = NS.ActionNormalizer;
+  const NS2 = window.TrainingCollectorV02 = window.TrainingCollectorV02 || {};
+  const NS3 = window.TrainingCollectorV03 = window.TrainingCollectorV03 || {};
+  NS2.pageInstanceId = `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const Observer = NS2.SemanticObserver;
+  const Normalizer = NS2.ActionNormalizer;
+  const PhysicalCapture = NS3.PhysicalCapture;
+
   const S = {
-    active: false,
-    startedAt: 0,
+    rawActive: false,
+    episodeActive: false,
+    startedAt: performance.now(),
     transitionSeq: 0,
     lastKeyByRef: new Map(),
     beforeInputByRef: new Map(),
-    scrollTimer: null
+    scrollTimer: null,
+    browserSessionId: null,
+    physical: null
   };
 
   function relTime() {
-    return S.startedAt ? Math.max(0, performance.now() - S.startedAt) : 0;
+    return Math.max(0, performance.now() - S.startedAt);
   }
 
-  function send(type, payload) {
-    if (!S.active) return;
-    chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V02', type, ...payload }).catch(() => {});
+  function send(type, payload = {}) {
+    return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...payload }).catch(() => null);
   }
 
   function transitionId() {
     S.transitionSeq += 1;
-    return `${NS.pageInstanceId}-t${S.transitionSeq}`;
+    return `${NS2.pageInstanceId}-t${S.transitionSeq}`;
   }
 
   function begin(rawAction, stateBefore) {
-    if (!S.active) return null;
+    if (!S.episodeActive) return null;
     const id = transitionId();
     const action = Normalizer.normalize({ ...rawAction, t: Math.round(relTime()) });
     send('TRANSITION_START', {
@@ -48,7 +54,7 @@ if (!window.__TRAINING_COLLECTOR_V02__) {
   function finish(id, delay = 0) {
     if (!id) return;
     setTimeout(() => {
-      if (!S.active) return;
+      if (!S.episodeActive) return;
       send('TRANSITION_END', {
         transition: {
           transitionId: id,
@@ -63,6 +69,34 @@ if (!window.__TRAINING_COLLECTOR_V02__) {
   function targetElement(event) {
     if (!(event.target instanceof Element)) return null;
     return event.target.closest('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]') || event.target;
+  }
+
+  function startRawCapture() {
+    if (S.rawActive || !PhysicalCapture?.createPhysicalCapture) return;
+    S.rawActive = true;
+    S.physical = PhysicalCapture.createPhysicalCapture({
+      isSensitiveTarget(target) {
+        return target instanceof Element && Observer.isSensitive(target);
+      },
+      getContext() {
+        return {
+          pageInstanceId: NS2.pageInstanceId,
+          documentOrigin: location.origin,
+          documentPathname: location.pathname
+        };
+      },
+      emitBatch(events) {
+        if (!events?.length) return;
+        send('RAW_BATCH', {
+          batch: {
+            browserSessionId: S.browserSessionId,
+            pageInstanceId: NS2.pageInstanceId,
+            events
+          }
+        });
+      }
+    });
+    S.physical.start();
   }
 
   addEventListener('click', event => {
@@ -99,13 +133,14 @@ if (!window.__TRAINING_COLLECTOR_V02__) {
       targetRef: ref,
       operation,
       keyClass: event.key.length === 1 ? 'printable' : event.key,
-      code: event.code,
+      code: event.key.length === 1 ? null : event.code,
       repeat: event.repeat
     });
     finish(id, 20);
   }, true);
 
   addEventListener('beforeinput', event => {
+    if (!S.episodeActive) return;
     const el = event.target instanceof Element ? event.target : null;
     if (!el || Observer.isSensitive(el)) return;
     const semantic = Observer.semanticElement(el);
@@ -118,6 +153,7 @@ if (!window.__TRAINING_COLLECTOR_V02__) {
   }, true);
 
   addEventListener('input', event => {
+    if (!S.episodeActive) return;
     const el = event.target instanceof Element ? event.target : null;
     if (!el || Observer.isSensitive(el)) return;
     const semantic = Observer.semanticElement(el);
@@ -148,7 +184,7 @@ if (!window.__TRAINING_COLLECTOR_V02__) {
   }, true);
 
   addEventListener('scroll', () => {
-    if (!S.active) return;
+    if (!S.episodeActive) return;
     clearTimeout(S.scrollTimer);
     S.scrollTimer = setTimeout(() => {
       const before = Observer.snapshot();
@@ -158,15 +194,14 @@ if (!window.__TRAINING_COLLECTOR_V02__) {
   }, { capture: true, passive: true });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.scope !== 'TRAINING_COLLECTOR_V02') return false;
-    if (message.type === 'START') {
-      S.active = true;
-      S.startedAt = performance.now();
-      sendResponse({ ok: true, pageInstanceId: NS.pageInstanceId });
+    if (message?.scope !== 'TRAINING_COLLECTOR_V03') return false;
+    if (message.type === 'START_EPISODE_CAPTURE') {
+      S.episodeActive = true;
+      sendResponse({ ok: true, pageInstanceId: NS2.pageInstanceId });
       return false;
     }
-    if (message.type === 'STOP') {
-      S.active = false;
+    if (message.type === 'STOP_EPISODE_CAPTURE') {
+      S.episodeActive = false;
       sendResponse({ ok: true });
       return false;
     }
@@ -175,5 +210,18 @@ if (!window.__TRAINING_COLLECTOR_V02__) {
       return false;
     }
     return false;
+  });
+
+  send('HELLO', {
+    page: {
+      pageInstanceId: NS2.pageInstanceId,
+      origin: location.origin,
+      pathname: location.pathname
+    }
+  }).then(response => {
+    if (!response?.ok) return;
+    S.browserSessionId = response.browserSessionId || null;
+    S.episodeActive = !!response.episodeActive;
+    startRawCapture();
   });
 }
