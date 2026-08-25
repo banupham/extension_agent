@@ -1,142 +1,168 @@
-'use strict';
+' strict';
 
-if (!window.__TRAINING_COLLECTOR_V01__) {
-  window.__TRAINING_COLLECTOR_V01__ = true;
+if (!window.__TRAINING_COLLECTOR_V02__) {
+  window.__TRAINING_COLLECTOR_V02__ = true;
+  const NS = window.TrainingCollectorV02 = window.TrainingCollectorV02 || {};
+  NS.pageInstanceId = `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  const S = { active: false, startedAt: 0 };
+  const Observer = NS.SemanticObserver;
+  const Normalizer = NS.ActionNormalizer;
+  const S = {
+    active: false,
+    startedAt: 0,
+    transitionSeq: 0,
+    lastKeyByRef: new Map(),
+    beforeInputByRef: new Map(),
+    scrollTimer: null
+  };
 
   function relTime() {
     return S.startedAt ? Math.max(0, performance.now() - S.startedAt) : 0;
   }
 
-  function isSensitive(el) {
-    if (!(el instanceof Element)) return false;
-    const type = String(el.getAttribute('type') || '').toLowerCase();
-    const text = [el.getAttribute('name'), el.getAttribute('id'), el.getAttribute('autocomplete'), el.getAttribute('aria-label'), el.getAttribute('placeholder')]
-      .filter(Boolean).join(' ').toLowerCase();
-    if (type === 'password') return true;
-    return /(password|passwd|passcode|otp|one[- ]?time|token|secret|cvv|cvc|card.?number|credit.?card)/i.test(text);
-  }
-
-  function visible(el) {
-    const r = el.getBoundingClientRect();
-    const cs = getComputedStyle(el);
-    return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
-  }
-
-  function cssSelector(el) {
-    if (!(el instanceof Element)) return null;
-    if (el.id) return `#${CSS.escape(el.id)}`;
-    const testId = el.getAttribute('data-testid');
-    if (testId) return `[data-testid="${CSS.escape(testId)}"]`;
-    const name = el.getAttribute('name');
-    if (name) return `${el.tagName.toLowerCase()}[name="${CSS.escape(name)}"]`;
-    return el.tagName.toLowerCase();
-  }
-
-  function safeLabel(el) {
-    if (isSensitive(el)) return '[REDACTED]';
-    const aria = el.getAttribute('aria-label');
-    if (aria) return aria.slice(0, 160);
-    const placeholder = el.getAttribute('placeholder');
-    if (placeholder) return placeholder.slice(0, 160);
-    if (el.labels?.length) return Array.from(el.labels).map(x => (x.innerText || '').trim()).filter(Boolean).join(' ').slice(0, 160);
-    return '';
-  }
-
-  function semanticElement(el, index) {
-    const rect = el.getBoundingClientRect();
-    const role = el.getAttribute('role') || null;
-    const tag = el.tagName.toLowerCase();
-    const editable = !!(el.isContentEditable || ['input', 'textarea', 'select'].includes(tag));
-    return {
-      ref: `e${index}`,
-      tag,
-      role,
-      label: safeLabel(el),
-      editable,
-      enabled: !el.matches(':disabled'),
-      visible: visible(el),
-      sensitive: isSensitive(el),
-      selector: cssSelector(el),
-      rect: {
-        x: Math.round(rect.x),
-        y: Math.round(rect.y),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height)
-      }
-    };
-  }
-
-  function snapshot() {
-    const candidates = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]'))
-      .filter(visible)
-      .slice(0, 500);
-    return {
-      schemaVersion: '0.1.0',
-      url: location.href,
-      title: document.title,
-      viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
-      scroll: { x: scrollX, y: scrollY },
-      focusedElement: document.activeElement && document.activeElement !== document.body ? cssSelector(document.activeElement) : null,
-      interactiveElements: candidates.map(semanticElement)
-    };
-  }
-
-  function emit(type, payload) {
+  function send(type, payload) {
     if (!S.active) return;
-    chrome.runtime.sendMessage({
-      scope: 'TRAINING_COLLECTOR_V01',
-      type: 'CONTENT_EVENT',
-      event: { type, t: Math.round(relTime()), ...payload }
-    }).catch(() => {});
+    chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V02', type, ...payload }).catch(() => {});
+  }
+
+  function transitionId() {
+    S.transitionSeq += 1;
+    return `${NS.pageInstanceId}-t${S.transitionSeq}`;
+  }
+
+  function begin(rawAction, stateBefore) {
+    if (!S.active) return null;
+    const id = transitionId();
+    const action = Normalizer.normalize({ ...rawAction, t: Math.round(relTime()) });
+    send('TRANSITION_START', {
+      transition: {
+        transitionId: id,
+        startedAtMs: Math.round(relTime()),
+        stateBefore: stateBefore || Observer.snapshot(),
+        action
+      }
+    });
+    return id;
+  }
+
+  function finish(id, delay = 0) {
+    if (!id) return;
+    setTimeout(() => {
+      if (!S.active) return;
+      send('TRANSITION_END', {
+        transition: {
+          transitionId: id,
+          endedAtMs: Math.round(relTime()),
+          stateAfter: Observer.snapshot(),
+          actionSucceeded: true
+        }
+      });
+    }, delay);
+  }
+
+  function targetElement(event) {
+    if (!(event.target instanceof Element)) return null;
+    return event.target.closest('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]') || event.target;
   }
 
   addEventListener('click', event => {
-    const el = event.target instanceof Element ? event.target.closest('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]') || event.target : null;
-    if (!el) return;
-    emit('click', {
-      target: semanticElement(el, 0),
-      point: { x: Math.round(event.clientX), y: Math.round(event.clientY), button: event.button }
+    const el = targetElement(event);
+    if (!el || Observer.isSensitive(el)) return;
+    const semantic = Observer.semanticElement(el);
+    if (!semantic) return;
+    const id = begin({
+      kind: 'click',
+      targetRef: semantic.ref,
+      button: event.button,
+      point: { x: Math.round(event.clientX), y: Math.round(event.clientY) }
     });
+    finish(id, 40);
   }, true);
 
   addEventListener('keydown', event => {
     const el = event.target instanceof Element ? event.target : null;
-    const editable = !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
-    if (!editable) {
-      emit('key', { keyClass: event.key.length === 1 ? 'printable' : event.key, code: event.code, repeat: event.repeat });
-      return;
-    }
-    emit('text-key', {
-      target: semanticElement(el, 0),
-      operation: event.key === 'Backspace' ? 'backspace' : event.key === 'Delete' ? 'delete' : event.key === 'Enter' ? 'enter' : event.key === 'Tab' ? 'tab' : event.key.length === 1 ? 'type-char' : 'other-key',
+    if (el && Observer.isSensitive(el)) return;
+    const semantic = el ? Observer.semanticElement(el) : null;
+    const editable = !!semantic?.editable;
+    const operation = event.key === 'Backspace' ? 'backspace'
+      : event.key === 'Delete' ? 'delete'
+      : event.key === 'Enter' ? 'enter'
+      : event.key === 'Tab' ? 'tab'
+      : event.key.length === 1 ? 'type-char'
+      : 'other-key';
+
+    const kind = editable ? 'text-key' : 'key';
+    const ref = semantic?.ref || null;
+    if (ref) S.lastKeyByRef.set(ref, performance.now());
+    const id = begin({
+      kind,
+      targetRef: ref,
+      operation,
+      keyClass: event.key.length === 1 ? 'printable' : event.key,
       code: event.code,
-      repeat: event.repeat,
-      sensitive: isSensitive(el)
+      repeat: event.repeat
+    });
+    finish(id, 20);
+  }, true);
+
+  addEventListener('beforeinput', event => {
+    const el = event.target instanceof Element ? event.target : null;
+    if (!el || Observer.isSensitive(el)) return;
+    const semantic = Observer.semanticElement(el);
+    if (!semantic) return;
+    S.beforeInputByRef.set(semantic.ref, {
+      at: performance.now(),
+      stateBefore: Observer.snapshot(),
+      inputType: event.inputType || null
     });
   }, true);
 
   addEventListener('input', event => {
     const el = event.target instanceof Element ? event.target : null;
-    if (!el) return;
+    if (!el || Observer.isSensitive(el)) return;
+    const semantic = Observer.semanticElement(el);
+    if (!semantic) return;
+
+    const recentKeyAt = S.lastKeyByRef.get(semantic.ref) || 0;
+    if (performance.now() - recentKeyAt < 120) return;
+
+    const pending = S.beforeInputByRef.get(semantic.ref);
+    S.beforeInputByRef.delete(semantic.ref);
     const valueLength = typeof el.value === 'string' ? el.value.length : (el.textContent || '').length;
-    emit('text-change', {
-      target: semanticElement(el, 0),
-      inputType: event.inputType || null,
-      length: valueLength,
-      sensitive: isSensitive(el)
-    });
+    const id = begin({
+      kind: 'text-change',
+      targetRef: semantic.ref,
+      inputType: event.inputType || pending?.inputType || null,
+      length: valueLength
+    }, pending?.stateBefore || Observer.snapshot());
+    finish(id, 20);
   }, true);
 
-  addEventListener('scroll', () => emit('scroll', { scroll: { x: Math.round(scrollX), y: Math.round(scrollY) } }), { capture: true, passive: true });
+  addEventListener('focusin', event => {
+    const el = event.target instanceof Element ? event.target : null;
+    if (!el || Observer.isSensitive(el)) return;
+    const semantic = Observer.semanticElement(el);
+    if (!semantic) return;
+    const id = begin({ kind: 'focus', targetRef: semantic.ref, focused: true });
+    finish(id, 0);
+  }, true);
+
+  addEventListener('scroll', () => {
+    if (!S.active) return;
+    clearTimeout(S.scrollTimer);
+    S.scrollTimer = setTimeout(() => {
+      const before = Observer.snapshot();
+      const id = begin({ kind: 'scroll', scroll: { x: Math.round(scrollX), y: Math.round(scrollY) } }, before);
+      finish(id, 0);
+    }, 180);
+  }, { capture: true, passive: true });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.scope !== 'TRAINING_COLLECTOR_V01') return false;
+    if (message?.scope !== 'TRAINING_COLLECTOR_V02') return false;
     if (message.type === 'START') {
       S.active = true;
       S.startedAt = performance.now();
-      sendResponse({ ok: true });
+      sendResponse({ ok: true, pageInstanceId: NS.pageInstanceId });
       return false;
     }
     if (message.type === 'STOP') {
@@ -145,7 +171,7 @@ if (!window.__TRAINING_COLLECTOR_V01__) {
       return false;
     }
     if (message.type === 'SNAPSHOT') {
-      sendResponse({ ok: true, observation: snapshot() });
+      sendResponse({ ok: true, observation: Observer.snapshot() });
       return false;
     }
     return false;
