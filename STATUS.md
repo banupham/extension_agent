@@ -12,7 +12,7 @@ Trước khi sửa code: `STATUS.md` → `docs/PROJECT_JOURNAL.md` → source/te
 
 ---
 
-# CURRENT FOCUS — AGENT / Phase A1
+# CURRENT FOCUS — AGENT / Phase A2
 
 Training Collector V0.8 transport/capture gate đã đạt và chuyển sang stability/regression support.
 
@@ -71,7 +71,7 @@ Deterministic `control-center/ACTION_CONTRACT.json` remains separate.
 
 ---
 
-# Phase A1 — IN PROGRESS: Action Window Builder
+# Phase A1 — COMPLETE: Action Window Builder
 
 Main files:
 
@@ -80,9 +80,10 @@ training-collector/tools/build_action_windows.js
 training-collector/tools/analyze_action_windows.js
 training-collector/tests/action_window_contract.js
 training-collector/tests/action_window_quality_contract.js
+docs/A1_NATIVE_DATASET_VALIDATION.md
 ```
 
-Current derived Action Window version: `0.1.3`.
+Current derived Action Window version: `0.1.4`.
 
 Window model:
 
@@ -111,22 +112,13 @@ typeText
 pressKey
 ```
 
-## A1 fixes already implemented
+## A1 completed invariants
 
 ### Real DOM descriptor alignment
 
-Collector raw uses:
+Native raw uses `targetDescriptor` / `resolvedTargetDescriptor`; A1 treats these as implementation truth and only keeps older aliases for compatibility.
 
-```text
-targetDescriptor
-resolvedTargetDescriptor
-```
-
-A1 reads these implementation-truth fields. Synthetic aliases are compatibility fallback only.
-
-### Actionable-parent label enrichment
-
-Derived target label resolution:
+### Actionable-parent semantic label enrichment
 
 ```text
 resolvedTargetDescriptor
@@ -135,19 +127,25 @@ resolvedTargetDescriptor
 → raw descendant fallback
 ```
 
-Derived output records `labelSource` and `labelEnriched`. Raw facts are never mutated.
-
-Native-session spot analysis showed that this recovers useful labels, but click label coverage still varies by site/session (roughly 40–67% in the recent Facebook/TikTok test sessions). Missing labels are not fabricated.
+Derived output records `labelSource` and `labelEnriched`. Missing labels are never invented.
 
 ### Hover noise filtering
 
-Raw keeps all hover facts. A1 filters only derived training windows for known generic background/container targets such as `html`, `body`, `ytd-app`, `ytd-browse` when there is no stronger semantic evidence.
+Raw hover remains untouched. Derived Action Windows filter known generic background/container targets only when there is no stronger semantic/outcome evidence.
 
-Preview-like hover is retained when UI mutation/outcome supports semantic intent.
+### Hover physical trajectory — A1.4
 
-### Preserve behavior facts for A2
+A1 now embeds bounded pointer facts around hover:
 
-Action Windows retain safe physical facts required for behavior learning:
+```text
+up to 1.2 s pointer approach before hover-enter
+→ dwell/outcome
+→ up to 0.5 s pointer leave trajectory after hover end
+```
+
+Native spot validation showed pointer approach evidence on roughly 85–89% of hover-enter events across the recent real sessions. A2 no longer needs a second raw reconstruction path just to recover hover approach.
+
+### Physical facts preserved for A2
 
 ```text
 pointer: phase / x / y / movement / buttons / pressure / timing
@@ -157,124 +155,112 @@ keyboard: phase / operation class / timing / modifiers
 
 Printable human key content remains absent.
 
-### Drag derivation
+### Training eligibility split
 
-A1 derives `drag` from:
-
-```text
-pointer down
-→ continuous move samples
-→ pointer up
-```
-
-with duration, distance, start/end and full safe point series. This supports slider/seek/volume demonstrations.
-
-### High-confidence semantic promotion
-
-Only high-confidence cases are promoted:
+Strategy and Behavior eligibility remain separate:
 
 ```text
-role=switch/checkbox or dom-change.checked → toggle
-known close/dismiss labels                  → dismiss
-dom-change.selectedIndex                    → selectOption
-dom-submit                                  → submit
-dom-focus focused=true                      → focus
-```
-
-Ambiguous actions such as Facebook Like remain generic `click` unless state evidence is strong enough.
-
----
-
-# A1 training eligibility — NEW INVARIANT
-
-One Action Window can be useful for Behavior learning even when it is not clean enough for Strategy learning.
-
-Do not use one global good/bad filter.
-
-```text
-Strategy dataset
-→ requires semantic action/target evidence appropriate to the action
-→ never invent missing label/role semantics
-
-Behavior dataset
-→ values physical trajectory/timing/burst evidence
-→ semantic label may be optional
-```
-
-`analyze_action_windows.js` now reports:
-
-```text
-trainingEligibility.strategy
-  eligible / rejected / rejectedReasons
-
-trainingEligibility.behavior
-  full / partial / none / reasons
-```
-
-Examples:
-
-```text
-unlabeled click + strong pointer lead-in
-→ Strategy: reject
+unlabeled click + strong pointer path
+→ Strategy: may reject
 → Behavior: useful
-
-scrollVertical with wheel burst
-→ Strategy action semantics self-contained
-→ Behavior: full
-
-keyboard typeText on editable target
-→ Strategy: eligible when editable target can be identified
-→ Behavior: full timing evidence, no printable content
 ```
 
-CI contract: `training-collector/tests/action_window_quality_contract.js`.
+Real click label coverage remains site-dependent (roughly 40–67% in recent sessions); this is not a reason to fabricate semantics.
 
-Latest eligibility-enabled CI at commit `c6184b45f7105cd34ea49a4b2763c0d5f0841b00`, run `32877556243`: SUCCESS.
+### A1 native-data gate
+
+Five real V0.8 sessions were checked. Evidence includes Facebook login/post-login actions, horizontal carousel scroll, TikTok/video/short-drama flows, YouTube/Google, multi-tab/multi-frame, hover, dismiss/modal, and session lifecycle.
+
+Important data limitation carried forward: real drag demonstrations are still sparse. A2 supports drag extraction, but A3 must not fit a confident drag distribution from the current small sample.
+
+A1 hover trajectory CI:
+
+```text
+commit: 5641b67a11c4b52dec9907ec320c3003ba1a1570
+run:    32878588181
+result: SUCCESS
+```
 
 ---
 
-# A1 remaining gate before A2
+# Phase A2 — IN PROGRESS: Behavior Feature Extractor
 
-Hover windows currently preserve dwell/outcome semantics but do not yet embed the pointer approach trajectory in `before`.
-
-Therefore current analyzer intentionally reports hover behavior as partial when only dwell is available:
+New files:
 
 ```text
-hover dwell/outcome present
-+ pointer approach absent from Action Window
-→ behaviorEvidenceLevel = partial
+training-collector/tools/extract_behavior_features.js
+training-collector/tests/behavior_feature_contract.js
 ```
 
-Before A2, either enrich hover windows with bounded pointer lead-in/leave facts or make A2 explicitly join raw events by action anchor. Preferred direction: enrich A1 windows so A2 does not need a second reconstruction path.
+Behavior Feature version: `0.1.0`.
 
-Also continue real-session quality checks for:
+Current extractor derives:
 
 ```text
-action family counts
-resolved/enriched label coverage
-hover kept vs filtered
-click pointer lead-in
-real drag windows
-horizontal vs vertical scroll bursts
-keyboard privacy
-outcome mutation/route coverage
-frame-aware identity
-Strategy vs Behavior eligibility rates
+pointer click/hover/drag:
+  sample count
+  duration
+  displacement
+  path length
+  straightness
+  speed distribution
+  mean absolute acceleration
+  acquisition pause
+  hover dwell / leave path
+
+scroll:
+  burst duration
+  event count
+  total delta
+  absolute primary-axis delta
+  median/P90 delta
+  inter-event timing
+  direction changes
+
+keyboard:
+  event timing
+  key-down count
+  operation class counts
+  repeat count
+  no printable content
+
+target context:
+  role/tag
+  width/height/area/aspect ratio
 ```
 
-Ordering invariant:
+A2 is derived data only; Collector raw is unchanged.
+
+Latest A2-enabled CI:
 
 ```text
-tsEpochMs = primary global reconstruction time
-pageSeq/sourceSeq = local ordering
-sessionSeq = persistence/integrity only
+commit: 0c450c8d1e7ff59d259eb65f26a3adff5e938df2
+run:    32878914977
+result: SUCCESS
 ```
+
+## A2 next gate
+
+Run A2 on native A1 sessions and inspect distributions/missingness before adding more features. Especially measure:
+
+```text
+click approach path coverage
+hover approach/leave coverage
+pointer speed/acceleration stability
+scroll burst distributions by axis
+keyboard burst/gap distributions
+drag sample count and quality
+target geometry coverage
+outliers caused by tab/frame/context transitions
+```
+
+Do not add complex learned behavior models until these offline distributions are understood.
 
 ---
 
 # “Tay chân” Agent — executor gap
 
-Current experimental runtime still directly executes only:
+Current experimental runtime directly executes only:
 
 ```text
 openUrl
@@ -282,7 +268,7 @@ pressKey
 type
 ```
 
-The most important P0 gap is the **Observation Target Registry**:
+The most important P0 gap remains the **Observation Target Registry**:
 
 ```text
 observationId + targetRef
@@ -293,7 +279,7 @@ observationId + targetRef
 
 The Brain must be able to emit `click e17`; stale refs must fail and trigger re-observation, never blind coordinate reuse.
 
-P0 executor expansion after A1/A2/A3 design:
+P0 executor expansion after A2/A3 feature design stabilizes:
 
 ```text
 target registry
@@ -325,18 +311,16 @@ uploadFile
 
 Media verbs compile to generic semantic click/drag; do not add site-specific YouTube/TikTok executor methods.
 
-See `docs/AGENT_EXECUTOR_GAP_MAP.md`.
-
 ---
 
-# After A1
+# Roadmap
 
 ```text
 A2 Behavior Feature Extractor
-→ pointer/keyboard/scroll/drag/hover features
+→ native feature-distribution validation
 
 A3 Empirical Behavior Baseline
-→ context-conditioned distributions
+→ context-conditioned distributions, no complex model yet
 
 P0 executor expansion
 → target registry + CDP input/navigation primitives
@@ -346,8 +330,6 @@ A4 One-action Agent Runtime Bridge
 
 A5 Goal Checker + Replan
 ```
-
-Do not train complex models before A2/A3 offline metrics are stable.
 
 ---
 
