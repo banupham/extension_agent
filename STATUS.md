@@ -2,372 +2,272 @@
 
 ## Source of truth
 
-GitHub `banupham/extension_agent` là source chính của dự án.
+GitHub `banupham/extension_agent` là source chính.
 
 ```bat
 git pull
 ```
 
-Trước khi sửa code: đọc `STATUS.md` → `docs/PROJECT_JOURNAL.md` → fetch source hiện tại trên `main`.
+Trước khi sửa code: `STATUS.md` → `docs/PROJECT_JOURNAL.md` → source/tests hiện tại trên `main`.
 
 ---
 
-# Training Collector — CURRENT: V0.8 Socket Mirror
+# CURRENT FOCUS — AGENT
 
-Manifest:
-
-```text
-Training Collector V0.8 Socket Mirror
-```
-
-Runtime version: `0.8.0`  
-Raw schema: `0.7.2`
-
-Collector vẫn observe-only.
-
-## Vì sao chuyển sang V0.8
-
-Native Chrome testing cho thấy automatic Downloads/offscreen adapter không đủ đáng tin làm đường lấy raw data dài phiên. Một closed session trong popup báo:
+Training Collector V0.8 transport/capture gate đã đạt qua native Chrome sessions và server JSONL:
 
 ```text
-autoExport=failed
-error=Cannot read properties of undefined (reading 'download')
+continuous socket ingest      PASS
+late-server IndexedDB replay  PASS
+no missing/duplicate seq      PASS
+multi-frame/multi-tab         PASS
+SPA routes                    PASS
+login form observation        PASS
+credential privacy boundary   PASS
+browser close >45s finalize   PASS
+session-end                   PASS
 ```
 
-Quyết định mới:
-
-```text
-IndexedDB = browser-side safety buffer
-localhost WebSocket = continuous development ingest/archive
-manual JSONL.gz = fallback/debug only
-```
-
-Không đầu tư thêm vào offscreen auto-download. `offscreen.html/js`, `downloads`, `offscreen`, `alarms` đã rời active runtime.
-
-## V0.8 socket transport
-
-Extension background mở:
-
-```text
-ws://127.0.0.1:8765/training-collector
-```
-
-Flow:
-
-```text
-content raw batch
-→ background normalize + sessionSeq
-→ IndexedDB append / receipt dedupe
-→ socket mirror only AFTER persist
-→ local socket server
-→ append-only <sessionId>.raw.jsonl
-```
-
-Protocol:
-
-```text
-client-hello
-session-open
-session-ack { resumeFromSeq }
-event-batch
-batch-ack { lastSeq }
-resync { resumeFromSeq } when gap detected
-session-close
-heartbeat
-```
-
-Critical invariant:
-
-```text
-persist first
-→ mirror second
-```
-
-Socket failure cannot replace/delete IndexedDB raw data.
-
-## Replay / recovery
-
-When server is unavailable or restarts:
-
-```text
-WebSocket reconnect
-→ session-open
-→ server scans existing JSONL/meta
-→ returns resumeFromSeq
-→ extension reads missing events chunk-by-chunk from IndexedDB
-→ sends only sessionSeq > resumeFromSeq
-```
-
-Server ignores duplicate sequences and rejects gaps with `resync`.
-
-Closed/dangling sessions from a previous Chrome process are also registered with socket mirror on next startup, replayed if incomplete, then `session-close` is sent.
-
-This means old IndexedDB sessions can still be recovered even if no browser download was produced.
-
-## Local socket server
-
-Files:
-
-```text
-training-collector/socket-server/server.js
-training-collector/socket-server/package.json
-training-collector/socket-server/START_SOCKET_SERVER.bat
-training-collector/socket-server/README.md
-training-collector/socket-server/integration_test.js
-```
-
-Start:
-
-```bat
-cd training-collector\socket-server
-START_SOCKET_SERVER.bat
-```
-
-Default output:
-
-```text
-training-collector/socket-data/
-  <sessionId>.raw.jsonl
-  <sessionId>.meta.json
-```
-
-Server binds `127.0.0.1` by default. `socket-data/` and `node_modules/` are Git-ignored.
-
-## V0.8 server integration CI
-
-CI now performs a real localhost WebSocket integration test, not only source-text contracts:
-
-```text
-spawn socket server
-→ session-open / session-ack
-→ append seq 1..2
-→ resend duplicate 1..2; appended=0
-→ send gap seq 4; expect resync from 2
-→ append seq 3
-→ session-close
-→ assert JSONL/meta contain exactly seq 1..3
-→ restart server on same archive
-→ session-open returns resumeFromSeq=3
-→ append seq 4
-→ close and verify durable lastSeq=4
-```
-
-A startup test race was found because the client could connect a few milliseconds before the listening socket finished binding. Integration client now retries briefly during server startup.
-
-Latest integration-enabled CI:
-
-```text
-commit: 278df8c53c22923c0a4e1a2c74367589d3be0386
-run:    32863776613
-result: SUCCESS
-```
-
-This validates server protocol/durability behavior in Node CI. It still does not replace native Chrome MV3 WebSocket validation.
-
-## Browser session end semantics
-
-While connected, extension sends heartbeat every 20 s. Server treats WebSocket disconnect as provisional and waits 45 s by default.
-
-```text
-disconnect
-→ 45 s grace
-→ no reconnect
-→ append session-end
-→ meta.status = closed
-```
-
-If same session reconnects before/after a provisional close, server can resume using `resumeFromSeq` rather than starting a second raw archive.
-
-## Existing V0.7.2 capture retained
-
-Raw schema remains `0.7.2` because capture semantics did not change.
-
-Still retained:
-
-```text
-all-frame raw capture
-frameId/documentId/documentLifecycle/pageInstanceId identity
-SPA route-change + semantic re-anchor
-collector-stream-health diagnostics
-rawTargetRef + resolvedTargetRef
-dom-hover-enter/dwell/leave
-pageSeq/sourceSeq/sessionSeq
-mutation bursts
-IndexedDB checksum/receipt reliability
-```
-
-Optional Task Episodes remain top-frame only.
-
-## Manual export
-
-Popup still contains:
-
-```text
-Manual Export Fallback
-```
-
-It reads IndexedDB chunks and creates `.raw.jsonl.gz` in the popup context. It is no longer part of the normal collection workflow.
-
-## Popup diagnostics
-
-V0.8 popup shows:
-
-```text
-Socket state
-endpoint
-connectedAt
-last server message
-last socket error
-per-session ackedThrough / eventCount / sentThrough / queued
-current IndexedDB session
-recent sessions
-```
-
-Normal healthy state should approach:
-
-```text
-State: connected
-ack ~= eventCount
-queued = 0
-```
-
-## Frame / SPA / action semantics
-
-V0.7.2 frame-aware capture and diagnostics remain active:
-
-```text
-all_frames = true
-match_about_blank = true
-match_origin_as_fallback = true
-```
-
-Action semantics remain:
-
-```text
-raw target + resolved target
-hover lifecycle raw facts
-hover-preview derived offline
-```
-
-Analyzer reads JSON/JSONL/JSONL.gz and reports frame/source/stream-health diagnostics.
-
-## Privacy boundary
-
-Socket transport does not expand capture scope. Server receives only the already-filtered raw telemetry emitted by Collector.
-
-Still prohibited:
-
-- password values;
-- cookies;
-- Authorization/access/refresh tokens;
-- local/session storage secret contents;
-- clipboard contents;
-- payment secrets;
-- raw sensitive input values;
-- printable keyboard actual character/code;
-- URL query values/hash contents.
+Collector từ đây chuyển sang stability/regression support. Không tiếp tục tối ưu transport nếu không có regression mới.
 
 ---
 
-# Agent boundary — CAPTCHA / human verification
+# Agent Phase A0 — COMPLETE: Semantic Action + Behavior + CDP Map
 
-Policy unchanged:
-
-```text
-observe CAPTCHA / human verification
-→ Decision.status = blocked
-→ reasonCode = human_verification_required
-→ do not solve/bypass automatically
-→ do not retry blindly
-→ re-evaluate goal
-→ use another legitimate route/page only if it serves the task
-→ otherwise stop blocked
-```
-
-Details: `docs/AGENT_BOUNDARY_CONDITIONS.md`.
-
----
-
-# Browser validation next
-
-V0.8 now needs native Chrome + local-server validation.
-
-```text
-1 git pull
-2 start training-collector\socket-server\START_SOCKET_SERVER.bat
-3 chrome://extensions → Reload
-4 confirm Training Collector V0.8 Socket Mirror
-5 refresh/reopen tabs
-6 browse normally for 1–3 minutes
-7 popup → Socket Mirror should become connected
-8 inspect training-collector\socket-data\<sessionId>.raw.jsonl while Chrome is running
-9 verify file grows without Manual Export
-10 close all Chrome
-11 wait ~45 s
-12 inspect <sessionId>.meta.json status=closed and session-end record
-13 reopen Chrome
-14 verify new browser session starts and any prior IndexedDB backlog is replayed
-```
-
-Especially useful validation:
-
-```text
-server starts AFTER Chrome/session already has events
-→ expected: resume/replay from IndexedDB
-
-server stops temporarily then restarts
-→ expected: reconnect + resume without duplicate/gap
-
-Chrome closes
-→ expected: server finalizes after grace
-```
-
-CI success does not equal browser validation.
-
-## Next after socket validation
-
-If socket mirror is stable:
-
-```text
-analyze native V0.8 socket JSONL
-→ verify frame/SPA/hover/action-target quality
-→ semantic actionable-parent label improvement if still needed
-→ hover background-noise filtering
-→ Behavior Dataset Preparation
-```
-
----
-
-# Agent architecture boundary
+## Four-layer execution boundary
 
 ```text
 TASK
-→ OBSERVE
-→ STRATEGY / PLANNER
-→ NORMALIZED ACTION
-→ BEHAVIOR MODEL / NATURAL EXECUTION POLICY
-→ CDP EXECUTOR
-→ BROWSER
+→ OBSERVER
+→ STRATEGY / BRAIN
+→ AGENT ACTION CONTRACT        = WHAT
+→ EXECUTION BEHAVIOR CONTRACT = HOW naturally
+→ CDP EXECUTION PLAN           = exact browser-native plan
+→ AGENT RUNTIME EXTENSION      = dispatch CDP
+→ CHROME
 → OBSERVE AFTER
 → GOAL CHECK
 → REPLAN
 ```
 
+Hard invariant:
+
 ```text
-Strategy       = WHAT to do
-Behavior Model = HOW naturally
-Executor       = translate execution plan into CDP
+Strategy does NOT emit raw selector / coordinate / CDP packet.
+Behavior does NOT decide task intent.
+Executor does NOT decide strategy.
 ```
+
+CDP is the execution standard for page interaction. `chrome.tabs.*` remains control-plane for tab lifecycle.
+
+## New Phase A0 files
+
+```text
+control-center/AGENT_ACTION_CONTRACT.json
+control-center/manager/strategy/agent_action_contract.js
+control-center/manager/strategy/execution_behavior_contract.js
+control-center/script/checks/agent_action_contract.js
+docs/AGENT_ACTION_CDP_MAP.md
+```
+
+`control-center/manager/strategy/index.js` exports the new contracts.
+
+Deterministic `control-center/ACTION_CONTRACT.json` remains unchanged and separate.
+
+## Agent Action Contract v0.1 vocabulary
+
+```text
+navigation:
+  navigate back forward reload switchTab openNewTab closeTab
+
+pointer:
+  click doubleClick hover moveTo drag
+
+scroll:
+  scrollVertical scrollHorizontal scrollIntoView
+
+keyboard:
+  focus typeText replaceText clear pressKey keyCombo
+
+forms:
+  selectOption setChecked toggle submit
+
+media:
+  play pause mute unmute setVolume seek changePlaybackRate
+
+observation-dependent:
+  hoverAndObserve waitAndObserve dismiss
+```
+
+Human verification/CAPTCHA is not an action; it remains `status=blocked`, `reasonCode=human_verification_required`.
+
+## Behavior families v0.1
+
+```text
+pointer-click
+pointer-hover
+pointer-drag
+scroll-vertical
+scroll-horizontal
+scroll-target-acquisition
+keyboard-text
+keyboard-key
+focus-acquisition
+form-control
+media-control
+navigation
+observation-wait
+```
+
+Behavior Policy will learn distributions/context from human demonstrations; it must not replay human trajectories verbatim or use generic random jitter/delay.
+
+## CDP mapping examples
+
+```text
+click / hover / drag
+→ Input.dispatchMouseEvent
+
+scrollVertical / scrollHorizontal
+→ Input.dispatchMouseEvent(mouseWheel)
+
+typeText / pressKey
+→ Input.dispatchKeyEvent / Input.insertText
+
+navigate
+→ Page.navigate
+
+back / forward
+→ Page.getNavigationHistory + Page.navigateToHistoryEntry
+```
+
+Current experimental Agent Runtime executor still only directly supports a small subset (`openUrl`, `pressKey`, `type`). The semantic/CDP map is now the contract target for later runtime expansion.
+
+---
+
+# NEXT — Phase A1: Action Window Builder
+
+Build an offline tool that transforms raw V0.8 human sessions into candidate semantic demonstrations:
+
+```text
+BEFORE
+→ physical approach / hover / focus / wheel / key timing
+→ SEMANTIC ACTION
+→ AFTER state / mutation / route
+→ OUTCOME
+```
+
+Initial actions:
+
+```text
+click
+hover / hoverAndObserve
+scrollVertical
+scrollHorizontal
+typeText
+pressKey
+drag
+toggle
+dismiss
+```
+
+Ordering rule:
+
+```text
+tsEpochMs = primary global reconstruction time
+pageSeq   = page-local ordering
+sourceSeq = source-local ordering
+sessionSeq= persistence/integrity only; NOT chronological truth
+```
+
+A1 regression demonstrations to preserve:
+
+```text
+YouTube hover-preview
+embedded iframe interactions
+YouTube media controls / playback rate
+Facebook like / comments
+Facebook horizontal carousel
+login form without credential leakage
+TikTok SPA video switching
+short-drama login-gated modal + dismiss
+multi-tab / multi-frame activity
+```
+
+A1 must also address dataset-side:
+
+```text
+actionable-parent semantic label enrichment
+hover background/container noise filtering
+```
+
+Do not mutate raw Collector facts to achieve this; derived semantics belong in dataset tooling.
+
+---
+
+# After A1
+
+```text
+A2 Behavior Feature Extractor
+→ pointer/keyboard/scroll/drag features
+
+A3 Empirical Behavior Baseline
+→ context-conditioned distributions, no complex model yet
+
+A4 One-action Agent Runtime Bridge
+→ Strategy → Agent Action → Behavior → CDP → Observe After
+
+A5 Goal Checker + Replan
+
+then:
+retrieval/learned Strategy
+context-conditioned/learned Behavior Model
+```
+
+---
+
+# Agent evaluation axes
+
+```text
+Planning quality
+→ task success / progress / recovery
+
+Action correctness
+→ correct semantic action + target
+
+Execution fidelity
+→ trajectory/timing vs held-out human demonstrations
+
+Runtime reliability
+→ CDP execution + observation consistency
+```
+
+Natural execution must never reduce correctness merely to look human-like.
+
+---
+
+# Collector stable baseline
+
+Runtime: `Training Collector V0.8 Socket Mirror`  
+Raw schema: `0.7.2`
+
+```text
+IndexedDB = browser-side safety buffer
+localhost WebSocket = development archive
+manual gzip = fallback/debug only
+```
+
+Do not reintroduce Downloads/offscreen auto-export as the primary data pipeline.
 
 ---
 
 # Development rules
 
 1. GitHub is source of truth.
-2. Update STATUS/JOURNAL after major milestone or non-obvious bug/invariant.
-3. CI success != native Chrome tested.
-4. IndexedDB remains the safety source for socket replay; do not turn socket send into pre-persist fire-and-forget.
-5. Manual/download export is fallback only.
-6. Do not commit user raw sessions or `socket-data/` to GitHub.
-7. Recorder, Collector, deterministic Scenario Mode and Agent Runtime keep separate boundaries.
-8. Raw capture stays privacy-filtered at source.
+2. Scenario Mode and Agent Mode remain separate.
+3. Strategy = WHAT; Behavior = HOW; CDP Planner = exact plan; Executor = dispatch.
+4. CDP is the standard page-interaction execution layer for Agent.
+5. Collector raw stays un-derived and privacy-filtered.
+6. Dataset derivation must use `tsEpochMs` as global time axis; `sessionSeq` is durability order.
+7. Human demonstrations provide distributions/context, not literal trajectory replay.
+8. CI success != native Chrome validation.
+9. Update STATUS/JOURNAL after architectural milestones.
