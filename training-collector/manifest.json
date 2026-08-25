@@ -1,14 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "Training Collector V0.7.1 Action Semantics + Export Recovery",
-  "version": "0.7.1",
-  "description": "Privacy-first continuous physical and semantic DOM capture with hover lifecycle facts, resolved action targets, page/source sequencing, IndexedDB persistence and hardened temporary automatic JSONL.gz recovery/export diagnostics.",
+  "name": "Training Collector V0.7.2 Frame-Aware Stream Diagnostics",
+  "version": "0.7.2",
+  "description": "Privacy-first continuous physical and semantic capture with all-frame raw observation, SPA route snapshots, stream-health diagnostics, action semantics, IndexedDB persistence and temporary automatic JSONL.gz recovery/export.",
   "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage", "downloads", "offscreen", "alarms"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background.js"},
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true,
       "js": [
         "core/privacy.js",
         "core/action_normalizer.js",
@@ -22,6 +25,7 @@
         "capture/dom_capture.js",
         "observer/mutation_trace.js",
         "observer/hover_trace.js",
+        "observer/route_trace.js",
         "content.js"
       ],
       "run_at": "document_idle"
@@ -29,6 +33,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Training Collector V0.7.1"
+    "default_title": "Training Collector V0.7.2"
   }
 }
