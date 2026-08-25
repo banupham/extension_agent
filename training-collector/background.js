@@ -27,9 +27,11 @@ async function closeDanglingSessions() {
   const sessions = await ChunkStore.listSessions(RawStore.MAX_SESSION_INDEX);
   for (const session of sessions) {
     if (session.status !== 'active') continue;
+    const integrity = await ChunkStore.verifySession(session, { tailCount: 3 }).catch(error => ({ ok: false, problems: [{ code: 'verification_error', error: String(error?.message || error) }] }));
     session.status = 'closed-inferred';
     session.endedAt = session.lastSeenAt || session.startedAt || nowIso();
     session.endReason = 'previous_browser_session_no_longer_active';
+    session.integrity = { ...integrity, verifiedAt: nowIso(), scope: 'tail' };
     await ChunkStore.putSession(session);
   }
 }
@@ -38,6 +40,7 @@ async function createBrowserSession() {
   await closeDanglingSessions();
   const startedAt = nowIso();
   const session = RawStore.createSession(RawStore.makeSessionId(), startedAt);
+  session.integrity = { ok: true, verifiedAt: null, scope: 'not-yet-verified' };
   await ChunkStore.putSession(session);
   await chrome.storage.session.set({ [RawStore.CURRENT_SESSION_KEY]: session.sessionId });
   return session;
@@ -88,7 +91,12 @@ async function appendRawBatchUnlocked(sender, batch) {
     });
   }
   if (!normalizedEvents.length) return { ok: true, ack: true, batchId, sessionId: session.sessionId, appended: 0 };
-  const candidate = { ...session, eventCount: seq, lastSeenAt: eventLastSeenIso(incoming) };
+  const candidate = {
+    ...session,
+    eventCount: seq,
+    lastSeenAt: eventLastSeenIso(incoming),
+    integrity: { ok: true, verifiedAt: null, scope: 'pending-after-write' }
+  };
   const result = await ChunkStore.append(candidate, normalizedEvents, batchId);
   return {
     ok: true,
@@ -125,7 +133,18 @@ async function exportChunk(sessionId, chunkIndex) {
   if (!session) throw new Error('raw_session_not_found');
   const index = Number(chunkIndex);
   if (!Number.isInteger(index) || index < 0 || index >= Number(session.chunkCount || 0)) throw new Error('raw_chunk_out_of_range');
-  return { chunkIndex: index, events: await ChunkStore.getChunk(sessionId, index) };
+  const record = await ChunkStore.getChunkRecord(sessionId, index);
+  if (!record) throw new Error('raw_chunk_missing');
+  return { chunkIndex: index, checksum: record.checksum || null, firstSeq: record.firstSeq || null, lastSeq: record.lastSeq || null, events: Array.isArray(record.events) ? record.events : [] };
+}
+async function verifyRawSession(sessionId, full = false) {
+  await rawAppendChain;
+  const session = await ChunkStore.getSession(sessionId);
+  if (!session) throw new Error('raw_session_not_found');
+  const integrity = await ChunkStore.verifySession(session, { full: !!full, tailCount: 3 });
+  session.integrity = { ...integrity, verifiedAt: nowIso(), scope: full ? 'full' : 'tail' };
+  await ChunkStore.putSession(session);
+  return { session, integrity };
 }
 
 async function startEpisode(task) {
@@ -172,6 +191,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'GET_RAW_PREVIEW') { const current = await ensureBrowserSession(); return { ok: true, ...(await rawPreview(message.sessionId || current.sessionId, message.limit || 100)) }; }
     if (message.type === 'GET_RAW_EXPORT_META') { const current = await ensureBrowserSession(); return { ok: true, data: await exportMeta(message.sessionId || current.sessionId) }; }
     if (message.type === 'GET_RAW_EXPORT_CHUNK') { const current = await ensureBrowserSession(); return { ok: true, data: await exportChunk(message.sessionId || current.sessionId, message.chunkIndex) }; }
+    if (message.type === 'VERIFY_RAW_SESSION') { const current = await ensureBrowserSession(); return { ok: true, data: await verifyRawSession(message.sessionId || current.sessionId, !!message.full) }; }
     if (message.type === 'GET_STATE') return { ok: true, state: await loadEpisodeState(), rawSession: await ensureBrowserSession() };
     if (message.type === 'START_EPISODE') return { ok: true, state: await startEpisode(message.task || {}) };
     if (message.type === 'STOP_EPISODE') return { ok: true, state: await stopEpisode(message.outcome) };
