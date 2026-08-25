@@ -138,7 +138,7 @@ targetDescriptor
 resolvedTargetDescriptor
 ```
 
-This matters for A1. Synthetic aliases such as `resolvedTarget` are not implementation truth.
+Synthetic aliases such as `resolvedTarget` are compatibility fallback only.
 
 Hover raw:
 
@@ -209,8 +209,6 @@ control-center/extension/agent-runtime-extension/background.js
 
 Deterministic `control-center/ACTION_CONTRACT.json` remains separate.
 
-Agent action vocabulary includes navigation, pointer, vertical/horizontal scroll, keyboard/form, media and observation-dependent actions.
-
 Hard boundary:
 
 ```text
@@ -275,21 +273,24 @@ selectText
 uploadFile
 ```
 
-Media verbs should compile to generic semantic click/drag, not site-specific YouTube/TikTok executor methods.
+Media verbs compile to generic semantic click/drag, not site-specific YouTube/TikTok executor methods.
 
 ---
 
-# 8. Phase A1 — Action Window Builder
+# 8. Phase A1 — COMPLETE: Action Window Builder
 
 Read first:
 
 ```text
 training-collector/tools/build_action_windows.js
-training-collector/tests/action_window_contract.js
+training-collector/tools/analyze_action_windows.js
 training-collector/tools/build_action_semantics.js
+training-collector/tests/action_window_contract.js
+training-collector/tests/action_window_quality_contract.js
+docs/A1_NATIVE_DATASET_VALIDATION.md
 ```
 
-Current derived contract: `actionWindowVersion 0.1.3`.
+Current derived contract: `actionWindowVersion 0.1.4`.
 
 Shape:
 
@@ -337,13 +338,13 @@ labelSource
 labelEnriched
 ```
 
-This addresses real cases where actionable parent is correct but its own label is empty while descendant/snapshot carries useful accessible text.
+Missing label/role is never fabricated.
 
 ## A1 hover noise
 
-Raw hover remains untouched.
+Raw hover remains untouched. Derived filter removes only known generic background/container targets without stronger semantic evidence.
 
-Derived filter removes only known generic background/container targets without stronger semantic evidence. Examples:
+Examples:
 
 ```text
 html
@@ -357,9 +358,7 @@ Preview-like hover with mutation/outcome evidence is retained.
 
 ## A1 physical facts preserved
 
-A1 must not strip behavior information needed by A2.
-
-Safe fields kept:
+A1 retains safe facts needed by A2:
 
 ```text
 pointer:
@@ -384,7 +383,22 @@ pointer down
 → pointer up
 ```
 
-Output includes duration, distance, start/end and safe point series. This is necessary for slider/seek/volume behavior learning.
+Output includes duration, distance, start/end and safe point series.
+
+## A1 hover trajectory — v0.1.4
+
+A1 embeds a bounded pointer approach and leave trajectory directly into hover windows:
+
+```text
+startTs - 1200 ms
+→ pointer approach facts
+→ hover enter/dwell/outcome/leave
+→ endTs + 500 ms pointer leave facts
+```
+
+Maximum pointer samples per side are bounded. This prevents A2 from needing a second raw-join/reconstruction implementation.
+
+Native spot validation on five recent V0.8 sessions showed pointer approach evidence on roughly 85–89% of hover-enter events. Missing approach remains a valid partial Behavior sample.
 
 ## A1 high-confidence semantic promotion
 
@@ -398,44 +412,123 @@ dom-submit                                → submit
 dom-focus focused=true                    → focus
 ```
 
-Do not promote ambiguous semantic intent. Example: Facebook Like stays generic click unless reliable state evidence is available.
+Do not promote ambiguous semantic intent. Facebook Like can stay generic click unless reliable state evidence supports more.
 
-## A1 regression cases
+## A1 Strategy vs Behavior eligibility
 
-Preserve:
+One global good/bad filter is forbidden.
 
 ```text
-YouTube hover-preview
-embedded iframe controls
-YouTube media control/slider
-Facebook like/comments
-Facebook horizontal carousel
-login form without credential leakage
-TikTok SPA video switching
-short-drama login modal + dismiss
-multi-tab/multi-frame
+Strategy dataset
+→ needs action/target semantics appropriate to family
+
+Behavior dataset
+→ physical/timing evidence can still be useful when label is missing
 ```
 
-Next A1 gate: run builder over native Facebook/TikTok/YouTube JSONL and measure label coverage, filtered hover rate, action-family counts, drag quality, scroll bursts, keyboard privacy and outcome coverage.
+Native click label coverage remains site-dependent (~40–67% in the recent sessions), while semantic label-or-role coverage is often higher. Missing semantics are not fabricated.
+
+## A1 native data gate
+
+See `docs/A1_NATIVE_DATASET_VALIDATION.md`.
+
+Five real sessions include Google/YouTube, Facebook login/post-login, horizontal carousel scrolling, TikTok/video/short-drama, modal dismiss, multi-tab/multi-frame and transport/session lifecycle.
+
+Important limitation: real drag demonstrations are sparse. Support extraction, but do not fit a confident drag distribution in A3 from current sample size.
+
+CI for hover trajectory/A1.4: run `32878588181` on commit `5641b67a11c4b52dec9907ec320c3003ba1a1570` passed.
 
 ---
 
-# 9. After A1
+# 9. Phase A2 — IN PROGRESS: Behavior Feature Extractor
+
+Read first:
 
 ```text
-A2 Behavior Feature Extractor
-→ pointer/keyboard/scroll/drag metrics
-
-A3 Empirical Behavior Baseline
-→ context-conditioned distributions
-
-A4 One-action Agent Runtime Bridge
-→ Strategy → Agent Action → Behavior → CDP → Observe After
-
-A5 Goal Checker + Replan
+training-collector/tools/extract_behavior_features.js
+training-collector/tests/behavior_feature_contract.js
+training-collector/tools/build_action_windows.js
 ```
 
-Do not jump to a complex learned Behavior model before A2/A3 metrics.
+Current feature contract: `behaviorFeatureVersion 0.1.0`.
+
+A2 input is A1 Action Windows; A2 must not independently reconstruct the raw session unless a future contract explicitly requires a missing fact.
+
+Current derived features:
+
+### Pointer click
+
+```text
+approach sample count
+start/end
+movement duration
+displacement
+path length
+straightness
+mean/median/P90/max speed
+mean absolute acceleration
+acquisition pause before click
+```
+
+### Hover
+
+```text
+approach path summary
+leave path summary
+dwell
+preview-like outcome
+mutation count
+```
+
+### Drag
+
+```text
+point count
+path geometry/timing
+duration
+displacement
+target + destination geometry
+```
+
+### Scroll
+
+```text
+axis family
+event count / burst duration
+total delta X/Y
+absolute primary-axis delta
+median/P90 event delta
+inter-event gaps
+direction changes
+```
+
+### Keyboard
+
+```text
+event duration/gaps
+keyDown count
+operation class counts
+repeat count
+```
+
+No printable human content.
+
+### Target context
+
+```text
+role
+tag
+width
+height
+area
+aspect ratio
+```
+
+A2 outputs explicit quality flags such as semantic-target presence and physical-evidence presence.
+
+Latest A2-enabled CI: run `32878914977`, commit `0c450c8d1e7ff59d259eb65f26a3adff5e938df2`, SUCCESS.
+
+Next gate: run feature extraction across native sessions and inspect distributions/outliers/missingness before designing A3 empirical distributions.
 
 ---
 
@@ -489,6 +582,14 @@ observe
 ## D031 — A1 must preserve safe physical facts needed by A2
 ## D032 — Native raw descriptor names are contract facts; tests must cover `resolvedTargetDescriptor`
 ## D033 — Stale targetRef must trigger re-observation, not blind coordinate reuse
+## D034 — Hover Behavior windows embed bounded pointer approach/leave facts
+A2 should consume A1 rather than implement a second raw reconstruction path.
+## D035 — Strategy eligibility and Behavior eligibility are separate
+Do not discard physical demonstrations just because semantic labels are incomplete.
+## D036 — A2 is a deterministic derived feature layer
+A2 computes geometry/timing/statistics from A1; it does not train or sample behavior.
+## D037 — Sparse action families stay explicitly sparse
+Do not manufacture confidence for drag or another family merely because the extractor supports it.
 
 ---
 
@@ -500,12 +601,14 @@ Workflow:
 .github/workflows/extension-syntax.yml
 ```
 
-Agent/A1 checks:
+Agent/data checks:
 
 ```text
 control-center/script/checks/strategy_contract.js
 control-center/script/checks/agent_action_contract.js
 training-collector/tests/action_window_contract.js
+training-collector/tests/action_window_quality_contract.js
+training-collector/tests/behavior_feature_contract.js
 ```
 
 Collector storage/frame/socket regression checks remain enabled. CI success != native Chrome Agent validation.
