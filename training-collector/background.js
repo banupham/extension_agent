@@ -1,11 +1,10 @@
 'use strict';
 
-const STATE_KEY = 'trainingCollectorStateV01';
+importScripts('core/episode_builder.js');
 
-const EMPTY = {
-  active: false,
-  episode: null
-};
+const STATE_KEY = 'trainingCollectorStateV02';
+const EpisodeBuilder = globalThis.TrainingCollectorV02.EpisodeBuilder;
+const EMPTY = { active: false, episode: null };
 
 async function loadState() {
   const data = await chrome.storage.local.get(STATE_KEY);
@@ -17,9 +16,7 @@ async function saveState(state) {
   return state;
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
+function nowIso() { return new Date().toISOString(); }
 
 async function activeTab() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -28,7 +25,7 @@ async function activeTab() {
 
 async function requestSnapshot(tabId) {
   try {
-    return await chrome.tabs.sendMessage(tabId, { scope: 'TRAINING_COLLECTOR_V01', type: 'SNAPSHOT' });
+    return await chrome.tabs.sendMessage(tabId, { scope: 'TRAINING_COLLECTOR_V02', type: 'SNAPSHOT' });
   } catch (error) {
     return { ok: false, error: String(error?.message || error) };
   }
@@ -40,30 +37,15 @@ async function startEpisode(task) {
   const initial = await requestSnapshot(tab.id);
   const state = {
     active: true,
-    episode: {
-      schemaVersion: '0.1.0',
-      episodeId: `ep-${Date.now()}`,
-      task: {
-        instruction: String(task?.instruction || '').trim(),
-        type: String(task?.type || 'unspecified'),
-        args: task?.args && typeof task.args === 'object' ? task.args : {}
-      },
-      startedAt: nowIso(),
-      endedAt: null,
+    episode: EpisodeBuilder.createEpisode({
+      task,
       tabId: tab.id,
       initialObservation: initial?.observation || null,
-      steps: [],
-      finalOutcome: null,
-      privacy: {
-        rawTextValuesStored: false,
-        passwordValuesStored: false,
-        cookiesStored: false,
-        storageSecretsStored: false
-      }
-    }
+      now: nowIso()
+    })
   };
   await saveState(state);
-  await chrome.tabs.sendMessage(tab.id, { scope: 'TRAINING_COLLECTOR_V01', type: 'START' }).catch(() => {});
+  await chrome.tabs.sendMessage(tab.id, { scope: 'TRAINING_COLLECTOR_V02', type: 'START' }).catch(() => {});
   return state;
 }
 
@@ -71,28 +53,38 @@ async function stopEpisode(outcome) {
   const state = await loadState();
   if (!state.active || !state.episode) return state;
   const tabId = state.episode.tabId;
-  if (tabId) await chrome.tabs.sendMessage(tabId, { scope: 'TRAINING_COLLECTOR_V01', type: 'STOP' }).catch(() => {});
+  if (tabId) await chrome.tabs.sendMessage(tabId, { scope: 'TRAINING_COLLECTOR_V02', type: 'STOP' }).catch(() => {});
   state.active = false;
   state.episode.endedAt = nowIso();
   state.episode.finalOutcome = outcome || { status: 'stopped' };
   return saveState(state);
 }
 
+async function transitionStart(sender, transition) {
+  const state = await loadState();
+  if (!state.active || !state.episode || sender.tab?.id !== state.episode.tabId) return { ok: true, ignored: true };
+  EpisodeBuilder.beginTransition(state.episode, transition || {});
+  EpisodeBuilder.capTransitions(state.episode);
+  await saveState(state);
+  return { ok: true };
+}
+
+async function transitionEnd(sender, transition) {
+  const state = await loadState();
+  if (!state.active || !state.episode || sender.tab?.id !== state.episode.tabId) return { ok: true, ignored: true };
+  const matched = EpisodeBuilder.finishTransition(state.episode, transition || {});
+  await saveState(state);
+  return { ok: true, matched };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.scope !== 'TRAINING_COLLECTOR_V01') return false;
+  if (message?.scope !== 'TRAINING_COLLECTOR_V02') return false;
   (async () => {
     if (message.type === 'GET_STATE') return { ok: true, state: await loadState() };
     if (message.type === 'START_EPISODE') return { ok: true, state: await startEpisode(message.task || {}) };
     if (message.type === 'STOP_EPISODE') return { ok: true, state: await stopEpisode(message.outcome) };
-    if (message.type === 'CONTENT_EVENT') {
-      const state = await loadState();
-      if (!state.active || !state.episode || sender.tab?.id !== state.episode.tabId) return { ok: true, ignored: true };
-      const event = message.event || {};
-      state.episode.steps.push(event);
-      if (state.episode.steps.length > 5000) state.episode.steps.splice(0, state.episode.steps.length - 5000);
-      await saveState(state);
-      return { ok: true };
-    }
+    if (message.type === 'TRANSITION_START') return transitionStart(sender, message.transition);
+    if (message.type === 'TRANSITION_END') return transitionEnd(sender, message.transition);
     return { ok: false, error: 'unknown_message' };
   })().then(sendResponse).catch(error => sendResponse({ ok: false, error: String(error?.message || error) }));
   return true;
