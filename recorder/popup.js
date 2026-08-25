@@ -177,7 +177,8 @@ function toInteractions(recording) {
       pushTimed(interactions, {
         action: 'scrollTo',
         x: Math.round(n(ev.x, 0)),
-        y: Math.round(n(ev.y, 0))
+        y: Math.round(n(ev.y, 0)),
+        gesture: ev.scrollTrace?.metrics || null
       }, ev, timingAnchor);
       timingAnchor = ev;
     }
@@ -190,8 +191,8 @@ function scenarioSource(recording) {
   const interactions = toInteractions(recording);
   const name = slug(recording?.title || 'recorded-scenario');
   const recordingMeta = {
-    recorderVersion: recording?.recorderVersion || '3.8.0',
-    timingModel: recording?.timingModel || 'rich-exact-v1',
+    recorderVersion: recording?.recorderVersion || '3.9.0',
+    timingModel: recording?.timingModel || 'rich-gesture-v2',
     capturedAt: recording?.capturedAt || null,
     stoppedAt: recording?.stoppedAt || null,
     durationMs: n(recording?.durationMs, 0),
@@ -298,7 +299,7 @@ $('start').addEventListener('click', async () => {
     const r = await bg('start', { tabId: tab.id });
     if (!r?.ok) throw new Error(r?.error || 'Không thể bắt đầu');
     lastRecording = null;
-    status('Đang ghi rich timing • chờ, click, edit trace và scroll gesture đều được giữ.', 'recording');
+    status('Đang ghi V3.9 • waits, click, edit trace và gesture metrics đều được giữ.', 'recording');
   } catch (e) { status(`Lỗi: ${e.message}`, 'error'); }
 });
 $('stop').addEventListener('click', async () => {
@@ -323,8 +324,9 @@ $('exportJs').addEventListener('click', async () => {
     const filename = `${slug(lastRecording.title)}.scenario.js`;
     const saved = await downloadJs(filename, source);
     const waits = interactions.filter(x => x.action === 'wait').length;
+    const gestures = interactions.filter(x => x.action === 'scrollTo' && x.gesture).length;
     const where = saved?.method === 'directory' && saved.directoryName ? ` • ${saved.directoryName}` : '';
-    status(`Đã tạo ${filename} • ${interactions.length} actions • ${waits} waits${where}`, 'stopped');
+    status(`Đã tạo ${filename} • ${interactions.length} actions • ${waits} waits • ${gestures} gestures${where}`, 'stopped');
   } catch (e) { status(`Lỗi: ${e.message}`, 'error'); }
 });
 
@@ -333,7 +335,7 @@ $('exportJs').addEventListener('click', async () => {
     const tab = await getActiveTab();
     currentTabId = tab.id;
     const r = await bg('status', { tabId: tab.id });
-    status(r?.active ? `Đang ghi • ${r.count || 0} sự kiện • Rich Timing V3.8` : 'Sẵn sàng. Start để ghi Rich Timing V3.8.', r?.active ? 'recording' : 'stopped');
+    status(r?.active ? `Đang ghi • ${r.count || 0} sự kiện • Gesture Metrics V3.9` : 'Sẵn sàng. Start để ghi Gesture Metrics V3.9.', r?.active ? 'recording' : 'stopped');
     const lr = await bg('lastRecording');
     lastRecording = lr?.recording || null;
   } catch (e) { status(`Lỗi: ${e.message}`, 'error'); }
