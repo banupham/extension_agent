@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Training Collector V0.1</title>
+  <style>
+    body{font:13px system-ui,sans-serif;margin:14px;width:320px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px} .row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.7}.status{margin-top:8px;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <strong>Training Collector V0.1</strong>
+  <div class="muted">Privacy-first episode skeleton</div>
+  <input id="task" placeholder="Task instruction, e.g. Search Google for OpenAI">
+  <button id="start">Start Episode</button>
+  <div class="row">
+    <button id="success">Mark Success</button>
+    <button id="failed">Mark Failed</button>
+  </div>
+  <button id="stop">Stop</button>
+  <div id="status" class="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
