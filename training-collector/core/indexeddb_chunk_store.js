@@ -82,8 +82,7 @@
       if (batchId) {
         const prior = await req(receipts.get([session.sessionId, batchId]));
         if (prior) {
-          tx.abort();
-          try { await txDone(tx); } catch {}
+          await txDone(tx);
           return { session: await getSession(session.sessionId) || session, duplicate: true, receipt: prior };
         }
       }
