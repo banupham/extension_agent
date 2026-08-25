@@ -17,8 +17,9 @@ const server = read('socket-server/server.js');
 const serverPkg = JSON.parse(read('socket-server/package.json'));
 
 assert.strictEqual(manifest.version, '0.8.0');
+assert.strictEqual(manifest.minimum_chrome_version, '116');
 assert.ok(manifest.name.includes('V0.8 Socket Mirror'));
-assert.ok(manifest.host_permissions.includes('ws://127.0.0.1/*'));
+assert.ok(!manifest.host_permissions.some(pattern => /^wss?:/i.test(pattern)));
 assert.ok(!manifest.permissions.includes('offscreen'));
 assert.ok(!manifest.permissions.includes('downloads'));
 assert.ok(!manifest.permissions.includes('alarms'));
@@ -31,6 +32,7 @@ assert.ok(background.includes('SocketMirror?.publish?.(persistedSession, normali
 assert.ok(background.indexOf('ChunkStore.append(candidate, normalizedEvents, batchId)') < background.indexOf('SocketMirror?.publish?.(persistedSession, normalizedEvents)'));
 assert.ok(background.includes('replaySession'));
 assert.ok(background.includes('getChunkRecord'));
+assert.ok(background.includes('registerClosedBacklog'));
 assert.ok(background.includes('GET_SOCKET_STATUS'));
 assert.ok(!background.includes('AUTO_EXPORT_SCOPE'));
 
@@ -44,6 +46,7 @@ assert.ok(mirror.includes("message?.type === 'resync'"));
 assert.ok(mirror.includes('heartbeatMs'));
 assert.ok(mirror.includes('replaySession'));
 assert.ok(mirror.includes('ackedThrough'));
+assert.ok(mirror.includes('const existed = sessions.has(session.sessionId)'));
 
 assert.strictEqual(serverPkg.dependencies.ws, '^8.18.0');
 assert.ok(server.includes("const HOST = process.env.TC_SOCKET_HOST || '127.0.0.1'"));
