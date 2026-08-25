@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Training Collector V0.3 Raw Browser Session",
-  "version": "0.3.0",
-  "description": "Privacy-first continuous raw physical interaction capture across a Chrome browser session, plus optional semantic task episodes.",
+  "name": "Training Collector V0.4 DOM Core + Correlation",
+  "version": "0.4.0",
+  "description": "Privacy-first continuous raw physical plus semantic DOM interaction capture with physical/semantic correlation.",
   "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background.js"},
@@ -12,8 +12,12 @@
       "js": [
         "core/privacy.js",
         "core/action_normalizer.js",
+        "observer/element_registry.js",
         "observer/semantic_observer.js",
+        "correlation/physical_semantic_correlator.js",
         "capture/physical_capture.js",
+        "capture/dom_capture.js",
+        "observer/mutation_trace.js",
         "content.js"
       ],
       "run_at": "document_idle"
@@ -21,6 +25,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Training Collector V0.3"
+    "default_title": "Training Collector V0.4"
   }
 }
