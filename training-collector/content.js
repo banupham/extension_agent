@@ -1,12 +1,13 @@
 'use strict';
 
-if (!window.__TRAINING_COLLECTOR_V05__) {
-  window.__TRAINING_COLLECTOR_V05__ = true;
+if (!window.__TRAINING_COLLECTOR_V06__) {
+  window.__TRAINING_COLLECTOR_V06__ = true;
 
   const NS2 = window.TrainingCollectorV02 = window.TrainingCollectorV02 || {};
   const NS3 = window.TrainingCollectorV03 = window.TrainingCollectorV03 || {};
   const NS4 = window.TrainingCollectorV04 = window.TrainingCollectorV04 || {};
   const NS5 = window.TrainingCollectorV05 = window.TrainingCollectorV05 || {};
+  const NS6 = window.TrainingCollectorV06 = window.TrainingCollectorV06 || {};
   NS2.pageInstanceId = `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const Observer = NS2.SemanticObserver;
@@ -16,6 +17,7 @@ if (!window.__TRAINING_COLLECTOR_V05__) {
   const DomCaptureFactory = NS4.DomCapture;
   const MutationTraceFactory = NS4.MutationTrace;
   const StateDiff = NS5.StateDiff;
+  const ReliableSender = NS6.ReliableSender;
 
   const S = {
     rawActive: false,
@@ -31,32 +33,26 @@ if (!window.__TRAINING_COLLECTOR_V05__) {
     physical: null,
     domCapture: null,
     mutationTrace: null,
-    correlator: null
+    correlator: null,
+    rawSender: null
   };
 
   function relTime() { return Math.max(0, performance.now() - S.startedAt); }
-
   function send(type, payload = {}) {
     return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...payload }).catch(() => null);
   }
 
   function rawBatch(events, source) {
-    if (!events?.length) return;
-    send('RAW_BATCH', {
-      batch: {
-        browserSessionId: S.browserSessionId,
-        pageInstanceId: NS2.pageInstanceId,
-        source: source || 'unknown',
-        events
-      }
+    if (!events?.length || !S.rawSender) return;
+    S.rawSender.enqueue({
+      browserSessionId: S.browserSessionId,
+      pageInstanceId: NS2.pageInstanceId,
+      source: source || 'unknown',
+      events
     });
   }
 
-  function transitionId() {
-    S.transitionSeq += 1;
-    return `${NS2.pageInstanceId}-t${S.transitionSeq}`;
-  }
-
+  function transitionId() { S.transitionSeq += 1; return `${NS2.pageInstanceId}-t${S.transitionSeq}`; }
   function begin(rawAction, stateBefore) {
     if (!S.episodeActive) return null;
     const id = transitionId();
@@ -64,15 +60,13 @@ if (!window.__TRAINING_COLLECTOR_V05__) {
     const action = Normalizer.normalize({ ...rawAction, t: Math.round(relTime()) });
     const canDiff = !!(StateDiff?.diffObservation && S.lastEpisodeState && S.lastEpisodeState.pageInstanceId === currentBefore.pageInstanceId);
     S.transitionBefore.set(id, currentBefore);
-    send('TRANSITION_START', {
-      transition: {
-        transitionId: id,
-        startedAtMs: Math.round(relTime()),
-        stateBefore: canDiff ? null : currentBefore,
-        stateBeforeDiff: canDiff ? StateDiff.diffObservation(S.lastEpisodeState, currentBefore) : null,
-        action
-      }
-    });
+    send('TRANSITION_START', { transition: {
+      transitionId: id,
+      startedAtMs: Math.round(relTime()),
+      stateBefore: canDiff ? null : currentBefore,
+      stateBeforeDiff: canDiff ? StateDiff.diffObservation(S.lastEpisodeState, currentBefore) : null,
+      action
+    } });
     return id;
   }
 
@@ -83,15 +77,13 @@ if (!window.__TRAINING_COLLECTOR_V05__) {
       const before = S.transitionBefore.get(id) || null;
       const after = Observer.snapshot();
       const canDiff = !!(before && StateDiff?.diffObservation && before.pageInstanceId === after.pageInstanceId);
-      send('TRANSITION_END', {
-        transition: {
-          transitionId: id,
-          endedAtMs: Math.round(relTime()),
-          stateAfter: canDiff ? null : after,
-          stateAfterDiff: canDiff ? StateDiff.diffObservation(before, after) : null,
-          actionSucceeded: true
-        }
-      });
+      send('TRANSITION_END', { transition: {
+        transitionId: id,
+        endedAtMs: Math.round(relTime()),
+        stateAfter: canDiff ? null : after,
+        stateAfterDiff: canDiff ? StateDiff.diffObservation(before, after) : null,
+        actionSucceeded: true
+      } });
       S.transitionBefore.delete(id);
       S.lastEpisodeState = after;
     }, delay);
@@ -106,44 +98,18 @@ if (!window.__TRAINING_COLLECTOR_V05__) {
     if (S.rawActive || !PhysicalCapture?.createPhysicalCapture) return;
     S.rawActive = true;
     S.correlator = CorrelatorFactory?.createCorrelator?.({ observer: Observer }) || null;
-
     S.physical = PhysicalCapture.createPhysicalCapture({
-      isSensitiveTarget(target) {
-        return target instanceof Element && Observer.isSensitive(target);
-      },
-      getContext() {
-        return {
-          pageInstanceId: NS2.pageInstanceId,
-          documentOrigin: location.origin,
-          documentPathname: location.pathname
-        };
-      },
-      enrichEvent(event) {
-        return S.correlator ? S.correlator.correlate(event) : event;
-      },
+      isSensitiveTarget(target) { return target instanceof Element && Observer.isSensitive(target); },
+      getContext() { return { pageInstanceId: NS2.pageInstanceId, documentOrigin: location.origin, documentPathname: location.pathname }; },
+      enrichEvent(event) { return S.correlator ? S.correlator.correlate(event) : event; },
       emitBatch(events) { rawBatch(events, 'physical'); }
     });
-
-    S.domCapture = DomCaptureFactory?.createDomCapture?.({
-      observer: Observer,
-      emitBatch(events) { rawBatch(events, 'dom'); }
-    }) || null;
-
-    S.mutationTrace = MutationTraceFactory?.createMutationTrace?.({
-      observer: Observer,
-      emitBatch(events) { rawBatch(events, 'mutation'); }
-    }) || null;
-
+    S.domCapture = DomCaptureFactory?.createDomCapture?.({ observer: Observer, emitBatch(events) { rawBatch(events, 'dom'); } }) || null;
+    S.mutationTrace = MutationTraceFactory?.createMutationTrace?.({ observer: Observer, emitBatch(events) { rawBatch(events, 'mutation'); } }) || null;
     S.physical.start();
     S.domCapture?.start();
     S.mutationTrace?.start();
-
-    rawBatch([{
-      type: 'semantic-snapshot',
-      tsEpochMs: Date.now(),
-      tPageMs: Math.round(performance.now() * 1000) / 1000,
-      observation: Observer.snapshot()
-    }], 'semantic');
+    rawBatch([{ type: 'semantic-snapshot', tsEpochMs: Date.now(), tPageMs: Math.round(performance.now() * 1000) / 1000, observation: Observer.snapshot() }], 'semantic');
   }
 
   addEventListener('click', event => {
@@ -151,12 +117,7 @@ if (!window.__TRAINING_COLLECTOR_V05__) {
     if (!el || Observer.isSensitive(el)) return;
     const semantic = Observer.semanticElement(el);
     if (!semantic) return;
-    const id = begin({
-      kind: 'click',
-      targetRef: semantic.ref,
-      button: event.button,
-      point: { x: Math.round(event.clientX), y: Math.round(event.clientY) }
-    });
+    const id = begin({ kind: 'click', targetRef: semantic.ref, button: event.button, point: { x: Math.round(event.clientX), y: Math.round(event.clientY) } });
     finish(id, 40);
   }, true);
 
@@ -171,17 +132,9 @@ if (!window.__TRAINING_COLLECTOR_V05__) {
       : event.key === 'Tab' ? 'tab'
       : event.key.length === 1 ? 'type-char'
       : 'other-key';
-    const kind = editable ? 'text-key' : 'key';
     const ref = semantic?.ref || null;
     if (ref) S.lastKeyByRef.set(ref, performance.now());
-    const id = begin({
-      kind,
-      targetRef: ref,
-      operation,
-      keyClass: event.key.length === 1 ? 'printable' : event.key,
-      code: event.key.length === 1 ? null : event.code,
-      repeat: event.repeat
-    });
+    const id = begin({ kind: editable ? 'text-key' : 'key', targetRef: ref, operation, keyClass: event.key.length === 1 ? 'printable' : event.key, code: event.key.length === 1 ? null : event.code, repeat: event.repeat });
     finish(id, 20);
   }, true);
 
@@ -191,11 +144,7 @@ if (!window.__TRAINING_COLLECTOR_V05__) {
     if (!el || Observer.isSensitive(el)) return;
     const semantic = Observer.semanticElement(el);
     if (!semantic) return;
-    S.beforeInputByRef.set(semantic.ref, {
-      at: performance.now(),
-      stateBefore: Observer.snapshot(),
-      inputType: event.inputType || null
-    });
+    S.beforeInputByRef.set(semantic.ref, { at: performance.now(), stateBefore: Observer.snapshot(), inputType: event.inputType || null });
   }, true);
 
   addEventListener('input', event => {
@@ -209,12 +158,7 @@ if (!window.__TRAINING_COLLECTOR_V05__) {
     const pending = S.beforeInputByRef.get(semantic.ref);
     S.beforeInputByRef.delete(semantic.ref);
     const valueLength = typeof el.value === 'string' ? el.value.length : (el.textContent || '').length;
-    const id = begin({
-      kind: 'text-change',
-      targetRef: semantic.ref,
-      inputType: event.inputType || pending?.inputType || null,
-      length: valueLength
-    }, pending?.stateBefore || Observer.snapshot());
+    const id = begin({ kind: 'text-change', targetRef: semantic.ref, inputType: event.inputType || pending?.inputType || null, length: valueLength }, pending?.stateBefore || Observer.snapshot());
     finish(id, 20);
   }, true);
 
@@ -260,17 +204,18 @@ if (!window.__TRAINING_COLLECTOR_V05__) {
     return false;
   });
 
-  send('HELLO', {
-    page: {
-      pageInstanceId: NS2.pageInstanceId,
-      origin: location.origin,
-      pathname: location.pathname
-    }
-  }).then(response => {
+  send('HELLO', { page: { pageInstanceId: NS2.pageInstanceId, origin: location.origin, pathname: location.pathname } }).then(async response => {
     if (!response?.ok) return;
     S.browserSessionId = response.browserSessionId || null;
     S.episodeActive = !!response.episodeActive;
     if (S.episodeActive) S.lastEpisodeState = Observer.snapshot();
+    S.rawSender = ReliableSender?.createReliableSender?.({
+      send,
+      journalKey: `tcRawPendingV06:${NS2.pageInstanceId}`,
+      retryMs: 1500,
+      maxPending: 128
+    }) || null;
+    await S.rawSender?.restore?.();
     startRawCapture();
   });
 }
