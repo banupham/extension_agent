@@ -32,6 +32,9 @@ assert.ok(session.rawModel.timeline.includes('sourceSeq'));
 assert.ok(session.rawModel.timeline.includes('sessionSeq'));
 assert.ok(session.rawModel.persistence.includes('indexeddb'));
 assert.ok(session.rawModel.persistence.includes('batch-ack'));
+assert.ok(session.rawModel.persistence.includes('localhost-websocket-replay-mirror'));
+assert.ok(session.rawModel.socketMirror.includes('session-open-resume-event-batch-ack-replay'));
+assert.strictEqual(session.rawModel.export, 'manual-chunked-jsonl-gzip-fallback-only');
 
 assert.strictEqual(Store.sessionKey('abc'), 'tcRawSessionV03:abc');
 assert.strictEqual(Store.chunkKey('abc', 2), 'tcRawChunkV03:abc:2');
@@ -44,4 +47,4 @@ assert.strictEqual(event.targetRef, 'e1');
 assert.strictEqual(event.pageSeq, 7);
 assert.strictEqual(event.sourceSeq, 6);
 
-console.log('Training Collector V0.7.2 raw session contract OK');
+console.log('Training Collector V0.8 runtime / raw schema 0.7.2 contract OK');
