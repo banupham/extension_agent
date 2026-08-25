@@ -74,6 +74,7 @@ jobs:
           node --check training-collector/tests/v072_frame_stream_contract.js
           node --check training-collector/tests/v08_socket_mirror_contract.js
           node --check training-collector/tests/action_window_contract.js
+          node --check training-collector/tests/action_window_quality_contract.js
       - name: Validate extension manifests and Agent action contract JSON
         run: |
           node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/AGENT_ACTION_CONTRACT.json','utf8'))"
@@ -83,6 +84,8 @@ jobs:
         run: node control-center/script/checks/agent_action_contract.js
       - name: Run Phase A1 Action Window Builder contract test
         run: node training-collector/tests/action_window_contract.js
+      - name: Run Phase A1 training eligibility contract test
+        run: node training-collector/tests/action_window_quality_contract.js
       - name: Run Collector architecture contract smoke test
         run: node training-collector/tests/architecture_contract.js
       - name: Run Collector raw session contract test
