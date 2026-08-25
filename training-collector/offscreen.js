@@ -2,6 +2,7 @@
 
 const OFFSCREEN_SCOPE = 'TRAINING_COLLECTOR_OFFSCREEN_V06';
 const RUNTIME_SCOPE = 'TRAINING_COLLECTOR_V03';
+const DOWNLOAD_TIMEOUT_MS = 120000;
 
 function send(type, extra = {}) {
   return chrome.runtime.sendMessage({ scope: RUNTIME_SCOPE, type, ...extra });
@@ -9,6 +10,33 @@ function send(type, extra = {}) {
 
 function safeName(value) {
   return String(value || 'unknown').replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function waitForDownloadComplete(downloadId, timeoutMs = DOWNLOAD_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (error, state = null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      chrome.downloads.onChanged.removeListener(onChanged);
+      if (error) reject(error);
+      else resolve(state || 'complete');
+    };
+    const onChanged = delta => {
+      if (delta?.id !== downloadId) return;
+      if (delta.error?.current) finish(new Error(`download_interrupted:${delta.error.current}`));
+      else if (delta.state?.current === 'interrupted') finish(new Error('download_interrupted'));
+      else if (delta.state?.current === 'complete') finish(null, 'complete');
+    };
+    const timer = setTimeout(() => finish(new Error('download_completion_timeout')), timeoutMs);
+    chrome.downloads.onChanged.addListener(onChanged);
+    chrome.downloads.search({ id: downloadId }).then(items => {
+      const item = items?.[0];
+      if (item?.state === 'complete') finish(null, 'complete');
+      else if (item?.state === 'interrupted') finish(new Error(`download_interrupted:${item.error || 'unknown'}`));
+    }).catch(() => {});
+  });
 }
 
 async function exportSession(sessionId) {
@@ -20,9 +48,7 @@ async function exportSession(sessionId) {
   const session = meta.session;
   const compressor = new CompressionStream('gzip');
   const writer = compressor.writable.getWriter();
-  const blobPromise = new Response(compressor.readable, {
-    headers: { 'Content-Type': 'application/gzip' }
-  }).blob();
+  const blobPromise = new Response(compressor.readable, { headers: { 'Content-Type': 'application/gzip' } }).blob();
   const encoder = new TextEncoder();
 
   await writer.write(encoder.encode(`${JSON.stringify({
@@ -52,7 +78,8 @@ async function exportSession(sessionId) {
       conflictAction: 'uniquify',
       saveAs: false
     });
-    return { ok: true, downloadId, byteLength: blob.size, eventCount: Number(session.eventCount || 0) };
+    const downloadState = await waitForDownloadComplete(downloadId);
+    return { ok: true, downloadId, downloadState, byteLength: blob.size, eventCount: Number(session.eventCount || 0) };
   } finally {
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
