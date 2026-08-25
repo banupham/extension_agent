@@ -39,27 +39,130 @@ async function getRawIndex() {
   return Array.isArray(data[RawStore.INDEX_KEY]) ? data[RawStore.INDEX_KEY] : [];
 }
 
+async function loadRawSession(sessionId) {
+  if (!sessionId) return null;
+  const key = RawStore.sessionKey(sessionId);
+  const data = await chrome.storage.local.get(key);
+  return data[key] || null;
+}
+
+async function saveRawSession(session) {
+  if (!session?.sessionId) return;
+  await chrome.storage.local.set({ [RawStore.sessionKey(session.sessionId)]: session });
+}
+
 async function closeDanglingSessions() {
   const index = await getRawIndex();
-  if (!index.length) return;
+  if (!index.length) return [];
   const updates = {};
+  const closed = [];
   for (const sessionId of index.slice(0, RawStore.MAX_SESSION_INDEX)) {
     const key = RawStore.sessionKey(sessionId);
     const data = await chrome.storage.local.get(key);
     const session = data[key];
     if (!session || session.status !== 'active') continue;
-    updates[key] = {
+    const next = {
       ...session,
       status: 'closed-inferred',
       endedAt: session.lastSeenAt || session.startedAt || nowIso(),
       endReason: 'previous_browser_session_no_longer_active'
     };
+    updates[key] = next;
+    closed.push(next);
   }
   if (Object.keys(updates).length) await chrome.storage.local.set(updates);
+  return closed;
+}
+
+async function exportRawSession(sessionId) {
+  await rawAppendChain;
+  const session = await loadRawSession(sessionId);
+  if (!session) throw new Error('raw_session_not_found');
+  const events = [];
+  for (let i = 0; i < Number(session.chunkCount || 0); i += 1) {
+    const key = RawStore.chunkKey(session.sessionId, i);
+    const data = await chrome.storage.local.get(key);
+    if (Array.isArray(data[key])) events.push(...data[key]);
+  }
+  return {
+    exportVersion: '0.4.1',
+    exportedAt: nowIso(),
+    session,
+    events
+  };
+}
+
+function autoExportFilename(sessionId) {
+  const safe = String(sessionId || 'unknown').replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `training-collector/training-collector-${safe}.raw.json`;
+}
+
+async function autoExportSession(session) {
+  if (!session?.sessionId) return { skipped: true, reason: 'missing_session_id' };
+  if (Number(session.eventCount || 0) <= 0) return { skipped: true, reason: 'empty_session' };
+  if (session.autoExportStatus === 'complete') return { skipped: true, reason: 'already_exported' };
+  if (session.autoExportStatus === 'downloading') return { skipped: true, reason: 'download_in_progress' };
+
+  session.autoExportStatus = 'preparing';
+  session.autoExportAttemptedAt = nowIso();
+  session.autoExportError = null;
+  await saveRawSession(session);
+
+  try {
+    const data = await exportRawSession(session.sessionId);
+    const json = JSON.stringify(data);
+    const url = `data:application/json;charset=utf-8,${encodeURIComponent(json)}`;
+    session.autoExportStatus = 'downloading';
+    await saveRawSession(session);
+
+    const downloadId = await chrome.downloads.download({
+      url,
+      filename: autoExportFilename(session.sessionId),
+      conflictAction: 'uniquify',
+      saveAs: false
+    });
+
+    session.autoExportStatus = 'complete';
+    session.autoExportedAt = nowIso();
+    session.autoExportDownloadId = downloadId;
+    session.autoExportError = null;
+    await saveRawSession(session);
+    return { ok: true, downloadId };
+  } catch (error) {
+    session.autoExportStatus = 'failed';
+    session.autoExportError = String(error?.message || error);
+    session.autoExportFailedAt = nowIso();
+    await saveRawSession(session);
+    return { ok: false, error: session.autoExportError };
+  }
+}
+
+async function autoExportClosedSessions(extraSessions = []) {
+  const seen = new Set();
+  const candidates = [];
+  for (const session of extraSessions) {
+    if (session?.sessionId && !seen.has(session.sessionId)) {
+      seen.add(session.sessionId);
+      candidates.push(session);
+    }
+  }
+  const index = await getRawIndex();
+  for (const sessionId of index.slice(0, RawStore.MAX_SESSION_INDEX)) {
+    if (seen.has(sessionId)) continue;
+    const session = await loadRawSession(sessionId);
+    if (!session || session.status === 'active') continue;
+    seen.add(sessionId);
+    candidates.push(session);
+  }
+  for (const session of candidates) {
+    if (session.autoExportStatus === 'complete') continue;
+    await autoExportSession(session);
+  }
 }
 
 async function createBrowserSession() {
-  await closeDanglingSessions();
+  const closed = await closeDanglingSessions();
+  await autoExportClosedSessions(closed);
   const startedAt = nowIso();
   const sessionId = RawStore.makeSessionId();
   const session = RawStore.createSession(sessionId, startedAt);
@@ -91,13 +194,6 @@ async function ensureBrowserSession() {
     });
   }
   return browserSessionInitPromise;
-}
-
-async function loadRawSession(sessionId) {
-  if (!sessionId) return null;
-  const key = RawStore.sessionKey(sessionId);
-  const data = await chrome.storage.local.get(key);
-  return data[key] || null;
 }
 
 function eventLastSeenIso(events) {
@@ -165,34 +261,17 @@ function appendRawBatch(sender, batch) {
 }
 
 async function rawPreview(sessionId, limit = 100) {
+  await rawAppendChain;
   const session = await loadRawSession(sessionId);
   if (!session) return { session: null, events: [] };
   const count = Math.max(1, Math.min(500, Number(limit || 100)));
   const events = [];
-  for (let i = Math.max(0, session.chunkCount - 3); i < session.chunkCount; i += 1) {
+  for (let i = Math.max(0, Number(session.chunkCount || 0) - 3); i < Number(session.chunkCount || 0); i += 1) {
     const key = RawStore.chunkKey(session.sessionId, i);
     const data = await chrome.storage.local.get(key);
     if (Array.isArray(data[key])) events.push(...data[key]);
   }
   return { session, events: events.slice(-count) };
-}
-
-async function exportRawSession(sessionId) {
-  await rawAppendChain;
-  const session = await loadRawSession(sessionId);
-  if (!session) throw new Error('raw_session_not_found');
-  const events = [];
-  for (let i = 0; i < session.chunkCount; i += 1) {
-    const key = RawStore.chunkKey(session.sessionId, i);
-    const data = await chrome.storage.local.get(key);
-    if (Array.isArray(data[key])) events.push(...data[key]);
-  }
-  return {
-    exportVersion: '0.4.0',
-    exportedAt: nowIso(),
-    session,
-    events
-  };
 }
 
 async function startEpisode(task) {
