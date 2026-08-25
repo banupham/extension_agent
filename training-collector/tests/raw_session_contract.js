@@ -19,7 +19,7 @@ assert.strictEqual(session.privacy.authorizationStored, false);
 assert.strictEqual(session.rawModel.dom, 'compact-targetRef-events-with-first-seen-descriptors');
 assert.strictEqual(session.rawModel.mutation, '120ms-structural-mutation-bursts');
 assert.strictEqual(session.rawModel.correlation, 'targetRef-at-capture-time-with-first-seen-descriptor');
-assert.ok(session.rawModel.timeline.includes('storageSeq'));
+assert.ok(session.rawModel.timeline.includes('sessionSeq'));
 
 assert.strictEqual(Store.sessionKey('abc'), 'tcRawSessionV03:abc');
 assert.strictEqual(Store.chunkKey('abc', 2), 'tcRawChunkV03:abc:2');
