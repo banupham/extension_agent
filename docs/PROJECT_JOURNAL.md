@@ -21,13 +21,13 @@ Nếu journal mâu thuẫn với source, source hiện tại trên `main` là im
 
 ```text
 1 đọc STATUS.md
-2 đọc/search PROJECT_JOURNAL.md theo component/problem
+2 search journal theo component/problem
 3 fetch source hiện tại trên main
 4 fetch contract/test liên quan
 5 sửa theo boundary
-6 chạy CI/offline test
-7 browser validation nếu runtime behavior
-8 cập nhật STATUS/JOURNAL nếu có milestone/invariant mới
+6 CI/offline test
+7 native browser validation nếu runtime behavior
+8 cập nhật STATUS/JOURNAL khi invariant/milestone thay đổi
 ```
 
 ---
@@ -45,29 +45,20 @@ AGENT
 Task → Strategy → Agent Action → Behavior → CDP Plan → Executor
 ```
 
-Hard boundary:
-
 ```text
-Strategy       = WHAT
-Behavior Policy= HOW naturally
-CDP Planner    = exact browser-native plan
-Executor       = dispatch browser commands
+Strategy        = WHAT
+Behavior Policy = HOW naturally
+CDP Planner     = exact browser-native plan
+Executor        = dispatch
 ```
 
-Scenario Mode không bị thay bằng Agent Mode.
+Scenario Mode và Agent Mode không gộp contract.
 
 ---
 
-# 3. Training Collector stable baseline — V0.8
+# 3. Collector stable baseline — V0.8
 
-Runtime:
-
-```text
-manifest 0.8.0
-raw schema 0.7.2
-```
-
-Primary flow:
+Runtime `0.8.0`, raw schema `0.7.2`.
 
 ```text
 all-frame content capture
@@ -78,51 +69,14 @@ all-frame content capture
 → append-only server JSONL
 ```
 
-Critical invariant:
+Invariant:
 
 ```text
-persist IndexedDB first
+IndexedDB persist first
 → socket mirror second
 ```
 
-Socket failure must never remove/replace browser-side raw persistence.
-
-## Socket lookup
-
-Read:
-
-```text
-training-collector/core/socket_mirror.js
-training-collector/background.js
-training-collector/socket-server/server.js
-training-collector/socket-server/integration_test.js
-training-collector/socket-server/README.md
-training-collector/tests/v08_socket_mirror_contract.js
-```
-
-Protocol:
-
-```text
-client-hello
-session-open
-session-ack { resumeFromSeq }
-event-batch
-batch-ack { lastSeq }
-resync { resumeFromSeq }
-session-close
-heartbeat
-```
-
-Server rules:
-
-```text
-duplicate <= lastSeq → ignore
-gap → resync
-append JSONL → persist meta → ACK
-server restart → scan durable JSONL → resumeFromSeq
-```
-
-Native validation achieved:
+Native gate đã đạt:
 
 ```text
 continuous socket archive      PASS
@@ -137,51 +91,56 @@ browser close >45s finalize    PASS
 session-end                    PASS
 ```
 
-Collector now enters stability/regression support. Do not keep optimizing transport without a regression.
+Collector từ đây là stability/regression support. Manual gzip chỉ fallback/debug; không quay lại Downloads/offscreen làm primary pipeline.
 
-Manual gzip remains fallback/debug only. Downloads/offscreen auto-export is not the architecture.
+Socket lookup:
+
+```text
+training-collector/core/socket_mirror.js
+training-collector/background.js
+training-collector/socket-server/server.js
+training-collector/socket-server/integration_test.js
+training-collector/tests/v08_socket_mirror_contract.js
+```
 
 ---
 
-# 4. Collector semantic/capture lookup
+# 4. Collector semantics / raw truth
 
-## Physical
+Physical:
 
 ```text
 training-collector/capture/physical_capture.js
 training-collector/correlation/physical_semantic_correlator.js
-training-collector/content.js
 ```
 
-Raw physical remains un-derived.
-
-## Action targets
+Action targets:
 
 ```text
 training-collector/capture/dom_capture.js
 training-collector/correlation/action_target_resolver.js
 training-collector/observer/semantic_observer.js
-training-collector/observer/element_registry.js
 ```
 
-Keep both:
+Raw target invariant:
 
 ```text
 rawTargetRef
 resolvedTargetRef
 ```
 
-Never overwrite raw fact with interpreted target.
+Không overwrite raw target bằng interpreted target.
 
-## Hover
+Actual DOM descriptor field names in native raw:
 
 ```text
-training-collector/observer/hover_trace.js
-training-collector/observer/mutation_trace.js
-training-collector/tools/build_action_semantics.js
+targetDescriptor
+resolvedTargetDescriptor
 ```
 
-Raw:
+This matters for A1. Synthetic aliases such as `resolvedTarget` are not implementation truth.
+
+Hover raw:
 
 ```text
 dom-hover-enter
@@ -189,7 +148,7 @@ dom-hover-dwell
 dom-hover-leave
 ```
 
-Derived offline:
+Derived offline only:
 
 ```text
 hover
@@ -197,39 +156,30 @@ hover-dwell
 hover-preview
 ```
 
-Regression: YouTube thumbnail hover → animated preview/control appears without navigation.
-
-## Frame identity
+Frame identity:
 
 ```text
 tabId + frameId + pageInstanceId + elementRef
 ```
 
-`elementRef` is not globally unique.
+SPA route change → semantic snapshot re-anchor.
 
-## SPA
-
-```text
-route-change
-→ semantic snapshot re-anchor
-```
-
-## Timeline
+Timeline:
 
 ```text
-tsEpochMs  = capture time / primary global reconstruction axis
+tsEpochMs  = primary global reconstruction time
 pageSeq    = page-local order
 sourceSeq  = source-local order
-sessionSeq = durable persistence order
+sessionSeq = persistence/integrity order only
 ```
 
-Never use `sessionSeq` as chronological truth in dataset generation.
+Never sort training trajectories primarily by `sessionSeq`.
 
 ---
 
 # 5. Privacy invariants
 
-Never capture/store/train raw:
+Do not capture/store/train raw:
 
 - password/credential values;
 - cookies;
@@ -237,112 +187,45 @@ Never capture/store/train raw:
 - local/session storage secrets;
 - clipboard contents;
 - payment secrets;
-- raw sensitive input values;
 - printable human key content;
-- URL query/hash secret contents.
+- raw sensitive form values.
 
-Typing Behavior may learn timing/operation classes, not human typed content.
+Typing Behavior learns timing/operation classes, not human typed content.
 
 ---
 
-# 6. Agent Phase A0 — semantic action + behavior + CDP map
+# 6. Agent Phase A0 — COMPLETE
 
-Read first:
+Read:
 
 ```text
 control-center/AGENT_ACTION_CONTRACT.json
 control-center/manager/strategy/agent_action_contract.js
 control-center/manager/strategy/execution_behavior_contract.js
-control-center/script/checks/agent_action_contract.js
 docs/AGENT_ACTION_CDP_MAP.md
-docs/AGENT_TRAINING_ARCHITECTURE.md
-```
-
-Deterministic contract remains separate:
-
-```text
-control-center/ACTION_CONTRACT.json
-```
-
-Do not migrate Scenario Mode onto Agent vocabulary.
-
-## Agent Action Contract v0.1
-
-Vocabulary:
-
-```text
-navigation:
-  navigate back forward reload switchTab openNewTab closeTab
-
-pointer:
-  click doubleClick hover moveTo drag
-
-scroll:
-  scrollVertical scrollHorizontal scrollIntoView
-
-keyboard:
-  focus typeText replaceText clear pressKey keyCombo
-
-forms:
-  selectOption setChecked toggle submit
-
-media:
-  play pause mute unmute setVolume seek changePlaybackRate
-
-observation:
-  hoverAndObserve waitAndObserve dismiss
-```
-
-Strategy action must use semantic `targetRef` when target-bound. Strategy must not emit raw selector, coordinate or CDP method as its primary representation.
-
-## Behavior families v0.1
-
-```text
-pointer-click
-pointer-hover
-pointer-drag
-scroll-vertical
-scroll-horizontal
-scroll-target-acquisition
-keyboard-text
-keyboard-key
-focus-acquisition
-form-control
-media-control
-navigation
-observation-wait
-```
-
-## CDP mapping principles
-
-```text
-click/hover/drag
-→ Input.dispatchMouseEvent
-
-scroll vertical/horizontal
-→ Input.dispatchMouseEvent(mouseWheel)
-
-typeText/pressKey
-→ Input.dispatchKeyEvent / Input.insertText
-
-navigate
-→ Page.navigate
-
-back/forward
-→ Page.getNavigationHistory + Page.navigateToHistoryEntry
-```
-
-`chrome.tabs.*` is allowed as tab lifecycle control-plane; in-page interaction should be standardized around CDP/browser-native execution.
-
-## Existing Agent Runtime state
-
-Read:
-
-```text
+docs/AGENT_EXECUTOR_GAP_MAP.md
 control-center/extension/agent-runtime-extension/background.js
 ```
 
-Current runtime is experimental and currently directly implements only:
+Deterministic `control-center/ACTION_CONTRACT.json` remains separate.
+
+Agent action vocabulary includes navigation, pointer, vertical/horizontal scroll, keyboard/form, media and observation-dependent actions.
+
+Hard boundary:
+
+```text
+Strategy must not emit raw selector / coordinates / CDP method.
+Behavior must not choose task intent.
+Executor must not choose strategy.
+```
+
+Human demonstrations define context-conditioned distributions, not literal trajectory replay.
+
+---
+
+# 7. Agent “tay chân” gap map
+
+Current experimental Agent Runtime directly executes only:
 
 ```text
 openUrl
@@ -350,153 +233,209 @@ pressKey
 type
 ```
 
-Do not confuse current executor coverage with the Agent semantic contract target. Runtime expansion happens after A1/A2/A3 design is stable enough.
+Most important P0 missing capability is the Observation Target Registry:
+
+```text
+observationId + targetRef
+→ tab/frame/document
+→ semantic descriptor/current rect
+→ resolvable CDP target
+```
+
+Brain should say `click e17`; Executor resolves it. Stale refs must fail explicitly and trigger re-observation, never reuse stale coordinates blindly.
+
+P0 execution families before useful Agent practice:
+
+```text
+target registry
+pointer move/hover/click/doubleClick
+vertical/horizontal wheel
+focus + text/key
+navigate/back/forward/reload
+```
+
+P1:
+
+```text
+drag
+scrollIntoView
+form controls
+dismiss
+tab lifecycle
+hoverAndObserve/waitAndObserve
+```
+
+Candidate future actions, not core until evidence/task demand exists:
+
+```text
+contextClick
+pressAndHold
+openLinkInNewTab
+selectText
+uploadFile
+```
+
+Media verbs should compile to generic semantic click/drag, not site-specific YouTube/TikTok executor methods.
 
 ---
 
-# 7. Human demonstrations → natural execution
+# 8. Phase A1 — Action Window Builder
 
-Human demonstration is NOT trajectory replay.
-
-Learn context-conditioned distributions/constraints.
-
-Pointer click features:
+Read first:
 
 ```text
-start position
-path length / displacement
-duration
-velocity / acceleration / jerk
-curvature
-overshoot/correction
-near-target slowdown
-dwell
-mouseDown→mouseUp hold
+training-collector/tools/build_action_windows.js
+training-collector/tests/action_window_contract.js
+training-collector/tools/build_action_semantics.js
 ```
 
-Hover:
+Current derived contract: `actionWindowVersion 0.1.3`.
 
-```text
-approach
-enter
-dwell
-UI mutation/state response
-leave
-```
-
-Scroll:
-
-```text
-axis
-delta burst
-timing
-pause
-settling/correction
-```
-
-Horizontal and vertical scroll are separate families. Facebook carousel is a regression case for horizontal scroll.
-
-Keyboard:
-
-```text
-focus-to-type pause
-inter-key timing
-burst/pause structure
-Backspace/Delete/Tab/Enter timing
-```
-
-Drag/slider:
-
-```text
-handle acquisition
-press
-continuous trajectory
-correction near requested value
-release
-```
-
-Natural behavior is not random delay/jitter everywhere.
-
----
-
-# 8. NEXT — Phase A1 Action Window Builder
-
-Purpose:
-
-```text
-raw human session
-→ candidate semantic demonstrations
-```
-
-Window shape:
+Shape:
 
 ```text
 BEFORE
-→ physical approach / hover / focus / wheel / key timing
+→ physical/semantic lead-in
 → SEMANTIC ACTION
-→ AFTER / mutation / route / semantic state
+→ AFTER / route / mutation
 → OUTCOME
 ```
 
-Initial derived actions:
+Current families:
 
 ```text
 click
-hover / hoverAndObserve
+dismiss
+toggle
+focus
+selectOption
+submit
+drag
+hover
+hoverAndObserve
 scrollVertical
 scrollHorizontal
 typeText
 pressKey
-drag
-toggle
-dismiss
 ```
 
-A1 dataset-side responsibilities:
+## A1 label enrichment
+
+Do not change raw. Derived target label resolution:
 
 ```text
-actionable-parent semantic-label enrichment
-hover html/body/container noise filtering
-frame-aware target identity
-tsEpochMs reconstruction
-before/action/after/outcome windows
+resolvedTargetDescriptor
+→ descriptor index / semantic snapshot
+→ targetDescriptor
+→ raw descendant/index fallback
 ```
 
-Do not modify raw Collector facts to make the dataset cleaner.
+Derived fields:
 
-Regression demonstrations to keep:
+```text
+labelSource
+labelEnriched
+```
+
+This addresses real cases where actionable parent is correct but its own label is empty while descendant/snapshot carries useful accessible text.
+
+## A1 hover noise
+
+Raw hover remains untouched.
+
+Derived filter removes only known generic background/container targets without stronger semantic evidence. Examples:
+
+```text
+html
+body
+ytd-app
+ytd-browse
+tp-yt-app-drawer
+```
+
+Preview-like hover with mutation/outcome evidence is retained.
+
+## A1 physical facts preserved
+
+A1 must not strip behavior information needed by A2.
+
+Safe fields kept:
+
+```text
+pointer:
+  phase x y movementX movementY button buttons pressure timing
+
+wheel:
+  x y deltaX deltaY deltaZ deltaMode timing
+
+keyboard:
+  phase operation keyClass non-printable code modifiers timing
+```
+
+Printable human key content remains absent.
+
+## A1 drag
+
+Derived from:
+
+```text
+pointer down
+→ continuous move samples
+→ pointer up
+```
+
+Output includes duration, distance, start/end and safe point series. This is necessary for slider/seek/volume behavior learning.
+
+## A1 high-confidence semantic promotion
+
+Only promote when evidence is strong:
+
+```text
+role=switch/checkbox or dom-change.checked → toggle
+known close/dismiss label                 → dismiss
+dom-change.selectedIndex                  → selectOption
+dom-submit                                → submit
+dom-focus focused=true                    → focus
+```
+
+Do not promote ambiguous semantic intent. Example: Facebook Like stays generic click unless reliable state evidence is available.
+
+## A1 regression cases
+
+Preserve:
 
 ```text
 YouTube hover-preview
 embedded iframe controls
-YouTube media controls / playback rate
-Facebook like / comments
+YouTube media control/slider
+Facebook like/comments
 Facebook horizontal carousel
-login without credential leakage
-TikTok dynamic video routes
-short-drama login-gated modal + dismiss
+login form without credential leakage
+TikTok SPA video switching
+short-drama login modal + dismiss
 multi-tab/multi-frame
 ```
 
+Next A1 gate: run builder over native Facebook/TikTok/YouTube JSONL and measure label coverage, filtered hover rate, action-family counts, drag quality, scroll bursts, keyboard privacy and outcome coverage.
+
 ---
 
-# 9. Agent roadmap after A1
+# 9. After A1
 
 ```text
 A2 Behavior Feature Extractor
-↓
-A3 Empirical context-conditioned Behavior Baseline
-↓
+→ pointer/keyboard/scroll/drag metrics
+
+A3 Empirical Behavior Baseline
+→ context-conditioned distributions
+
 A4 One-action Agent Runtime Bridge
-↓
+→ Strategy → Agent Action → Behavior → CDP → Observe After
+
 A5 Goal Checker + Replan
-↓
-retrieval/learned Strategy
-↓
-learned Behavior policy only after stable offline metrics
 ```
 
-A3 should start with empirical distributions, not a complex model.
+Do not jump to a complex learned Behavior model before A2/A3 metrics.
 
 ---
 
@@ -509,15 +448,51 @@ observe
 → status=blocked
 → reasonCode=human_verification_required
 → no automatic solve/bypass
-→ no blind reload/click loop
+→ no blind retry loop
 → legitimate alternate route only if independently serves task
 ```
 
-See `docs/AGENT_BOUNDARY_CONDITIONS.md`.
+---
+
+# 11. Architectural decisions
+
+## D001 — Scenario Mode and Agent Mode stay separate
+## D002 — Recorder and Training Collector are different products
+## D003 — Physical raw stays un-derived
+## D004 — DOM semantics are core; physical supplements behavior
+## D005 — Correlate physical↔semantic near capture time
+## D006 — Mutation uses bursts
+## D007 — IndexedDB is browser-side raw persistence
+## D008 — Manual/download export is fallback only
+## D009 — Batch receipts make RAW_BATCH retries idempotent
+## D010 — Natural Execution is a separate layer
+## D011 — Hover can be a semantic action with outcome
+## D012 — Raw and resolved action targets coexist
+## D013 — pageSeq/sourceSeq support reconstruction; sessionSeq is persistence order
+## D014 — hover-preview is derived offline
+## D015 — CAPTCHA is an Agent boundary condition
+## D016 — Frame identity is composite
+## D017 — All-frame raw does not imply multi-frame Agent Episode
+## D018 — SPA route changes need semantic re-anchor
+## D019 — Stream silence must be observable
+## D020 — Socket mirror is post-persist transport
+## D021 — Socket resume uses server durable sequence
+## D022 — Server tolerates duplicates and rejects gaps
+## D023 — Socket disconnect is not immediate session end
+## D024 — Continuous JSONL is preferred development archive
+## D025 — Socket protocol requires integration CI
+## D026 — Agent has its own semantic Action Contract
+## D027 — CDP is Agent in-page execution standard
+## D028 — Agent execution is Action → Behavior → CDP Plan → Executor
+## D029 — Human demonstrations define distributions/context, not literal replay
+## D030 — Derived dataset cleanup must not mutate raw Collector truth
+## D031 — A1 must preserve safe physical facts needed by A2
+## D032 — Native raw descriptor names are contract facts; tests must cover `resolvedTargetDescriptor`
+## D033 — Stale targetRef must trigger re-observation, not blind coordinate reuse
 
 ---
 
-# 11. CI map
+# 12. CI map
 
 Workflow:
 
@@ -525,136 +500,18 @@ Workflow:
 .github/workflows/extension-syntax.yml
 ```
 
-Agent checks:
+Agent/A1 checks:
 
 ```text
 control-center/script/checks/strategy_contract.js
 control-center/script/checks/agent_action_contract.js
+training-collector/tests/action_window_contract.js
 ```
 
-Collector checks include storage/action/frame/socket contracts and real localhost socket integration test.
-
-CI success != native Chrome runtime validation.
+Collector storage/frame/socket regression checks remain enabled. CI success != native Chrome Agent validation.
 
 ---
 
-# 12. Architectural decisions
-
-## D001 — Scenario Mode and Agent Mode stay separate
-Protect deterministic execution.
-
-## D002 — Recorder and Training Collector are different products
-Recorder → Scenario; Collector → training telemetry.
-
-## D003 — Physical raw stays un-derived
-Behavior features are offline-derived.
-
-## D004 — DOM semantic signal is core; physical supplements it
-Agent needs target/state/outcome.
-
-## D005 — Physical↔semantic correlation near capture time
-Avoid target drift.
-
-## D006 — Mutation uses bursts
-Raw mutation noise otherwise dominates.
-
-## D007 — IndexedDB is browser-side raw persistence
-Downloads are not storage architecture.
-
-## D008 — Manual/download export is debug fallback only
-V0.8 primary development archive is socket JSONL.
-
-## D009 — Batch receipts make RAW_BATCH retries idempotent
-ACK loss must not duplicate raw events.
-
-## D010 — Natural Execution is a separate layer
-Strategy=WHAT; Behavior=HOW.
-
-## D011 — Hover can be a semantic action with outcome
-Not all meaningful actions navigate/click.
-
-## D012 — Raw and resolved action targets coexist
-Interpretation must not destroy raw fact.
-
-## D013 — pageSeq/sourceSeq support reconstruction
-sessionSeq is persistence order.
-
-## D014 — hover-preview is derived offline
-Raw keeps hover/state facts.
-
-## D015 — CAPTCHA is an Agent boundary condition
-Blocked/replan legitimately; no automatic solve/bypass.
-
-## D016 — Frame identity is composite
-`tabId + frameId + pageInstanceId + elementRef`.
-
-## D017 — All-frame raw does not imply multi-frame Agent Episode
-Explicit Agent Observation contract is required first.
-
-## D018 — SPA route changes need semantic re-anchor
-route-change + semantic snapshot.
-
-## D019 — Stream silence must be observable
-collector-stream-health diagnostics.
-
-## D020 — Socket mirror is post-persist transport
-IndexedDB first, socket second.
-
-## D021 — Socket resume uses server durable sequence
-Server returns `resumeFromSeq`; extension replays IndexedDB.
-
-## D022 — Server tolerates duplicates and rejects sequence gaps
-Duplicate ignore; gap → resync.
-
-## D023 — Socket disconnect is not immediate session end
-Use grace window.
-
-## D024 — Continuous JSONL is preferred development archive
-Manual gzip is fallback.
-
-## D025 — Socket protocol requires integration CI
-Static contracts are insufficient.
-
-## D026 — Agent has its own semantic Action Contract
-Do not reuse deterministic selector-heavy `ACTION_CONTRACT.json` as Agent brain vocabulary.
-
-## D027 — CDP is Agent execution standard
-Strategy stays semantic; exact CDP belongs below Behavior Policy.
-
-## D028 — Agent execution is four-layered
-`Action → Behavior → CDP Plan → Executor` keeps reasoning, fidelity and mechanics independently testable.
-
-## D029 — Human demonstrations define distributions/context, not literal replay
-Natural execution must generalize to unseen geometry/state.
-
----
-
-# 13. Engineering milestones
-
-```text
-V0.7 Action Semantics
-→ raw/resolved targets + hover lifecycle
-
-V0.7.2 Frame-Aware Stream Diagnostics
-→ all-frame + route re-anchor + stream health
-
-V0.8 Socket Mirror
-→ IndexedDB safety + localhost continuous JSONL
-
-V0.8 native transport gate
-→ late-server replay + concurrent sessions + close finalization validated
-
-Agent Phase A0
-→ Agent Action Contract v0.1
-→ Execution Behavior Contract v0.1
-→ Action→Behavior→CDP mapping
-→ CI smoke test
-```
-
-Current next gate: **A1 Action Window Builder**.
-
----
-
-# 14. Maintenance rule
+# 13. Maintenance rule
 
 Update journal when module responsibility, contract/protocol, difficult invariant, version/migration, test gate or architecture boundary changes. Do not log every commit.
