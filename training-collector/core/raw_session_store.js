@@ -48,8 +48,9 @@
         navigation: 'sanitized-spa-route-change-plus-route-semantic-snapshot',
         streamHealth: 'collector-stream-start-health-stop-with-cumulative-source-event-counts',
         timeline: 'tsEpochMs-capture-time-pageSeq-page-order-sourceSeq-source-order-sessionSeq-persistence-order',
-        persistence: 'indexeddb-chunk-store-with-batch-ack',
-        export: 'chunked-jsonl-gzip-debug-adapter'
+        persistence: 'indexeddb-chunk-store-with-batch-ack-plus-localhost-websocket-replay-mirror',
+        export: 'manual-chunked-jsonl-gzip-fallback-only',
+        socketMirror: 'training-collector-v1-session-open-resume-event-batch-ack-replay'
       }
     };
   }
