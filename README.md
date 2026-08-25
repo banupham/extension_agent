@@ -1,9 +1,27 @@
 # extension_agent
 
-Local Chrome/GPM automation framework gồm 2 phần:
+Local Chrome/GPM automation framework gồm các phần chính:
 
-- `control-center/`: broker WebSocket, dashboard, runner và Stealth Executor extension.
+- `control-center/`: broker WebSocket, dashboard, deterministic runner và Agent runtime/strategy work.
 - `recorder/`: Browser Action Recorder để ghi workflow và export scenario `.js` deterministic.
+- `training-collector/`: observe-only physical + semantic human demonstration capture cho dataset/behavior learning.
+
+## Bắt đầu khi quay lại dự án sau một khoảng thời gian
+
+Đọc theo thứ tự:
+
+```text
+1. STATUS.md
+   → version/milestone hiện tại + việc tiếp theo
+
+2. docs/PROJECT_JOURNAL.md
+   → code lookup map + invariants + dependency + quyết định kiến trúc + lịch sử kỹ thuật
+
+3. source files được journal chỉ ra
+   → luôn fetch/đọc code hiện tại trước khi sửa
+```
+
+`docs/PROJECT_JOURNAL.md` là persistent engineering memory của dự án. Khi cần sửa một khu vực như pointer capture, IndexedDB, auto-export, Strategy, Behavior Model, Recorder..., journal chỉ ra những file nào cần đọc cùng và test nào liên quan để không phải khảo sát lại toàn repo từ đầu.
 
 ## Tìm theo kiểu ZIP cũ
 
@@ -31,7 +49,7 @@ Không nhân đôi runtime source vào `packages/` để tránh hai bản code b
 
 ## Source of truth
 
-Từ V3.10 trở đi ưu tiên repo GitHub này. Khi có bản mới, dùng:
+Ưu tiên repo GitHub này. Khi có bản mới, dùng:
 
 ```bat
 git pull
@@ -39,12 +57,7 @@ git pull
 
 thay vì tải ZIP thủ công.
 
-## Bản hiện tại / đang triển khai
-
-- Control Center runtime ổn định gần nhất: **V3.9 Recorded Click**
-- Control Center đang triển khai: **V3.10 Browser ↔ Scenario Assignment**
-- Stealth Executor: **1.5.0**
-- Recorder: **V3.7 Recorded Click**
+Trạng thái version hiện tại không nên suy từ phần lịch sử trong README này; xem `STATUS.md` để lấy milestone mới nhất.
 
 ## Cài Control Center
 
@@ -120,8 +133,10 @@ Random chỉ được áp dụng khi chủ động tạo Scenario Variant hoặc
 ## Tài liệu theo dõi
 
 - [STATUS.md](STATUS.md): trạng thái công việc hiện tại và điểm tiếp tục.
+- [docs/PROJECT_JOURNAL.md](docs/PROJECT_JOURNAL.md): persistent engineering memory, code lookup map và invariants.
 - [CHANGELOG.md](CHANGELOG.md): lịch sử thay đổi.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): kiến trúc.
+- [docs/AGENT_TRAINING_ARCHITECTURE.md](docs/AGENT_TRAINING_ARCHITECTURE.md): Agent/Training architecture.
 - [docs/KEYBOARD.md](docs/KEYBOARD.md): keyboard/Backspace.
 - [docs/RECORDED_CLICK.md](docs/RECORDED_CLICK.md): click deterministic.
 - [docs/ASSIGNMENT_MODES.md](docs/ASSIGNMENT_MODES.md): phân công browser/scenario.
