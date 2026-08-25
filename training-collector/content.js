@@ -107,9 +107,11 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
           documentPathname: location.pathname
         };
       },
+      enrichEvent(event) {
+        return S.correlator ? S.correlator.correlate(event) : event;
+      },
       emitBatch(events) {
-        const correlated = S.correlator ? S.correlator.correlateBatch(events) : events;
-        rawBatch(correlated, 'physical');
+        rawBatch(events, 'physical');
       }
     });
 
