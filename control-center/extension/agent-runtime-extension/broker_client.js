@@ -31,6 +31,7 @@
     let reconnectTimer = null;
     let heartbeatTimer = null;
     let connecting = false;
+    let stopped = false;
 
     function isOpen() { return socket && socket.readyState === WebSocketImpl.OPEN; }
     function send(payload) {
@@ -47,6 +48,7 @@
       heartbeatTimer = setInterval(() => send({ type: 'heartbeat', role, ts: Date.now() }), heartbeatMs);
     }
     function scheduleReconnect() {
+      if (stopped) return;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       const delay = reconnectDelay;
       reconnectDelay = Math.min(reconnectMax, reconnectDelay * 2);
@@ -84,15 +86,19 @@
       }
     }
     async function connect() {
+      if (stopped) stopped = false;
       if (connecting || isOpen() || socket?.readyState === WebSocketImpl.CONNECTING) return;
       connecting = true;
       const ready = await healthReady();
       connecting = false;
       if (!ready) { scheduleReconnect(); return; }
+      if (stopped) return;
       socket = new WebSocketImpl(server);
       socket.onopen = async () => {
+        if (stopped) { try { socket?.close(); } catch (_) {} return; }
         reconnectDelay = reconnectMin;
         if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = null;
         await register();
         startHeartbeat();
         log('agent-runtime broker connected');
@@ -102,10 +108,11 @@
       socket.onclose = () => {
         stopHeartbeat();
         socket = null;
-        scheduleReconnect();
+        if (!stopped) scheduleReconnect();
       };
     }
     function close() {
+      stopped = true;
       stopHeartbeat();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -113,7 +120,7 @@
       socket = null;
     }
     function status() {
-      return { connected: isOpen(), server, reconnectDelay };
+      return { connected: isOpen(), server, reconnectDelay, stopped };
     }
 
     return { connect, close, status, send };
