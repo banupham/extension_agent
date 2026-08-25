@@ -4,7 +4,7 @@ const taskEl = document.getElementById('task');
 const statusEl = document.getElementById('status');
 
 function send(type, extra = {}) {
-  return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V01', type, ...extra });
+  return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V02', type, ...extra });
 }
 
 function show(state, error) {
@@ -13,9 +13,14 @@ function show(state, error) {
     return;
   }
   const episode = state?.episode;
-  statusEl.textContent = episode
-    ? `${state.active ? 'Recording' : 'Stopped'}\n${episode.episodeId}\nSteps: ${episode.steps?.length || 0}\nOutcome: ${episode.finalOutcome?.status || '-'}`
-    : 'Idle';
+  if (!episode) {
+    statusEl.textContent = 'Idle';
+    return;
+  }
+  const transitions = Array.isArray(episode.transitions) ? episode.transitions : [];
+  const complete = transitions.filter(x => x.status === 'complete').length;
+  const partial = transitions.length - complete;
+  statusEl.textContent = `${state.active ? 'Recording' : 'Stopped'}\n${episode.episodeId}\nTransitions: ${transitions.length} (${complete} complete / ${partial} partial)\nOutcome: ${episode.finalOutcome?.status || '-'}`;
 }
 
 async function refresh() {
