@@ -31,8 +31,7 @@ function sampleQuantiles(metric, rng = Math.random) {
 }
 
 function baselineFamilyFor(behaviorFamily) {
-  if (behaviorFamily === 'focus-acquisition') return 'pointer-click';
-  return behaviorFamily;
+  return behaviorFamily === 'focus-acquisition' ? 'pointer-click' : behaviorFamily;
 }
 
 function chooseProfile(baseline, behaviorFamily, target) {
@@ -47,20 +46,20 @@ function finiteOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function pointerClickBehavior(profile) {
+function pointerClickBehavior(profile, rng) {
   return {
     profile: profile ? 'empirical' : 'fallback',
     targetAcquisition: 'adaptive',
-    dwellBeforeDownMs: finiteOrNull(sampleQuantiles(profile?.acquisitionPauseMs, arguments[1] || Math.random)),
-    holdMs: finiteOrNull(sampleQuantiles(profile?.holdMs, arguments[1] || Math.random)),
+    dwellBeforeDownMs: finiteOrNull(sampleQuantiles(profile?.acquisitionPauseMs, rng)),
+    holdMs: finiteOrNull(sampleQuantiles(profile?.holdMs, rng)),
     trajectorySeed: null,
     constraints: {
-      approachDurationMs: finiteOrNull(sampleQuantiles(profile?.approachDurationMs, arguments[1] || Math.random)),
-      straightness: finiteOrNull(sampleQuantiles(profile?.straightness, arguments[1] || Math.random)),
-      meanSpeedPxS: finiteOrNull(sampleQuantiles(profile?.meanSpeedPxS, arguments[1] || Math.random)),
-      meanAbsTurnDeg: finiteOrNull(sampleQuantiles(profile?.meanAbsTurnDeg, arguments[1] || Math.random)),
-      correctionCount45Deg: finiteOrNull(sampleQuantiles(profile?.correctionCount45Deg, arguments[1] || Math.random)),
-      endToCenterNormalized: finiteOrNull(sampleQuantiles(profile?.endToCenterNormalized, arguments[1] || Math.random))
+      approachDurationMs: finiteOrNull(sampleQuantiles(profile?.approachDurationMs, rng)),
+      straightness: finiteOrNull(sampleQuantiles(profile?.straightness, rng)),
+      meanSpeedPxS: finiteOrNull(sampleQuantiles(profile?.meanSpeedPxS, rng)),
+      meanAbsTurnDeg: finiteOrNull(sampleQuantiles(profile?.meanAbsTurnDeg, rng)),
+      correctionCount45Deg: finiteOrNull(sampleQuantiles(profile?.correctionCount45Deg, rng)),
+      endToCenterNormalized: finiteOrNull(sampleQuantiles(profile?.endToCenterNormalized, rng))
     }
   };
 }
@@ -92,62 +91,37 @@ function sampledBehavior({ baseline, mappedAction, target = null, rng = Math.ran
     out.pointer = pointerClickBehavior(profile, rng);
   } else if (family === 'pointer-hover') {
     out.pointer = {
-      profile: profile ? 'empirical' : 'fallback',
-      targetAcquisition: 'adaptive',
-      dwellBeforeDownMs: null,
-      holdMs: null,
-      trajectorySeed: null,
+      profile: profile ? 'empirical' : 'fallback', targetAcquisition: 'adaptive', dwellBeforeDownMs: null, holdMs: null, trajectorySeed: null,
       constraints: {
-        approachDurationMs: finiteOrNull(sampleQuantiles(profile?.approachDurationMs, rng)),
-        straightness: finiteOrNull(sampleQuantiles(profile?.straightness, rng)),
-        meanSpeedPxS: finiteOrNull(sampleQuantiles(profile?.meanSpeedPxS, rng)),
-        meanAbsTurnDeg: finiteOrNull(sampleQuantiles(profile?.meanAbsTurnDeg, rng)),
-        dwellMs: finiteOrNull(sampleQuantiles(profile?.dwellMs, rng)),
-        leaveDurationMs: finiteOrNull(sampleQuantiles(profile?.leaveDurationMs, rng))
+        approachDurationMs: finiteOrNull(sampleQuantiles(profile?.approachDurationMs, rng)), straightness: finiteOrNull(sampleQuantiles(profile?.straightness, rng)),
+        meanSpeedPxS: finiteOrNull(sampleQuantiles(profile?.meanSpeedPxS, rng)), meanAbsTurnDeg: finiteOrNull(sampleQuantiles(profile?.meanAbsTurnDeg, rng)),
+        dwellMs: finiteOrNull(sampleQuantiles(profile?.dwellMs, rng)), leaveDurationMs: finiteOrNull(sampleQuantiles(profile?.leaveDurationMs, rng))
       }
     };
   } else if (family === 'scroll-vertical' || family === 'scroll-horizontal') {
     out.scroll = {
-      profile: profile ? 'empirical' : 'fallback',
-      axis: family === 'scroll-horizontal' ? 'horizontal' : 'vertical',
-      burstProfile: 'context-conditioned',
-      timingSeed: null,
+      profile: profile ? 'empirical' : 'fallback', axis: family === 'scroll-horizontal' ? 'horizontal' : 'vertical', burstProfile: 'context-conditioned', timingSeed: null,
       constraints: {
-        durationMs: finiteOrNull(sampleQuantiles(profile?.durationMs, rng)),
-        eventCount: finiteOrNull(sampleQuantiles(profile?.eventCount, rng)),
-        absoluteDelta: finiteOrNull(sampleQuantiles(profile?.absoluteDelta, rng)),
-        eventDeltaP90: finiteOrNull(sampleQuantiles(profile?.eventDeltaP90, rng)),
-        interEventGapMedianMs: finiteOrNull(sampleQuantiles(profile?.interEventGapMedianMs, rng)),
-        correctionRatio: finiteOrNull(sampleQuantiles(profile?.correctionRatio, rng))
+        durationMs: finiteOrNull(sampleQuantiles(profile?.durationMs, rng)), eventCount: finiteOrNull(sampleQuantiles(profile?.eventCount, rng)),
+        absoluteDelta: finiteOrNull(sampleQuantiles(profile?.absoluteDelta, rng)), eventDeltaP90: finiteOrNull(sampleQuantiles(profile?.eventDeltaP90, rng)),
+        interEventGapMedianMs: finiteOrNull(sampleQuantiles(profile?.interEventGapMedianMs, rng)), correctionRatio: finiteOrNull(sampleQuantiles(profile?.correctionRatio, rng))
       }
     };
   } else if (family === 'keyboard-text' || family === 'keyboard-key') {
     out.keyboard = {
-      profile: profile ? 'empirical' : 'fallback',
-      initialPauseMs: null,
-      burstProfile: 'context-conditioned',
-      timingSeed: null,
+      profile: profile ? 'empirical' : 'fallback', initialPauseMs: null, burstProfile: 'context-conditioned', timingSeed: null,
       constraints: {
-        eventDurationMs: finiteOrNull(sampleQuantiles(profile?.eventDurationMs, rng)),
-        interKeyMedianMs: finiteOrNull(sampleQuantiles(profile?.interKeyMedianMs, rng)),
-        interKeyP90Ms: finiteOrNull(sampleQuantiles(profile?.interKeyP90Ms, rng)),
-        holdMedianMs: finiteOrNull(sampleQuantiles(profile?.holdMedianMs, rng)),
-        holdP90Ms: finiteOrNull(sampleQuantiles(profile?.holdP90Ms, rng)),
-        pauseCount450Ms: finiteOrNull(sampleQuantiles(profile?.pauseCount450Ms, rng))
+        eventDurationMs: finiteOrNull(sampleQuantiles(profile?.eventDurationMs, rng)), interKeyMedianMs: finiteOrNull(sampleQuantiles(profile?.interKeyMedianMs, rng)),
+        interKeyP90Ms: finiteOrNull(sampleQuantiles(profile?.interKeyP90Ms, rng)), holdMedianMs: finiteOrNull(sampleQuantiles(profile?.holdMedianMs, rng)),
+        holdP90Ms: finiteOrNull(sampleQuantiles(profile?.holdP90Ms, rng)), pauseCount450Ms: finiteOrNull(sampleQuantiles(profile?.pauseCount450Ms, rng))
       }
     };
   } else if (family === 'pointer-drag') {
     out.pointer = {
-      profile: sparse || !profile ? 'fallback' : 'empirical',
-      targetAcquisition: 'adaptive',
-      dwellBeforeDownMs: null,
-      holdMs: null,
-      trajectorySeed: null,
+      profile: sparse || !profile ? 'fallback' : 'empirical', targetAcquisition: 'adaptive', dwellBeforeDownMs: null, holdMs: null, trajectorySeed: null,
       constraints: sparse ? { sparseFallback: true } : {
-        durationMs: finiteOrNull(sampleQuantiles(profile?.durationMs, rng)),
-        displacementPx: finiteOrNull(sampleQuantiles(profile?.displacementPx, rng)),
-        straightness: finiteOrNull(sampleQuantiles(profile?.straightness, rng)),
-        meanSpeedPxS: finiteOrNull(sampleQuantiles(profile?.meanSpeedPxS, rng))
+        durationMs: finiteOrNull(sampleQuantiles(profile?.durationMs, rng)), displacementPx: finiteOrNull(sampleQuantiles(profile?.displacementPx, rng)),
+        straightness: finiteOrNull(sampleQuantiles(profile?.straightness, rng)), meanSpeedPxS: finiteOrNull(sampleQuantiles(profile?.meanSpeedPxS, rng))
       }
     };
   }
@@ -155,11 +129,4 @@ function sampledBehavior({ baseline, mappedAction, target = null, rng = Math.ran
   return validateExecutionBehavior(out);
 }
 
-module.exports = {
-  POLICY_VERSION,
-  targetSizeBucket,
-  baselineFamilyFor,
-  sampleQuantiles,
-  chooseProfile,
-  sampledBehavior
-};
+module.exports = { POLICY_VERSION, targetSizeBucket, baselineFamilyFor, sampleQuantiles, chooseProfile, sampledBehavior };
