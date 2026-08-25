@@ -150,6 +150,50 @@ Selector dùng `selectorCandidates + score`; không quay về một selector duy
 
 Element identity phải được hiểu theo page context; không coi `e17` là globally unique qua page/tab/frame.
 
+### Khi sửa hover / preview / dynamic-controls semantics
+
+Đọc trước:
+
+```text
+training-collector/capture/physical_capture.js
+training-collector/capture/dom_capture.js
+training-collector/observer/semantic_observer.js
+training-collector/observer/element_registry.js
+training-collector/observer/mutation_trace.js
+training-collector/correlation/physical_semantic_correlator.js
+training-collector/content.js
+```
+
+Regression case chuẩn phát hiện từ native V0.6.1 session trên YouTube:
+
+```text
+pointer enters recommended-video thumbnail
+→ thumbnail activates animated preview
+→ mute/audio control appears inside card
+→ no URL navigation required
+```
+
+Đây là semantic action khác với `click-open`. Dataset/Observer phải có khả năng phân biệt ít nhất:
+
+```text
+hover-preview
+click-open
+click-control
+```
+
+Không suy mọi state change sau pointer/focus thành click hoặc navigation. Với UI động, hover có thể là action có outcome rõ ràng.
+
+Khi dựng dataset, ưu tiên derive action window theo:
+
+```text
+STATE_BEFORE
+→ pointer acquisition / enter / dwell
+→ STATE_AFTER (preview activated, controls appeared)
+→ navigation = false
+```
+
+Raw collector vẫn giữ physical + DOM/mutation facts; semantic `hover-preview` có thể được derive ở dataset layer nếu chưa có contract raw riêng.
+
 ### Khi sửa mutation
 
 Đọc:
@@ -544,6 +588,21 @@ Executor = CDP
 
 Không hard-code random behavior trong Strategy.
 
+## D011 — Hover có thể là semantic action có outcome, không phải chỉ pointer noise
+
+Dynamic web UI có thể phản ứng với hover bằng preview, menu, tooltip hoặc controls mà không có click/navigation.
+
+Regression case đầu tiên: YouTube recommended-video thumbnail.
+
+```text
+hover thumbnail
+→ animated preview starts
+→ audio/mute control appears
+→ URL không đổi
+```
+
+Dataset builder/Observer không được ép case này thành `click-open`. Khi phù hợp, derive `hover-preview` từ physical enter/dwell + semantic/mutation state change. Raw capture vẫn giữ facts nguyên thủy để thuật toán derive có thể thay đổi sau này.
+
 ---
 
 # 9. Current known state — 2026-08-25
@@ -604,6 +663,30 @@ Added offscreen gzip exporter + startup detection for closed IndexedDB sessions.
 
 Latest code commit at time journal was created should be re-checked from `main`; do not rely on a stale SHA in this journal when editing code.
 
+## 2026-08-25 — Native V0.6.1 semantic hover case discovered
+
+User-confirmed behavior from screenshot + raw-session review:
+
+```text
+Action A:
+pointer hover vào thumbnail video đề xuất
+→ YouTube chạy preview động trong thumbnail
+→ nút loa/mute xuất hiện
+→ không cần click mở URL/video page mới
+
+Action B:
+click nút "Bỏ qua" trên quảng cáo đang phát
+→ ad state kết thúc/chuyển tiếp
+```
+
+Engineering implication:
+
+- `hover-preview` phải được coi là action/outcome candidate trong Behavior Dataset Preparation;
+- không map mọi focus/state transition thành navigation click;
+- cần dùng pointer trajectory/enter/dwell cùng mutation/semantic state change để phân biệt hover activation;
+- `click-control` như Skip Ad phải tách khỏi hover-preview;
+- khi sau này sửa target/action resolver, dùng case này làm regression fixture synthetic thay vì commit raw user session.
+
 ---
 
 # 11. Maintenance rules for this journal
@@ -636,6 +719,8 @@ CDP
 Recorder
 selector
 visibility
+hover
+preview
 ```
 
 Then fetch the referenced source files from `main` before making changes.
