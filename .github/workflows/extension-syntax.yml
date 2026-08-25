@@ -44,6 +44,7 @@ jobs:
           node --check training-collector/core/raw_session_store.js
           node --check training-collector/core/indexeddb_chunk_store.js
           node --check training-collector/core/reliable_sender.js
+          node --check training-collector/core/socket_mirror.js
           node --check training-collector/observer/element_registry.js
           node --check training-collector/observer/semantic_observer.js
           node --check training-collector/observer/mutation_trace.js
@@ -55,16 +56,17 @@ jobs:
           node --check training-collector/capture/dom_capture.js
           node --check training-collector/tools/analyze_raw.js
           node --check training-collector/tools/build_action_semantics.js
+          node --check training-collector/socket-server/server.js
           node --check training-collector/background.js
           node --check training-collector/content.js
           node --check training-collector/popup.js
-          node --check training-collector/offscreen.js
           node --check training-collector/tests/architecture_contract.js
           node --check training-collector/tests/raw_session_contract.js
           node --check training-collector/tests/raw_analysis_contract.js
           node --check training-collector/tests/v06_storage_contract.js
           node --check training-collector/tests/v07_action_semantics_contract.js
           node --check training-collector/tests/v072_frame_stream_contract.js
+          node --check training-collector/tests/v08_socket_mirror_contract.js
       - name: Validate extension manifests
         run: |
           node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8'))"
@@ -76,9 +78,11 @@ jobs:
         run: node training-collector/tests/raw_session_contract.js
       - name: Run Collector raw analysis contract test
         run: node training-collector/tests/raw_analysis_contract.js
-      - name: Run Collector inherited V0.6 storage reliability contract test
+      - name: Run Collector inherited IndexedDB reliability contract test
         run: node training-collector/tests/v06_storage_contract.js
-      - name: Run Collector V0.7 action semantics contract test
+      - name: Run Collector inherited V0.7 action semantics contract test
         run: node training-collector/tests/v07_action_semantics_contract.js
-      - name: Run Collector V0.7.2 frame stream diagnostics contract test
+      - name: Run Collector inherited V0.7.2 frame stream contract test
         run: node training-collector/tests/v072_frame_stream_contract.js
+      - name: Run Collector V0.8 socket mirror contract test
+        run: node training-collector/tests/v08_socket_mirror_contract.js
