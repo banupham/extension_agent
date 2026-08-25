@@ -31,6 +31,7 @@ function showRaw(session, error) {
   }
   rawStatusEl.textContent = [
     `Session: ${session.sessionId}`,
+    `Schema: ${session.schemaVersion || '-'}`,
     `Status: ${session.status}`,
     `Events: ${session.eventCount || 0}`,
     `Chunks: ${session.chunkCount || 0}`,
@@ -57,19 +58,32 @@ async function previewRaw() {
   showRaw(res.session);
 }
 
+function toJsonl(data) {
+  const lines = [JSON.stringify({
+    recordType: 'session',
+    exportVersion: '0.5.0',
+    exportedAt: data.exportedAt || new Date().toISOString(),
+    session: data.session || null
+  })];
+  for (const event of Array.isArray(data.events) ? data.events : []) {
+    lines.push(JSON.stringify({ recordType: 'event', ...event }));
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 async function exportRaw() {
-  rawStatusEl.textContent = 'Preparing raw JSON export...';
+  rawStatusEl.textContent = 'Preparing temporary JSONL debug export...';
   const res = await send('EXPORT_RAW_SESSION');
   if (!res?.ok || !res.data) {
     showRaw(null, res?.error || 'export_failed');
     return;
   }
-  const json = JSON.stringify(res.data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+  const jsonl = toJsonl(res.data);
+  const blob = new Blob([jsonl], { type: 'application/x-ndjson' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `training-collector-${res.data.session?.sessionId || Date.now()}.raw.json`;
+  a.download = `training-collector-${res.data.session?.sessionId || Date.now()}.raw.jsonl`;
   document.body.appendChild(a);
   a.click();
   a.remove();
