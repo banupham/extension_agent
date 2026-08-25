@@ -2,33 +2,42 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Training Collector V0.7.2</title>
+  <title>Training Collector V0.8</title>
   <style>
-    body{font:13px system-ui,sans-serif;margin:14px;width:430px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}.notice{padding:8px;background:#f4f6f8;margin:8px 0;line-height:1.35}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}.session-row{border:1px solid #ddd;padding:8px;margin:6px 0}.session-row button{margin-top:6px}
+    body{font:13px system-ui,sans-serif;margin:14px;width:430px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}.notice{padding:8px;background:#f4f6f8;margin:8px 0;line-height:1.35}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}.session-row{border:1px solid #ddd;padding:8px;margin:6px 0}
   </style>
 </head>
 <body>
-  <strong>Training Collector V0.7.2 Frame-Aware Stream Diagnostics</strong>
-  <div class="muted">Continuous physical + semantic capture across frames with SPA route snapshots, source-health diagnostics, action semantics and reliable IndexedDB persistence.</div>
-  <div class="notice">Raw runtime storage remains IndexedDB. V0.7.2 captures eligible http/https frames separately using frame/document identity and emits periodic stream-health records so missing DOM/Hover/Mutation streams can be diagnosed directly. Closed sessions are still auto-exported to <b>Downloads/training-collector/*.raw.jsonl.gz</b> only as a temporary development convenience.</div>
-
-  <div id="rawStatus" class="status">Loading raw session...</div>
-  <div class="row">
-    <button id="previewRaw">Preview Current</button>
-    <button id="exportRaw">Manual Export Current</button>
-  </div>
-  <pre id="preview" hidden></pre>
+  <strong>Training Collector V0.8 Socket Mirror</strong>
+  <div class="muted">Frame-aware physical + semantic capture with IndexedDB safety buffering and continuous localhost WebSocket mirroring.</div>
+  <div class="notice">Primary development data path is now <b>IndexedDB → ws://127.0.0.1:8765/training-collector → local append-only JSONL</b>. Manual JSONL.gz export remains only as a fallback/debug tool.</div>
 
   <div class="section">
-    <strong>Recent Raw Sessions / Auto Export</strong>
-    <div class="muted">Use this to diagnose closed sessions that did not download automatically.</div>
+    <strong>Socket Mirror</strong>
+    <div id="socketStatus" class="status">Loading socket status...</div>
+    <button id="refreshSocket">Refresh Socket Status</button>
+  </div>
+
+  <div class="section">
+    <strong>Current Raw Session</strong>
+    <div id="rawStatus" class="status">Loading raw session...</div>
+    <div class="row">
+      <button id="previewRaw">Preview Current</button>
+      <button id="exportRaw">Manual Export Fallback</button>
+    </div>
+    <pre id="preview" hidden></pre>
+  </div>
+
+  <div class="section">
+    <strong>Recent Raw Sessions</strong>
+    <div class="muted">Closed sessions remain in IndexedDB and are replayed to the socket server when it becomes available.</div>
     <button id="refreshSessions">Refresh Sessions</button>
     <div id="sessions"></div>
   </div>
 
   <div class="section">
     <strong>Optional Task Episode</strong>
-    <div class="muted">Episodes currently remain top-frame only; all-frame capture applies to continuous raw telemetry.</div>
+    <div class="muted">Episodes remain top-frame only; all-frame capture applies to continuous raw telemetry.</div>
     <input id="task" placeholder="Task instruction, e.g. Search Google for OpenAI">
     <button id="start">Start Episode</button>
     <div class="row">
