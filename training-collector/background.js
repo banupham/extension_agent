@@ -77,6 +77,16 @@ async function closeDanglingSessions() {
   return closed;
 }
 
+async function registerClosedBacklog(limit = 500) {
+  for (const status of ['closed-inferred', 'closed']) {
+    const sessions = await ChunkStore.listSessionsByStatus(status, limit);
+    for (const session of sessions) {
+      if (Number(session.eventCount || 0) <= 0) continue;
+      SocketMirror?.registerSession?.(session, { closeWhenSynced: true });
+    }
+  }
+}
+
 async function recentSessions() {
   return (await ChunkStore.listSessions(RECENT_SESSION_LIMIT)).map(session => ({
     sessionId: session.sessionId,
@@ -306,7 +316,9 @@ async function transitionEnd(sender, transition) {
 
 function bootstrap() {
   SocketMirror?.start?.();
-  ensureBrowserSession().catch(() => {});
+  ensureBrowserSession()
+    .then(() => registerClosedBacklog())
+    .catch(() => {});
 }
 
 chrome.runtime.onStartup.addListener(bootstrap);
