@@ -139,6 +139,8 @@ keyboard-key
 pointer-drag (sparse fallback)
 ```
 
+`focus-acquisition` now deliberately reuses the pointer-click empirical baseline because the physical acquisition/click mechanics are the same family while semantic intent remains `focus`.
+
 Real native baseline JSON is intentionally a generated local artifact from collected sessions, not hard-coded into source. The first native Agent tests may pass `--baseline <file>`; without it the policy uses conservative fallbacks.
 
 ---
@@ -150,17 +152,23 @@ control-center/manager/execution/cdp_plan.js
 control-center/script/checks/cdp_execution_plan.js
 ```
 
-CDP Plan `0.1.0` converts mapped Agent Action + sampled Behavior + current target geometry into exact CDP steps.
+CDP Plan `0.1.1` converts mapped Agent Action + sampled Behavior + current target geometry into exact CDP steps.
 
 Implemented:
 
 ```text
-pointer-click
+pointer-click / focus acquisition
   adaptive endpoint inside target
   bounded curved approach
   empirical turn influence
   bounded micro-correction when sampled
   dwell → press → empirical hold → release
+
+doubleClick
+  two real press/release cycles
+  first cycle clickCount=1
+  second cycle clickCount=2
+  bounded inter-click gap
 
 pointer-hover
   bounded approach + optional dwell
@@ -183,7 +191,7 @@ Natural behavior comes from aggregate distributions/context, not fixed random ji
 Known fidelity gaps before declaring execution complete:
 
 ```text
-doubleClick native sequence needs browser validation
+doubleClick sequence is structurally correct but still needs browser-native validation
 keyCombo modifier sequence is not complete yet
 Input.insertText per char may differ from keyDown/keyUp listeners
 ```
@@ -266,7 +274,7 @@ control-center/manager/agent/one_action_bridge.js
 control-center/script/agent_one_action.js
 ```
 
-Bridge version `0.2.0` now has the correct decision order:
+Bridge version `0.2.0` has the correct decision order:
 
 ```text
 OBSERVE
@@ -288,7 +296,10 @@ Example modes after `npm install` in `control-center`:
 ```bat
 node control-center/script/agent_one_action.js --observe
 node control-center/script/agent_one_action.js --type click --label "Example label"
+node control-center/script/agent_one_action.js --type doubleClick --label "Example label"
 node control-center/script/agent_one_action.js --type hover --label "Example label"
+node control-center/script/agent_one_action.js --type focus --label "Search"
+node control-center/script/agent_one_action.js --type typeText --text "agent test"
 node control-center/script/agent_one_action.js --type scrollVertical --direction 1
 ```
 
@@ -306,12 +317,12 @@ Optional:
 # Latest CI gate
 
 ```text
-run:    32883873609
-commit: 06df74ee128fbc00091e79f1fad6a11dd7256913
+run:    32910975163
+commit: 7667e66404b6aef7405b180a11707b0987975a5f
 result: SUCCESS
 ```
 
-This run passed Agent action/behavior contracts, A3 policy, target registry, CDP planner, allowlisted dispatcher, one-action Brain bridge, extension broker client, manager broker adapter, native harness contract, A1/A2 and Collector regressions/socket integration.
+This run passed Agent action/behavior contracts, A3 policy, target registry, CDP planner including focus/doubleClick contracts, allowlisted dispatcher, one-action Brain bridge, extension broker client, manager broker adapter, native harness contract, A1/A2 and Collector regressions/socket integration.
 
 CI success is NOT native Chrome Agent validation.
 
@@ -325,6 +336,7 @@ Do not start autonomous multi-step tasks yet. Validate one action at a time:
 OBSERVE semantic targets
 click button/link by label/ref
 re-observe and verify new observationId
+doubleClick on a safe target
 hover without click
 vertical scroll
 horizontal scroll on a real carousel
@@ -340,7 +352,7 @@ Important native questions:
 ```text
 Does 4 s observation TTL survive real Brain/model latency?
 Does a dynamic target move between observation and execution?
-Does doubleClick need two explicit press/release cycles?
+Does two-cycle doubleClick behave correctly on real sites?
 Does per-character Input.insertText trigger required site listeners?
 Do sampled pointer corrections look natural rather than artificial?
 ```
