@@ -10,20 +10,26 @@ const raw = {
       { ref: 'eButton', tag: 'button', role: 'button', label: 'Thích', rect: { x: 10, y: 20, width: 80, height: 30 } },
       { ref: 'search', tag: 'input', role: 'searchbox', label: 'Tìm kiếm', rect: { x: 20, y: 40, width: 220, height: 32 } },
       { ref: 'thumb', tag: 'a', role: 'link', label: 'Video đề xuất', rect: { x: 300, y: 100, width: 220, height: 120 } },
+      { ref: 'slider', tag: 'div', role: 'slider', label: 'Âm lượng', rect: { x: 500, y: 400, width: 160, height: 20 } },
       { ref: 'bodyBg', tag: 'body', role: null, label: '', rect: { x: 0, y: 0, width: 1280, height: 3000 } }
     ] },
-    { type: 'pointer', tsEpochMs: 900, sessionSeq: 4, pageSeq: 1, sourceSeq: 1, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'e1' },
+    { type: 'pointer', phase: 'move', tsEpochMs: 900, sessionSeq: 4, pageSeq: 1, sourceSeq: 1, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'e1', pointerId: 1, x: 12, y: 24, movementX: 3, movementY: 2, buttons: 0 },
     { type: 'dom-click', tsEpochMs: 1000, sessionSeq: 7, pageSeq: 2, sourceSeq: 1, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'eChild', rawTargetRef: 'eChild', resolvedTargetRef: 'eButton', rawTarget: { tag: 'span', label: 'Thích' }, resolvedTarget: { tag: 'button', role: 'button', label: '', rect: { x: 10, y: 20, width: 80, height: 30 } } },
     { type: 'dom-mutation-burst', tsEpochMs: 1080, sessionSeq: 8, pageSeq: 3, sourceSeq: 2, pageInstanceId: 'p1', tabId: 1, frameId: 0, recordCount: 3 },
     { type: 'route-change', tsEpochMs: 1120, sessionSeq: 9, pageSeq: 4, sourceSeq: 3, pageInstanceId: 'p1', tabId: 1, frameId: 0 },
 
-    { type: 'wheel', tsEpochMs: 2000, sessionSeq: 20, pageSeq: 5, sourceSeq: 1, pageInstanceId: 'p1', tabId: 1, frameId: 0, deltaX: 120, deltaY: 4, targetRef: 'carousel' },
-    { type: 'wheel', tsEpochMs: 2070, sessionSeq: 21, pageSeq: 6, sourceSeq: 2, pageInstanceId: 'p1', tabId: 1, frameId: 0, deltaX: 140, deltaY: 3, targetRef: 'carousel' },
-    { type: 'wheel', tsEpochMs: 2600, sessionSeq: 22, pageSeq: 7, sourceSeq: 3, pageInstanceId: 'p1', tabId: 1, frameId: 0, deltaX: 0, deltaY: 180, targetRef: 'feed' },
+    { type: 'pointer', phase: 'down', tsEpochMs: 1500, sessionSeq: 14, pageSeq: 4.1, sourceSeq: 4, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'slider', pointerId: 1, x: 510, y: 410, button: 0, buttons: 1, pressure: 0.5 },
+    { type: 'pointer', phase: 'move', tsEpochMs: 1540, sessionSeq: 15, pageSeq: 4.2, sourceSeq: 5, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'slider', pointerId: 1, x: 555, y: 410, buttons: 1, pressure: 0.5 },
+    { type: 'pointer', phase: 'move', tsEpochMs: 1580, sessionSeq: 16, pageSeq: 4.3, sourceSeq: 6, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'slider', pointerId: 1, x: 590, y: 410, buttons: 1, pressure: 0.5 },
+    { type: 'pointer', phase: 'up', tsEpochMs: 1620, sessionSeq: 17, pageSeq: 4.4, sourceSeq: 7, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'slider', pointerId: 1, x: 600, y: 410, button: 0, buttons: 0, pressure: 0 },
 
-    { type: 'keyboard', tsEpochMs: 3000, sessionSeq: 30, pageSeq: 8, sourceSeq: 1, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'search', operation: 'printable', keyClass: 'printable', key: null, code: null },
-    { type: 'keyboard', tsEpochMs: 3070, sessionSeq: 31, pageSeq: 9, sourceSeq: 2, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'search', operation: 'printable', keyClass: 'printable', key: null, code: null },
-    { type: 'keyboard', tsEpochMs: 3140, sessionSeq: 32, pageSeq: 10, sourceSeq: 3, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'search', operation: 'Enter', keyClass: 'control', key: null, code: null },
+    { type: 'wheel', tsEpochMs: 2000, sessionSeq: 20, pageSeq: 5, sourceSeq: 1, pageInstanceId: 'p1', tabId: 1, frameId: 0, deltaX: 120, deltaY: 4, x: 400, y: 300, targetRef: 'carousel' },
+    { type: 'wheel', tsEpochMs: 2070, sessionSeq: 21, pageSeq: 6, sourceSeq: 2, pageInstanceId: 'p1', tabId: 1, frameId: 0, deltaX: 140, deltaY: 3, x: 400, y: 300, targetRef: 'carousel' },
+    { type: 'wheel', tsEpochMs: 2600, sessionSeq: 22, pageSeq: 7, sourceSeq: 3, pageInstanceId: 'p1', tabId: 1, frameId: 0, deltaX: 0, deltaY: 180, x: 600, y: 500, targetRef: 'feed' },
+
+    { type: 'keyboard', phase: 'down', tsEpochMs: 3000, sessionSeq: 30, pageSeq: 8, sourceSeq: 1, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'search', operation: 'printable', keyClass: 'printable', key: null, code: null },
+    { type: 'keyboard', phase: 'up', tsEpochMs: 3070, sessionSeq: 31, pageSeq: 9, sourceSeq: 2, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'search', operation: 'printable', keyClass: 'printable', key: null, code: null },
+    { type: 'keyboard', phase: 'down', tsEpochMs: 3140, sessionSeq: 32, pageSeq: 10, sourceSeq: 3, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'search', operation: 'enter', keyClass: 'Enter', key: null, code: 'Enter' },
 
     { type: 'dom-hover-enter', tsEpochMs: 4000, sessionSeq: 40, pageSeq: 11, sourceSeq: 1, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'thumb' },
     { type: 'dom-hover-dwell', tsEpochMs: 4400, sessionSeq: 41, pageSeq: 12, sourceSeq: 2, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'thumb', dwellMs: 400 },
@@ -36,13 +42,14 @@ const raw = {
 };
 
 const result = Windows.buildActionWindows(raw);
-assert.strictEqual(result.actionWindowVersion, '0.1.1');
+assert.strictEqual(result.actionWindowVersion, '0.1.2');
 assert.strictEqual(result.sourceSessionId, 'browser-action-window-test');
 assert.strictEqual(result.ordering.primary, 'tsEpochMs');
 assert.strictEqual(result.ordering.durabilityOnly, 'sessionSeq');
 assert.strictEqual(result.privacy.printableHumanKeyContentStored, false);
 assert.strictEqual(result.derivation.rawFactsMutated, false);
 assert.strictEqual(result.derivation.filteredHoverNoiseCount, 1);
+assert.ok(result.derivation.physicalBehaviorFactsPreserved.length >= 3);
 
 const click = result.windows.find(x => x.actionType === 'click');
 assert(click);
@@ -53,22 +60,40 @@ assert.strictEqual(click.target.labelEnriched, true);
 assert.ok(['semantic-snapshot', 'raw-descendant'].includes(click.target.labelSource));
 assert.strictEqual(click.outcome.mutationBurstCount, 1);
 assert.strictEqual(click.outcome.routeChangeObserved, true);
-assert.ok(click.before.some(x => x.type === 'pointer'));
+const pointerBefore = click.before.find(x => x.type === 'pointer');
+assert(pointerBefore);
+assert.strictEqual(pointerBefore.phase, 'move');
+assert.strictEqual(pointerBefore.x, 12);
+assert.strictEqual(pointerBefore.y, 24);
+
+const drag = result.windows.find(x => x.actionType === 'drag');
+assert(drag);
+assert.strictEqual(drag.target.targetRef, 'slider');
+assert.strictEqual(drag.target.label, 'Âm lượng');
+assert.ok(drag.action.distancePx >= 90);
+assert.strictEqual(drag.action.points[0].phase, 'down');
+assert.strictEqual(drag.action.points.at(-1).phase, 'up');
+assert.strictEqual(drag.action.points[1].x, 555);
 
 const horizontal = result.windows.find(x => x.actionType === 'scrollHorizontal');
 assert(horizontal);
 assert.strictEqual(horizontal.action.eventCount, 2);
 assert.strictEqual(horizontal.action.deltaX, 260);
+assert.strictEqual(horizontal.action.events[0].deltaX, 120);
 
 const vertical = result.windows.find(x => x.actionType === 'scrollVertical');
 assert(vertical);
 assert.strictEqual(vertical.action.eventCount, 1);
+assert.strictEqual(vertical.action.events[0].deltaY, 180);
 
 const typing = result.windows.find(x => x.actionType === 'typeText');
 assert(typing);
 assert.strictEqual(typing.action.eventCount, 3);
 assert.strictEqual(typing.action.printableContentStored, false);
 assert.strictEqual(typing.target.label, 'Tìm kiếm');
+assert.strictEqual(typing.action.events[0].phase, 'down');
+assert.strictEqual(typing.action.events[0].code, null);
+assert.strictEqual(typing.action.events[2].code, 'Enter');
 assert.ok(!JSON.stringify(typing).includes('"key":"'));
 
 const hover = result.windows.find(x => x.actionType === 'hoverAndObserve');
