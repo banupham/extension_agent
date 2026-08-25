@@ -1,6 +1,6 @@
 (() => {
-  if (window.__BAR_V3_CONTENT__) return;
-  window.__BAR_V3_CONTENT__ = true;
+  if (window.__BAR_V4_CONTENT__) return;
+  window.__BAR_V4_CONTENT__ = true;
 
   const S = {
     active: false,
@@ -12,8 +12,14 @@
     pendingInputs: new Map(),
     pointerDown: new Map(),
     lastPointerGesture: null,
-    lastPointerActivity: null
+    lastPointerActivity: null,
+    mousePath: [],
+    lastMouseSampleAt: 0
   };
+
+  const MOUSE_SAMPLE_MIN_MS = 16;
+  const MOUSE_PATH_WINDOW_MS = 2500;
+  const MOUSE_PATH_MAX = 240;
 
   function relativeNow() {
     if (!S.startedAtEpoch) return 0;
@@ -110,57 +116,108 @@
     const info = elementInfo(el);
     return info.selector || info.selectors?.[0] || null;
   }
+  function fieldValue(el) {
+    return el?.isContentEditable ? el.innerText : (el?.value ?? '');
+  }
   function trimTrace(arr, max = 160) { return arr.length > max ? arr.slice(arr.length - max) : arr; }
   function round(n, digits = 2) {
     const p = 10 ** digits;
     return Math.round(Number(n || 0) * p) / p;
   }
-  function queueFieldValue(el, inputType = null) {
+  function isEditable(el) {
+    return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || !!el?.isContentEditable;
+  }
+  function ensurePending(el) {
     const key = fieldKey(el);
-    if (!key) return;
+    if (!key) return null;
     const now = relativeNow();
-    const value = el.isContentEditable ? el.innerText : el.value;
-    const existing = S.pendingInputs.get(key);
-    const change = {
+    let pending = S.pendingInputs.get(key);
+    if (!pending) {
+      pending = {
+        element: el,
+        selector: key,
+        info: elementInfo(el),
+        initialValue: fieldValue(el),
+        value: fieldValue(el),
+        startedAt: now,
+        updatedAt: now,
+        changes: [],
+        operations: [],
+        uncertainReasons: []
+      };
+      S.pendingInputs.set(key, pending);
+    }
+    return pending;
+  }
+  function pushOperation(el, op) {
+    const pending = ensurePending(el);
+    if (!pending) return;
+    pending.element = el;
+    pending.info = elementInfo(el);
+    pending.updatedAt = Number(op.t ?? relativeNow());
+    pending.operations.push(op);
+    pending.operations = trimTrace(pending.operations, 240);
+  }
+  function queueFieldValue(el, inputType = null) {
+    const pending = ensurePending(el);
+    if (!pending) return;
+    const now = relativeNow();
+    const value = fieldValue(el);
+    pending.element = el;
+    pending.info = elementInfo(el);
+    pending.value = value;
+    pending.inputType = inputType;
+    pending.updatedAt = now;
+    pending.changes.push({
       t: now,
       inputType: inputType || null,
       value,
       length: String(value ?? '').length,
       selectionStart: Number.isInteger(el.selectionStart) ? el.selectionStart : null,
       selectionEnd: Number.isInteger(el.selectionEnd) ? el.selectionEnd : null
-    };
-    if (existing) {
-      existing.element = el;
-      existing.info = elementInfo(el);
-      existing.value = value;
-      existing.inputType = inputType;
-      existing.updatedAt = now;
-      existing.changes.push(change);
-      existing.changes = trimTrace(existing.changes, 120);
-    } else {
-      S.pendingInputs.set(key, {
-        element: el,
-        selector: key,
-        info: elementInfo(el),
-        value,
-        inputType,
-        startedAt: now,
-        updatedAt: now,
-        changes: [change]
-      });
+    });
+    pending.changes = trimTrace(pending.changes, 160);
+    if (['insertFromPaste', 'insertFromDrop', 'insertReplacementText', 'insertCompositionText', 'deleteByCut', 'historyUndo', 'historyRedo'].includes(inputType)) {
+      pending.uncertainReasons.push(inputType);
+      pending.uncertainReasons = [...new Set(pending.uncertainReasons)];
     }
   }
+  function textSummary(pending) {
+    const ops = pending.operations || [];
+    return {
+      backspaceCount: ops.filter(x => x.kind === 'pressKey' && x.key === 'Backspace').length,
+      deleteCount: ops.filter(x => x.kind === 'pressKey' && x.key === 'Delete').length,
+      enterCount: ops.filter(x => x.kind === 'pressKey' && x.key === 'Enter').length,
+      tabCount: ops.filter(x => x.kind === 'pressKey' && x.key === 'Tab').length,
+      typedCharCount: ops.filter(x => x.kind === 'type').reduce((s, x) => s + String(x.text || '').length, 0),
+      keyComboCount: ops.filter(x => x.kind === 'keyCombo').length,
+      operationCount: ops.length
+    };
+  }
   function emitPending(pending) {
-    sendEvent('replaceText', {
+    const finalValue = pending.value ?? fieldValue(pending.element);
+    const uncertainReasons = [...new Set(pending.uncertainReasons || [])];
+    const reconstructable = uncertainReasons.length === 0 && (pending.operations || []).length > 0;
+    sendEventAt('textEditRecorded', pending.startedAt, {
       ...pending.info,
-      value: pending.value,
-      inputType: pending.inputType || null,
+      initialValue: pending.initialValue,
+      finalValue,
+      reconstruction: {
+        mode: reconstructable ? 'keyboard-operations' : 'replaceText-fallback',
+        reconstructable,
+        uncertainReasons
+      },
       editTrace: {
         startedAtMs: pending.startedAt,
         endedAtMs: pending.updatedAt,
         durationMs: Math.max(0, pending.updatedAt - pending.startedAt),
-        changes: pending.changes
-      }
+        initialValue: pending.initialValue,
+        finalValue,
+        operations: pending.operations,
+        changes: pending.changes,
+        summary: textSummary(pending)
+      },
+      tEnd: pending.updatedAt
     });
   }
   function flushField(el) {
@@ -175,9 +232,50 @@
     for (const pending of [...S.pendingInputs.values()]) emitPending(pending);
     S.pendingInputs.clear();
   }
-  function sendEvent(type, data = {}) {
+  function sendEvent(type, data = {}) { sendEventAt(type, relativeNow(), data); }
+  function sendEventAt(type, t, data = {}) {
     if (!S.active) return;
-    chrome.runtime.sendMessage({ scope: 'BAR_V3', cmd: 'event', event: { t: relativeNow(), type, pageUrl: location.href, ...data } }).catch(() => {});
+    chrome.runtime.sendMessage({ scope: 'BAR_V3', cmd: 'event', event: { t: Number(t || 0), type, pageUrl: location.href, ...data } }).catch(() => {});
+  }
+
+  function pathMetrics(samples) {
+    if (!samples.length) return null;
+    let distancePx = 0;
+    let peakSpeedPxPerSec = 0;
+    const speedSamples = [];
+    for (let i = 1; i < samples.length; i++) {
+      const a = samples[i - 1];
+      const b = samples[i];
+      const d = Math.hypot(b.x - a.x, b.y - a.y);
+      const dtMs = Math.max(1, b.t - a.t);
+      const speed = d / (dtMs / 1000);
+      distancePx += d;
+      peakSpeedPxPerSec = Math.max(peakSpeedPxPerSec, speed);
+      speedSamples.push({ t: b.t, speedPxPerSec: round(speed, 1), distancePx: round(d, 2), dtMs });
+    }
+    const first = samples[0];
+    const last = samples[samples.length - 1];
+    const durationMs = Math.max(0, last.t - first.t);
+    return {
+      startedAtMs: first.t,
+      endedAtMs: last.t,
+      durationMs,
+      start: { x: first.x, y: first.y },
+      end: { x: last.x, y: last.y },
+      displacementX: round(last.x - first.x, 2),
+      displacementY: round(last.y - first.y, 2),
+      straightDistancePx: round(Math.hypot(last.x - first.x, last.y - first.y), 2),
+      pathDistancePx: round(distancePx, 2),
+      averageSpeedPxPerSec: durationMs > 0 ? round(distancePx / (durationMs / 1000), 1) : 0,
+      peakSpeedPxPerSec: round(peakSpeedPxPerSec, 1),
+      sampleCount: samples.length,
+      speedSamples: trimTrace(speedSamples, 120)
+    };
+  }
+  function recentMousePath(nowT) {
+    const minT = nowT - MOUSE_PATH_WINDOW_MS;
+    const samples = S.mousePath.filter(x => x.t >= minT && x.t <= nowT);
+    return samples.length ? { samples, metrics: pathMetrics(samples) } : null;
   }
 
   function scrollMetrics(samples, wheelSamples, startedAtMs, endedAtMs) {
@@ -206,7 +304,6 @@
     let direction = 'none';
     if (Math.abs(displacementY) >= Math.abs(displacementX) && Math.abs(displacementY) > 0) direction = displacementY > 0 ? 'down' : 'up';
     else if (Math.abs(displacementX) > 0) direction = displacementX > 0 ? 'right' : 'left';
-
     const recentPointer = S.lastPointerActivity && Math.abs(startedAtMs - S.lastPointerActivity.t) <= 900 ? S.lastPointerActivity : null;
     let sourceHint = 'unknown';
     if (recentPointer?.pointerType === 'touch') sourceHint = 'touch';
@@ -214,10 +311,8 @@
       const modes = [...new Set(wheelSamples.map(x => x.deltaMode))];
       sourceHint = modes.every(x => x === 0) ? 'wheel-pixel' : (modes.every(x => x === 1) ? 'wheel-line' : (modes.every(x => x === 2) ? 'wheel-page' : 'wheel-mixed'));
     } else if (recentPointer?.pointerType === 'mouse') sourceHint = 'pointer-scroll-or-scrollbar';
-
     const wheelTotalX = wheelSamples.reduce((s, x) => s + Number(x.deltaX || 0), 0);
     const wheelTotalY = wheelSamples.reduce((s, x) => s + Number(x.deltaY || 0), 0);
-
     return {
       durationMs,
       start: { x: first.x, y: first.y },
@@ -238,23 +333,30 @@
     };
   }
 
+  document.addEventListener('pointermove', e => {
+    if (!S.active) return;
+    const t = relativeNow();
+    S.lastPointerActivity = { t, pointerType: e.pointerType || 'mouse', phase: 'move', x: e.clientX, y: e.clientY };
+    if ((e.pointerType || 'mouse') !== 'mouse') return;
+    if (t - S.lastMouseSampleAt < MOUSE_SAMPLE_MIN_MS) return;
+    const last = S.mousePath[S.mousePath.length - 1];
+    if (last && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 1.5) return;
+    S.lastMouseSampleAt = t;
+    S.mousePath.push({ t, x: Math.round(e.clientX * 10) / 10, y: Math.round(e.clientY * 10) / 10, buttons: e.buttons });
+    S.mousePath = trimTrace(S.mousePath.filter(x => t - x.t <= MOUSE_PATH_WINDOW_MS), MOUSE_PATH_MAX);
+  }, true);
+
   document.addEventListener('pointerdown', e => {
     if (!S.active) return;
     const t = relativeNow();
     S.pointerDown.set(e.pointerId, {
       t, clientX: e.clientX, clientY: e.clientY,
-      button: e.button, pointerType: e.pointerType || 'mouse', pressure: Number(e.pressure || 0)
+      button: e.button, pointerType: e.pointerType || 'mouse', pressure: Number(e.pressure || 0),
+      mousePathBeforeDown: (e.pointerType || 'mouse') === 'mouse' ? recentMousePath(t) : null
     });
     S.lastPointerActivity = { t, pointerType: e.pointerType || 'mouse', phase: 'down', x: e.clientX, y: e.clientY };
     const active = document.activeElement;
-    if (active && active !== e.target && (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active.isContentEditable)) flushField(active);
-  }, true);
-
-  document.addEventListener('pointermove', e => {
-    if (!S.active) return;
-    if (e.pointerType === 'touch' || S.pointerDown.has(e.pointerId)) {
-      S.lastPointerActivity = { t: relativeNow(), pointerType: e.pointerType || 'mouse', phase: 'move', x: e.clientX, y: e.clientY };
-    }
+    if (active && active !== e.target && isEditable(active)) flushField(active);
   }, true);
 
   document.addEventListener('pointerup', e => {
@@ -270,7 +372,8 @@
         pointerType: down.pointerType,
         button: down.button,
         start: { x: down.clientX, y: down.clientY, pressure: down.pressure },
-        end: { x: e.clientX, y: e.clientY, pressure: Number(e.pressure || 0) }
+        end: { x: e.clientX, y: e.clientY, pressure: Number(e.pressure || 0) },
+        mousePathBeforeDown: down.mousePathBeforeDown
       };
       S.pointerDown.delete(e.pointerId);
     }
@@ -292,53 +395,41 @@
       point: { rx: Math.max(0, Math.min(1, rx)), ry: Math.max(0, Math.min(1, ry)) },
       viewport: { width: window.innerWidth, height: window.innerHeight, devicePixelRatio: window.devicePixelRatio || 1 },
       scroll: { x: Math.round(window.scrollX), y: Math.round(window.scrollY) },
-      pointerGesture: S.lastPointerGesture
+      pointerGesture: S.lastPointerGesture,
+      mousePath: S.lastPointerGesture?.mousePathBeforeDown || recentMousePath(relativeNow())
     });
     S.lastPointerGesture = null;
-  }, true);
-
-  document.addEventListener('input', e => {
-    if (!S.active) return;
-    const el = e.target;
-    if (el instanceof HTMLInputElement && ['checkbox', 'radio'].includes(el.type)) {
-      sendEvent('setChecked', { ...elementInfo(el), checked: el.checked });
-      return;
-    }
-    if (el instanceof HTMLSelectElement) {
-      const option = el.selectedOptions?.[0];
-      sendEvent('selectOption', { ...elementInfo(el), value: el.value, optionText: option ? option.text : '', index: el.selectedIndex });
-      return;
-    }
-    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el?.isContentEditable) queueFieldValue(el, e.inputType || null);
-  }, true);
-
-  document.addEventListener('change', e => {
-    if (!S.active) return;
-    const el = e.target;
-    if (el instanceof HTMLSelectElement) {
-      const option = el.selectedOptions?.[0];
-      sendEvent('selectOption', { ...elementInfo(el), value: el.value, optionText: option ? option.text : '', index: el.selectedIndex });
-    } else if (el instanceof HTMLInputElement && ['checkbox', 'radio'].includes(el.type)) {
-      sendEvent('setChecked', { ...elementInfo(el), checked: el.checked });
-    }
-  }, true);
-
-  document.addEventListener('focusout', e => {
-    if (!S.active) return;
-    const el = e.target;
-    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el?.isContentEditable) flushField(el);
+    S.mousePath = [];
   }, true);
 
   document.addEventListener('keydown', e => {
     if (!S.active) return;
+    const editable = isEditable(e.target);
     const modifierOnly = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key);
-    if (modifierOnly) return;
-    if (['Enter', 'Tab'].includes(e.key)) {
-      const active = document.activeElement;
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active?.isContentEditable) flushField(active);
+    if (editable && !modifierOnly) {
+      const t = relativeNow();
+      const base = { t, key: e.key, code: e.code, location: e.location, repeat: !!e.repeat, modifiers: { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey } };
+      if ((e.ctrlKey || e.altKey || e.metaKey) && e.key) {
+        const keys = [];
+        if (e.ctrlKey) keys.push('Control');
+        if (e.altKey) keys.push('Alt');
+        if (e.shiftKey) keys.push('Shift');
+        if (e.metaKey) keys.push('Meta');
+        keys.push(e.key);
+        pushOperation(e.target, { ...base, kind: 'keyCombo', keys });
+      } else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter' || e.key === 'Tab') {
+        pushOperation(e.target, { ...base, kind: 'pressKey' });
+      } else if (e.key.length === 1) {
+        pushOperation(e.target, { ...base, kind: 'type', text: e.key });
+      } else {
+        pushOperation(e.target, { ...base, kind: 'pressKey' });
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && e.target instanceof HTMLInputElement && e.target.type !== 'textarea')) {
+        setTimeout(() => flushField(e.target), 0);
+      }
+      return;
     }
-    const editableTarget = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target?.isContentEditable;
-    if (editableTarget && ['Backspace', 'Delete'].includes(e.key)) return;
+    if (modifierOnly) return;
     const keyMeta = {
       ...elementInfo(e.target), key: e.key, code: e.code, location: e.location,
       repeat: !!e.repeat, modifiers: { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey }
@@ -355,6 +446,37 @@
     }
     if (e.key.length === 1) return;
     sendEvent('key', keyMeta);
+  }, true);
+
+  document.addEventListener('input', e => {
+    if (!S.active) return;
+    const el = e.target;
+    if (el instanceof HTMLInputElement && ['checkbox', 'radio'].includes(el.type)) {
+      sendEvent('setChecked', { ...elementInfo(el), checked: el.checked });
+      return;
+    }
+    if (el instanceof HTMLSelectElement) {
+      const option = el.selectedOptions?.[0];
+      sendEvent('selectOption', { ...elementInfo(el), value: el.value, optionText: option ? option.text : '', index: el.selectedIndex });
+      return;
+    }
+    if (isEditable(el)) queueFieldValue(el, e.inputType || null);
+  }, true);
+
+  document.addEventListener('change', e => {
+    if (!S.active) return;
+    const el = e.target;
+    if (el instanceof HTMLSelectElement) {
+      const option = el.selectedOptions?.[0];
+      sendEvent('selectOption', { ...elementInfo(el), value: el.value, optionText: option ? option.text : '', index: el.selectedIndex });
+    } else if (el instanceof HTMLInputElement && ['checkbox', 'radio'].includes(el.type)) {
+      sendEvent('setChecked', { ...elementInfo(el), checked: el.checked });
+    }
+  }, true);
+
+  document.addEventListener('focusout', e => {
+    if (!S.active) return;
+    if (isEditable(e.target)) flushField(e.target);
   }, true);
 
   window.addEventListener('wheel', e => {
@@ -391,17 +513,11 @@
       const startedAtMs = S.scrollStartedAt ?? t;
       const endedAtMs = samples.at(-1)?.t ?? relativeNow();
       const metrics = scrollMetrics(samples, wheelSamples, startedAtMs, endedAtMs);
-      sendEvent('scroll', {
+      sendEventAt('scroll', startedAtMs, {
         x: Math.round(window.scrollX),
         y: Math.round(window.scrollY),
-        scrollTrace: {
-          startedAtMs,
-          endedAtMs,
-          durationMs: metrics.durationMs,
-          samples,
-          wheelSamples,
-          metrics
-        }
+        tEnd: endedAtMs,
+        scrollTrace: { startedAtMs, endedAtMs, durationMs: metrics.durationMs, samples, wheelSamples, metrics }
       });
       S.scrollSamples = [];
       S.wheelSamples = [];
@@ -423,7 +539,8 @@
       S.scrollStartedAt = null;
       S.pointerDown.clear();
       S.lastPointerGesture = null;
-      S.lastPointerActivity = null;
+      S.mousePath = [];
+      S.lastMouseSampleAt = 0;
     }
   });
 
