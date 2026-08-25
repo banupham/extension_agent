@@ -7,6 +7,7 @@ const EpisodeBuilder = globalThis.TrainingCollectorV02.EpisodeBuilder;
 const RawStore = globalThis.TrainingCollectorV03.RawSessionStore;
 const EMPTY = { active: false, episode: null };
 let browserSessionInitPromise = null;
+let rawAppendChain = Promise.resolve();
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -108,10 +109,11 @@ function eventLastSeenIso(events) {
   return max > 0 ? new Date(max).toISOString() : nowIso();
 }
 
-async function appendRawBatch(sender, batch) {
+async function appendRawBatchUnlocked(sender, batch) {
   const session = await ensureBrowserSession();
   const incoming = Array.isArray(batch?.events) ? batch.events : [];
   if (!incoming.length) return { ok: true, sessionId: session.sessionId, appended: 0 };
+  const captureSource = typeof batch?.source === 'string' ? batch.source : 'unknown';
 
   let chunkIndex = Math.max(0, Number(session.chunkCount || 0) - 1);
   let chunk = [];
@@ -131,6 +133,7 @@ async function appendRawBatch(sender, batch) {
     seq += 1;
     chunk.push({
       ...normalized,
+      captureSource,
       sessionSeq: seq,
       tabId: sender.tab?.id ?? null,
       windowId: sender.tab?.windowId ?? null,
@@ -155,6 +158,12 @@ async function appendRawBatch(sender, batch) {
   return { ok: true, sessionId: session.sessionId, appended: incoming.length, eventCount: session.eventCount };
 }
 
+function appendRawBatch(sender, batch) {
+  const job = rawAppendChain.then(() => appendRawBatchUnlocked(sender, batch));
+  rawAppendChain = job.catch(() => {});
+  return job;
+}
+
 async function rawPreview(sessionId, limit = 100) {
   const session = await loadRawSession(sessionId);
   if (!session) return { session: null, events: [] };
@@ -169,6 +178,7 @@ async function rawPreview(sessionId, limit = 100) {
 }
 
 async function exportRawSession(sessionId) {
+  await rawAppendChain;
   const session = await loadRawSession(sessionId);
   if (!session) throw new Error('raw_session_not_found');
   const events = [];
@@ -178,7 +188,7 @@ async function exportRawSession(sessionId) {
     if (Array.isArray(data[key])) events.push(...data[key]);
   }
   return {
-    exportVersion: '0.3.0',
+    exportVersion: '0.4.0',
     exportedAt: nowIso(),
     session,
     events
