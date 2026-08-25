@@ -10,6 +10,7 @@ const EpisodeBuilder = globalThis.TrainingCollectorV02.EpisodeBuilder;
 const RawStore = globalThis.TrainingCollectorV03.RawSessionStore;
 const ChunkStore = globalThis.TrainingCollectorV06.IndexedDbChunkStore.createChunkStore({ chunkSize: RawStore.CHUNK_SIZE });
 const EMPTY = { active: false, episode: null };
+const autoExportInFlight = new Set();
 let browserSessionInitPromise = null;
 let rawAppendChain = Promise.resolve();
 
@@ -71,21 +72,24 @@ async function ensureOffscreenDocument() {
 }
 
 async function autoExportSession(sessionId) {
-  let session = await ChunkStore.getSession(sessionId);
-  if (!session || session.status === 'active') return { skipped: true, reason: 'session_not_closed' };
-  if (Number(session.eventCount || 0) <= 0) {
-    session.autoExport = { ...(session.autoExport || {}), status: 'skipped-empty', attempts: Number(session.autoExport?.attempts || 0), updatedAt: nowIso() };
-    await ChunkStore.putSession(session);
-    return { skipped: true, reason: 'empty_session' };
-  }
-  if (session.autoExport?.status === 'complete') return { skipped: true, reason: 'already_exported' };
-  const attempts = Number(session.autoExport?.attempts || 0);
-  if (attempts >= AUTO_EXPORT_MAX_ATTEMPTS) return { skipped: true, reason: 'attempt_limit' };
-
-  session.autoExport = { ...(session.autoExport || {}), status: 'verifying', attempts: attempts + 1, attemptedAt: nowIso(), error: null };
-  await ChunkStore.putSession(session);
-
+  if (autoExportInFlight.has(sessionId)) return { skipped: true, reason: 'already_in_flight' };
+  autoExportInFlight.add(sessionId);
+  let session = null;
   try {
+    session = await ChunkStore.getSession(sessionId);
+    if (!session || session.status === 'active') return { skipped: true, reason: 'session_not_closed' };
+    if (Number(session.eventCount || 0) <= 0) {
+      session.autoExport = { ...(session.autoExport || {}), status: 'skipped-empty', attempts: Number(session.autoExport?.attempts || 0), updatedAt: nowIso() };
+      await ChunkStore.putSession(session);
+      return { skipped: true, reason: 'empty_session' };
+    }
+    if (session.autoExport?.status === 'complete') return { skipped: true, reason: 'already_exported' };
+    const attempts = Number(session.autoExport?.attempts || 0);
+    if (attempts >= AUTO_EXPORT_MAX_ATTEMPTS) return { skipped: true, reason: 'attempt_limit' };
+
+    session.autoExport = { ...(session.autoExport || {}), status: 'verifying', attempts: attempts + 1, attemptedAt: nowIso(), error: null };
+    await ChunkStore.putSession(session);
+
     const integrity = await ChunkStore.verifySession(session, { full: true, tailCount: 3 });
     session.integrity = { ...integrity, verifiedAt: nowIso(), scope: 'full' };
     session.autoExport = { ...session.autoExport, status: 'preparing-download', integrityOk: !!integrity.ok };
@@ -109,17 +113,22 @@ async function autoExportSession(sessionId) {
     await ChunkStore.putSession(session);
     return { ok: true, sessionId: session.sessionId, downloadId: result.downloadId ?? null };
   } catch (error) {
-    session = await ChunkStore.getSession(session.sessionId) || session;
-    session.autoExport = {
-      ...(session.autoExport || {}),
-      status: 'failed',
-      failedAt: nowIso(),
-      error: String(error?.message || error),
-      temporaryDevelopmentAdapter: true
-    };
-    await ChunkStore.putSession(session);
-    if (Number(session.autoExport.attempts || 0) < AUTO_EXPORT_MAX_ATTEMPTS) scheduleAutoExportRetry(0.5);
-    return { ok: false, sessionId: session.sessionId, error: session.autoExport.error };
+    if (session?.sessionId) {
+      session = await ChunkStore.getSession(session.sessionId) || session;
+      session.autoExport = {
+        ...(session.autoExport || {}),
+        status: 'failed',
+        failedAt: nowIso(),
+        error: String(error?.message || error),
+        temporaryDevelopmentAdapter: true
+      };
+      await ChunkStore.putSession(session);
+      if (Number(session.autoExport.attempts || 0) < AUTO_EXPORT_MAX_ATTEMPTS) scheduleAutoExportRetry(0.5);
+      return { ok: false, sessionId: session.sessionId, error: session.autoExport.error };
+    }
+    return { ok: false, sessionId, error: String(error?.message || error) };
+  } finally {
+    autoExportInFlight.delete(sessionId);
   }
 }
 
