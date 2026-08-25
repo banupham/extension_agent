@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('target_registry.js', 'cdp_plan_dispatcher.js');
+importScripts('target_registry.js', 'cdp_plan_dispatcher.js', 'broker_client.js');
 
 const SCOPE = 'AGENT_RUNTIME_V02';
 const LEGACY_SCOPE = 'AGENT_RUNTIME_V01';
@@ -111,13 +111,7 @@ async function observe(tabId) {
   if (!raw) return null;
 
   const observationId = nextObservationId(tabId);
-  const registered = registry.register({
-    observationId,
-    tabId,
-    url: raw.url,
-    frameId: 0,
-    targets: raw.interactiveElements || []
-  });
+  const registered = registry.register({ observationId, tabId, url: raw.url, frameId: 0, targets: raw.interactiveElements || [] });
   return {
     schemaVersion: '0.2.0',
     observationId,
@@ -128,18 +122,14 @@ async function observe(tabId) {
     viewport: raw.viewport,
     scroll: raw.scroll,
     focusedRef: raw.focusedRef || null,
+    agentPointer: pointerByTab.get(tabId) || null,
     interactiveElements: registered.targets
   };
 }
 
 async function resolveTarget(tabId, action) {
   const url = await currentUrl(tabId);
-  return registry.resolve({
-    tabId,
-    observationId: action?.observationId,
-    targetRef: action?.targetRef,
-    currentUrl: url
-  });
+  return registry.resolve({ tabId, observationId: action?.observationId, targetRef: action?.targetRef, currentUrl: url });
 }
 
 async function movePointer(tabId, x, y) {
@@ -149,8 +139,7 @@ async function movePointer(tabId, x, y) {
 
 async function targetPointer(tabId, action) {
   const target = await resolveTarget(tabId, action);
-  const x = target.rect.centerX;
-  const y = target.rect.centerY;
+  const x = target.rect.centerX, y = target.rect.centerY;
   await movePointer(tabId, x, y);
   return { target, x, y };
 }
@@ -205,20 +194,16 @@ async function executeCdpPlan(tabId, plan, observationId = null) {
 
 async function executeNormalizedAction(tabId, action) {
   if (!action || typeof action.action !== 'string') throw new Error('invalid_action');
-
   switch (action.action) {
     case 'openUrl':
       if (!action.url) throw new Error('openUrl requires url');
       registry.invalidateTab(tabId);
       return command(tabId, 'Page.navigate', { url: action.url });
-
     case 'reload':
       registry.invalidateTab(tabId);
       return command(tabId, 'Page.reload', { ignoreCache: false });
-
     case 'back': return navigateHistory(tabId, 'back');
     case 'forward': return navigateHistory(tabId, 'forward');
-
     case 'pressKey': {
       const key = String(action.key || '');
       if (!key) throw new Error('pressKey requires key');
@@ -226,21 +211,17 @@ async function executeNormalizedAction(tabId, action) {
       await command(tabId, 'Input.dispatchKeyEvent', { type: 'keyUp', key });
       return { ok: true };
     }
-
     case 'type':
     case 'typeText':
       await command(tabId, 'Input.insertText', { text: String(action.text || '') });
       return { ok: true };
-
     case 'moveTo':
     case 'hover': {
       const { target } = await targetPointer(tabId, action);
       return { ok: true, targetRef: target.ref };
     }
-
     case 'click': return clickTarget(tabId, action, 1);
     case 'doubleClick': return clickTarget(tabId, action, 2);
-
     case 'focus': {
       const target = await resolveTarget(tabId, action);
       if (target.selector) {
@@ -255,25 +236,72 @@ async function executeNormalizedAction(tabId, action) {
       await clickTarget(tabId, action, 1);
       return { ok: true, targetRef: target.ref, fallback: 'click-focus' };
     }
-
     case 'scrollVertical':
     case 'scrollHorizontal': {
       const point = pointerByTab.get(tabId) || { x: 400, y: 300 };
       const amount = Number(action.delta ?? action.amount ?? 480);
       const horizontal = action.action === 'scrollHorizontal';
       await command(tabId, 'Input.dispatchMouseEvent', {
-        type: 'mouseWheel',
-        x: point.x,
-        y: point.y,
-        deltaX: horizontal ? amount : 0,
-        deltaY: horizontal ? 0 : amount
+        type: 'mouseWheel', x: point.x, y: point.y,
+        deltaX: horizontal ? amount : 0, deltaY: horizontal ? 0 : amount
       });
       return { ok: true, axis: horizontal ? 'horizontal' : 'vertical', delta: amount };
     }
-
-    default:
-      throw new Error(`unsupported_action_v02:${action.action}`);
+    default: throw new Error(`unsupported_action_v02:${action.action}`);
   }
+}
+
+async function runtimeStatus(tabId) {
+  return {
+    ok: true,
+    runtimeVersion: '0.2.0',
+    architecture: 'task -> observer -> strategy -> behavior -> cdp-plan -> executor',
+    attached: attachedTabs.has(tabId),
+    tabId,
+    targetRegistry: registry.status(tabId),
+    planExecution: { version: '0.1.0', allowlistedOnly: true },
+    supportedActions: [
+      'agentObserve', 'agentExecutePlan', 'agentStatus',
+      'openUrl', 'reload', 'back', 'forward',
+      'pressKey', 'typeText', 'moveTo', 'hover', 'click', 'doubleClick', 'focus',
+      'scrollVertical', 'scrollHorizontal'
+    ]
+  };
+}
+
+async function brokerIdentity() {
+  const stored = await chrome.storage.local.get(['agentRuntimeAgentId', 'agentRuntimeLabel']);
+  let agentId = stored.agentRuntimeAgentId;
+  if (!agentId) {
+    agentId = globalThis.crypto?.randomUUID ? `runtime-${crypto.randomUUID()}` : `runtime-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    await chrome.storage.local.set({ agentRuntimeAgentId: agentId });
+  }
+  return { agentId, label: stored.agentRuntimeLabel || 'Agent Runtime V0.2' };
+}
+
+async function brokerMeta() {
+  const tab = await activeTab();
+  return {
+    product: 'agent-runtime',
+    runtimeVersion: '0.2.0',
+    extensionVersion: chrome.runtime.getManifest().version,
+    supportedActions: ['agentStatus', 'agentObserve', 'agentExecutePlan'],
+    activeTab: tab ? { id: tab.id, title: tab.title || '', url: tab.url || '' } : null
+  };
+}
+
+async function handleBrokerCommand(payload) {
+  const requestedTab = Number(payload?.tabId);
+  const tab = Number.isInteger(requestedTab) ? { id: requestedTab } : await activeTab();
+  if (!tab?.id) throw new Error('no_active_tab');
+  const action = payload?.action;
+  const data = payload?.data || {};
+  if (action === 'agentStatus') return runtimeStatus(tab.id);
+  if (action === 'agentObserve') return { ok: true, observation: await observe(tab.id) };
+  if (action === 'agentExecutePlan') {
+    return { ok: true, result: await executeCdpPlan(tab.id, data.plan, data.observationId || null) };
+  }
+  throw new Error(`unsupported_broker_action:${action || '<empty>'}`);
 }
 
 chrome.debugger.onDetach.addListener(source => {
@@ -283,7 +311,6 @@ chrome.debugger.onDetach.addListener(source => {
     pointerByTab.delete(source.tabId);
   }
 });
-
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url || changeInfo.status === 'loading') registry.invalidateTab(tabId);
 });
@@ -298,24 +325,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     const tab = message.tabId ? { id: message.tabId } : await activeTab();
     if (!tab?.id) throw new Error('no_active_tab');
-
-    if (message.type === 'STATUS') {
-      return {
-        ok: true,
-        runtimeVersion: '0.2.0',
-        architecture: 'task -> observer -> strategy -> behavior -> cdp-plan -> executor',
-        attached: attachedTabs.has(tab.id),
-        tabId: tab.id,
-        targetRegistry: registry.status(tab.id),
-        planExecution: { version: '0.1.0', allowlistedOnly: true },
-        supportedActions: [
-          'openUrl', 'reload', 'back', 'forward',
-          'pressKey', 'type', 'typeText',
-          'moveTo', 'hover', 'click', 'doubleClick', 'focus',
-          'scrollVertical', 'scrollHorizontal'
-        ]
-      };
-    }
+    if (message.type === 'STATUS') return runtimeStatus(tab.id);
     if (message.type === 'ATTACH') return { ok: true, ...(await attach(tab.id)) };
     if (message.type === 'DETACH') return { ok: true, ...(await detach(tab.id)) };
     if (message.type === 'OBSERVE') return { ok: true, observation: await observe(tab.id) };
@@ -325,3 +335,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   })().then(sendResponse).catch(error => sendResponse({ ok: false, error: String(error?.message || error) }));
   return true;
 });
+
+const broker = AgentBrokerClient.createClient({
+  handleCommand: handleBrokerCommand,
+  getIdentity: brokerIdentity,
+  getMeta: brokerMeta,
+  log: message => console.log(`[agent-runtime] ${message}`)
+});
+broker.connect();
