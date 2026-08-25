@@ -2,15 +2,15 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Training Collector V0.6.1</title>
+  <title>Training Collector V0.7</title>
   <style>
     body{font:13px system-ui,sans-serif;margin:14px;width:410px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}.notice{padding:8px;background:#f4f6f8;margin:8px 0;line-height:1.35}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}
   </style>
 </head>
 <body>
-  <strong>Training Collector V0.6.1 IndexedDB Auto Export</strong>
-  <div class="muted">Continuous physical + privacy-safe semantic DOM capture with IndexedDB chunks and ACK/retry persistence.</div>
-  <div class="notice">Raw runtime storage is IndexedDB. When Chrome starts again, closed sessions with data are verified and automatically downloaded to <b>Downloads/training-collector/*.raw.jsonl.gz</b>. This auto-export is a temporary development convenience, not the long-term storage architecture. Manual export remains available for debugging the current session.</div>
+  <strong>Training Collector V0.7 Action Semantics</strong>
+  <div class="muted">Continuous physical + semantic DOM capture with hover lifecycle facts, resolved action targets, page/source sequencing and reliable IndexedDB persistence.</div>
+  <div class="notice">Raw runtime storage remains IndexedDB. Closed sessions are still auto-exported to <b>Downloads/training-collector/*.raw.jsonl.gz</b> only as a temporary development convenience. V0.7 adds raw hover enter/dwell/leave facts; higher-level hover-preview classification is derived offline.</div>
 
   <div id="rawStatus" class="status">Loading raw session...</div>
   <div class="row">
