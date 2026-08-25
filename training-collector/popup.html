@@ -2,15 +2,15 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Training Collector V0.7.1</title>
+  <title>Training Collector V0.7.2</title>
   <style>
     body{font:13px system-ui,sans-serif;margin:14px;width:430px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}.notice{padding:8px;background:#f4f6f8;margin:8px 0;line-height:1.35}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}.session-row{border:1px solid #ddd;padding:8px;margin:6px 0}.session-row button{margin-top:6px}
   </style>
 </head>
 <body>
-  <strong>Training Collector V0.7.1 Action Semantics + Export Recovery</strong>
-  <div class="muted">Continuous physical + semantic DOM capture with hover lifecycle facts, resolved action targets, page/source sequencing and reliable IndexedDB persistence.</div>
-  <div class="notice">Raw runtime storage remains IndexedDB. Closed sessions are auto-exported only as a temporary development convenience. V0.7.1 adds recovery diagnostics and waits until Chrome reports the download itself as complete before marking a session exported.</div>
+  <strong>Training Collector V0.7.2 Frame-Aware Stream Diagnostics</strong>
+  <div class="muted">Continuous physical + semantic capture across frames with SPA route snapshots, source-health diagnostics, action semantics and reliable IndexedDB persistence.</div>
+  <div class="notice">Raw runtime storage remains IndexedDB. V0.7.2 captures eligible http/https frames separately using frame/document identity and emits periodic stream-health records so missing DOM/Hover/Mutation streams can be diagnosed directly. Closed sessions are still auto-exported to <b>Downloads/training-collector/*.raw.jsonl.gz</b> only as a temporary development convenience.</div>
 
   <div id="rawStatus" class="status">Loading raw session...</div>
   <div class="row">
@@ -21,14 +21,14 @@
 
   <div class="section">
     <strong>Recent Raw Sessions / Auto Export</strong>
-    <div class="muted">Use this only for diagnostics/recovery when automatic export did not produce a file.</div>
+    <div class="muted">Use this to diagnose closed sessions that did not download automatically.</div>
     <button id="refreshSessions">Refresh Sessions</button>
     <div id="sessions"></div>
   </div>
 
   <div class="section">
     <strong>Optional Task Episode</strong>
-    <div class="muted">Episodes label/segment the continuous raw session; they do not start or stop raw capture.</div>
+    <div class="muted">Episodes currently remain top-frame only; all-frame capture applies to continuous raw telemetry.</div>
     <input id="task" placeholder="Task instruction, e.g. Search Google for OpenAI">
     <button id="start">Start Episode</button>
     <div class="row">
