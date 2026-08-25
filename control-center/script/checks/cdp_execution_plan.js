@@ -18,6 +18,8 @@ const clickBehavior = validateExecutionBehavior({
     constraints: {
       approachDurationMs: 180,
       straightness: 0.88,
+      meanAbsTurnDeg: 18,
+      correctionCount45Deg: 1,
       endToCenterNormalized: 0.12
     }
   },
@@ -35,11 +37,13 @@ assert.strictEqual(clickPlan.steps.at(-2).params.type, 'mousePressed');
 assert.strictEqual(clickPlan.steps.at(-1).params.type, 'mouseReleased');
 assert.strictEqual(clickPlan.steps.at(-1).delayMs, 92);
 assert.ok(clickPlan.steps.every(step => step.method === 'Input.dispatchMouseEvent'));
+assert.ok(clickPlan.steps.some(step => step.behaviorPhase === 'micro-correction'));
+assert.ok(clickPlan.steps.some(step => step.behaviorPhase === 'target-settle'));
 
 const hoverAction = mapAgentAction({ type: 'hover', targetRef: 'e2' });
 const hoverBehavior = validateExecutionBehavior({
   actionType: 'hover', targetRef: 'e2',
-  pointer: { constraints: { approachDurationMs: 160, straightness: 0.92, dwellMs: 400 } },
+  pointer: { constraints: { approachDurationMs: 160, straightness: 0.92, meanAbsTurnDeg: 10, dwellMs: 400 } },
   metadata: { behaviorFamily: 'pointer-hover' }
 });
 const hoverPlan = Planner.buildCdpPlan({
@@ -54,13 +58,15 @@ assert.strictEqual(hoverPlan.steps.at(-1).postDelayMs, 400);
 const scrollAction = mapAgentAction({ type: 'scrollHorizontal', args: { direction: -1 } });
 const scrollBehavior = validateExecutionBehavior({
   actionType: 'scrollHorizontal',
-  scroll: { axis: 'horizontal', constraints: { durationMs: 240, eventCount: 4, absoluteDelta: 320 } },
+  scroll: { axis: 'horizontal', constraints: { durationMs: 240, eventCount: 4, absoluteDelta: 320, correctionRatio: 0.1 } },
   metadata: { behaviorFamily: 'scroll-horizontal' }
 });
 const scrollPlan = Planner.buildCdpPlan({ mappedAction: scrollAction, behavior: scrollBehavior, context: { pointerStart: { x: 500, y: 400 } } });
-assert.strictEqual(scrollPlan.steps.length, 4);
-assert.ok(scrollPlan.steps.every(step => step.params.deltaX < 0));
+assert.strictEqual(scrollPlan.steps.length, 5);
+assert.ok(scrollPlan.steps.slice(0, 4).every(step => step.params.deltaX < 0));
 assert.ok(scrollPlan.steps.every(step => step.params.deltaY === 0));
+assert.strictEqual(scrollPlan.steps.at(-1).behaviorPhase, 'scroll-correction');
+assert.ok(scrollPlan.steps.at(-1).params.deltaX > 0);
 
 const typeAction = mapAgentAction({ type: 'typeText', args: { text: 'abc' } });
 const typeBehavior = validateExecutionBehavior({
