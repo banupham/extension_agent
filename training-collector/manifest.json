@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Training Collector V0.2 Architecture Foundation",
-  "version": "0.2.0",
-  "description": "Privacy-first semantic state and human action transition collector for agent training episodes.",
-  "permissions": ["activeTab", "tabs", "storage"],
+  "name": "Training Collector V0.3 Raw Browser Session",
+  "version": "0.3.0",
+  "description": "Privacy-first continuous raw physical interaction capture across a Chrome browser session, plus optional semantic task episodes.",
+  "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background.js"},
   "content_scripts": [
@@ -13,6 +13,7 @@
         "core/privacy.js",
         "core/action_normalizer.js",
         "observer/semantic_observer.js",
+        "capture/physical_capture.js",
         "content.js"
       ],
       "run_at": "document_idle"
@@ -20,6 +21,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Training Collector V0.2"
+    "default_title": "Training Collector V0.3"
   }
 }
