@@ -1,13 +1,14 @@
 'use strict';
 
-if (!window.__TRAINING_COLLECTOR_V06__) {
-  window.__TRAINING_COLLECTOR_V06__ = true;
+if (!window.__TRAINING_COLLECTOR_V07__) {
+  window.__TRAINING_COLLECTOR_V07__ = true;
 
   const NS2 = window.TrainingCollectorV02 = window.TrainingCollectorV02 || {};
   const NS3 = window.TrainingCollectorV03 = window.TrainingCollectorV03 || {};
   const NS4 = window.TrainingCollectorV04 = window.TrainingCollectorV04 || {};
   const NS5 = window.TrainingCollectorV05 = window.TrainingCollectorV05 || {};
   const NS6 = window.TrainingCollectorV06 = window.TrainingCollectorV06 || {};
+  const NS7 = window.TrainingCollectorV07 = window.TrainingCollectorV07 || {};
   NS2.pageInstanceId = `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const Observer = NS2.SemanticObserver;
@@ -18,12 +19,16 @@ if (!window.__TRAINING_COLLECTOR_V06__) {
   const MutationTraceFactory = NS4.MutationTrace;
   const StateDiff = NS5.StateDiff;
   const ReliableSender = NS6.ReliableSender;
+  const TargetResolverFactory = NS7.ActionTargetResolver;
+  const HoverTraceFactory = NS7.HoverTrace;
 
   const S = {
     rawActive: false,
     episodeActive: false,
     startedAt: performance.now(),
     transitionSeq: 0,
+    pageSeq: 0,
+    sourceSeq: new Map(),
     lastKeyByRef: new Map(),
     beforeInputByRef: new Map(),
     transitionBefore: new Map(),
@@ -33,13 +38,27 @@ if (!window.__TRAINING_COLLECTOR_V06__) {
     physical: null,
     domCapture: null,
     mutationTrace: null,
+    hoverTrace: null,
     correlator: null,
+    targetResolver: null,
     rawSender: null
   };
 
   function relTime() { return Math.max(0, performance.now() - S.startedAt); }
   function send(type, payload = {}) {
     return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...payload }).catch(() => null);
+  }
+
+  function decorateEvent(event, source = 'unknown') {
+    S.pageSeq += 1;
+    const nextSourceSeq = Number(S.sourceSeq.get(source) || 0) + 1;
+    S.sourceSeq.set(source, nextSourceSeq);
+    return {
+      ...event,
+      pageInstanceId: event?.pageInstanceId || NS2.pageInstanceId,
+      pageSeq: S.pageSeq,
+      sourceSeq: nextSourceSeq
+    };
   }
 
   function rawBatch(events, source) {
@@ -91,25 +110,52 @@ if (!window.__TRAINING_COLLECTOR_V06__) {
 
   function targetElement(event) {
     if (!(event.target instanceof Element)) return null;
-    return event.target.closest('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]') || event.target;
+    return event.target.closest('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex],video,audio') || event.target;
   }
 
   function startRawCapture() {
     if (S.rawActive || !PhysicalCapture?.createPhysicalCapture) return;
     S.rawActive = true;
     S.correlator = CorrelatorFactory?.createCorrelator?.({ observer: Observer }) || null;
+    S.targetResolver = TargetResolverFactory?.createActionTargetResolver?.({ observer: Observer }) || null;
+
     S.physical = PhysicalCapture.createPhysicalCapture({
       isSensitiveTarget(target) { return target instanceof Element && Observer.isSensitive(target); },
       getContext() { return { pageInstanceId: NS2.pageInstanceId, documentOrigin: location.origin, documentPathname: location.pathname }; },
       enrichEvent(event) { return S.correlator ? S.correlator.correlate(event) : event; },
+      decorateEvent,
       emitBatch(events) { rawBatch(events, 'physical'); }
     });
-    S.domCapture = DomCaptureFactory?.createDomCapture?.({ observer: Observer, emitBatch(events) { rawBatch(events, 'dom'); } }) || null;
-    S.mutationTrace = MutationTraceFactory?.createMutationTrace?.({ observer: Observer, emitBatch(events) { rawBatch(events, 'mutation'); } }) || null;
+
+    S.domCapture = DomCaptureFactory?.createDomCapture?.({
+      observer: Observer,
+      resolver: S.targetResolver,
+      decorateEvent,
+      emitBatch(events) { rawBatch(events, 'dom'); }
+    }) || null;
+
+    S.mutationTrace = MutationTraceFactory?.createMutationTrace?.({
+      observer: Observer,
+      decorateEvent,
+      emitBatch(events) { rawBatch(events, 'mutation'); }
+    }) || null;
+
+    S.hoverTrace = HoverTraceFactory?.createHoverTrace?.({
+      observer: Observer,
+      decorateEvent,
+      emitBatch(events) { rawBatch(events, 'hover'); }
+    }) || null;
+
     S.physical.start();
     S.domCapture?.start();
     S.mutationTrace?.start();
-    rawBatch([{ type: 'semantic-snapshot', tsEpochMs: Date.now(), tPageMs: Math.round(performance.now() * 1000) / 1000, observation: Observer.snapshot() }], 'semantic');
+    S.hoverTrace?.start();
+    rawBatch([decorateEvent({
+      type: 'semantic-snapshot',
+      tsEpochMs: Date.now(),
+      tPageMs: Math.round(performance.now() * 1000) / 1000,
+      observation: Observer.snapshot()
+    }, 'semantic')], 'semantic');
   }
 
   addEventListener('click', event => {
@@ -117,7 +163,15 @@ if (!window.__TRAINING_COLLECTOR_V06__) {
     if (!el || Observer.isSensitive(el)) return;
     const semantic = Observer.semanticElement(el);
     if (!semantic) return;
-    const id = begin({ kind: 'click', targetRef: semantic.ref, button: event.button, point: { x: Math.round(event.clientX), y: Math.round(event.clientY) } });
+    const resolved = S.targetResolver?.resolve?.(event);
+    const id = begin({
+      kind: 'click',
+      targetRef: resolved?.resolvedTargetRef || semantic.ref,
+      rawTargetRef: resolved?.rawTargetRef || semantic.ref,
+      resolutionConfidence: resolved?.resolution?.confidence ?? null,
+      button: event.button,
+      point: { x: Math.round(event.clientX), y: Math.round(event.clientY) }
+    });
     finish(id, 40);
   }, true);
 
