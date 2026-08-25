@@ -12,23 +12,148 @@ Trước khi sửa code: đọc `STATUS.md` → `docs/PROJECT_JOURNAL.md` → fe
 
 ---
 
-# Training Collector — CURRENT: V0.7.1 Action Semantics + Export Recovery
+# Training Collector — CURRENT: V0.7.2 Frame-Aware Stream Diagnostics
 
 Manifest:
 
 ```text
-Training Collector V0.7.1 Action Semantics + Export Recovery
+Training Collector V0.7.2 Frame-Aware Stream Diagnostics
 ```
 
-Runtime version: `0.7.1`  
-Raw schema: `0.7.0`
+Runtime version: `0.7.2`  
+Raw schema: `0.7.2`
 
 Collector vẫn observe-only.
 
-## V0.7 Action Semantics đang giữ
+## Vì sao có V0.7.2
+
+Hai native-session regressions dẫn tới milestone này:
 
 ```text
-raw hover facts:
+1. CAPTCHA / embedded UI
+   top-frame nhìn thấy iframe container
+   nhưng chưa quan sát đầy đủ interaction/state bên trong frame.
+
+2. Google Search + embedded YouTube
+   video phát ngay trong Google Search, không navigation sang youtube.com/watch;
+   một đoạn raw gần như chỉ có physical source;
+   semantic/DOM/hover/mutation completeness không thể chẩn đoán trực tiếp.
+```
+
+Mục tiêu V0.7.2 là observation completeness + diagnostics, không phải xử lý/vượt CAPTCHA.
+
+## V0.7.2 — frame-aware raw capture
+
+Manifest content script:
+
+```text
+all_frames = true
+match_about_blank = true
+match_origin_as_fallback = true
+```
+
+Mỗi frame có `pageInstanceId` riêng. Background bổ sung vào persisted event:
+
+```text
+tabId
+windowId
+frameId
+documentId
+documentLifecycle
+```
+
+Element identity phải hiểu theo:
+
+```text
+tabId + frameId + pageInstanceId + elementRef
+```
+
+Frame-local coordinate convention được ghi bằng:
+
+```text
+frame-context.coordinateSpace = frame-client
+```
+
+Continuous raw capture chạy ở matching frames. Optional Task Episode hiện vẫn top-frame only để không trộn multi-frame semantic state trước khi Agent Observation contract được nâng cấp.
+
+## V0.7.2 — SPA route observation
+
+File mới:
+
+```text
+training-collector/observer/route_trace.js
+```
+
+SPA route detector dùng:
+
+```text
+popstate
+hashchange
+500 ms location polling
+```
+
+Khi route đổi:
+
+```text
+route-change
+→ sanitized previous/current page
+→ semantic-snapshot snapshotReason=route-change
+```
+
+Điều này giải quyết việc semantic snapshot trước đây chỉ được ghi lúc content script start trong khi Google/YouTube có thể đổi route mà không reload document.
+
+## V0.7.2 — stream health
+
+Raw thêm direct diagnostic records:
+
+```text
+collector-stream-start
+collector-stream-health    // mỗi 10 giây
+collector-stream-stop
+```
+
+Mỗi health record chứa:
+
+```text
+isTopFrame
+readyState
+visibilityState
+viewport
+modules: physical/dom/mutation/hover/navigation
+sourceEventCounts cumulative
+```
+
+Mục tiêu: nếu session xuất hiện tình trạng physical-only, analyzer có thể chỉ ra frame/pageInstance nào thiếu semantic side thay vì phải suy đoán thủ công.
+
+## Analyzer V0.7.2
+
+`training-collector/tools/analyze_raw.js` giờ đọc trực tiếp:
+
+```text
+JSON
+JSONL
+JSONL.gz
+```
+
+Report thêm:
+
+```text
+unique tab/frame
+documentId count
+pageInstance count
+per-frame source distribution
+frame-context count
+route-change count
+semantic snapshot count
+stream-health summaries
+missing initial semantic suspicion
+physical-only suspicion
+```
+
+## Action semantics giữ nguyên
+
+```text
+raw hover:
   dom-hover-enter
   dom-hover-dwell
   dom-hover-leave
@@ -51,51 +176,11 @@ timeline:
 training-collector/tools/build_action_semantics.js
 ```
 
-Raw facts không bị overwrite bằng derived interpretation.
+Raw fact không bị overwrite bằng derived interpretation.
 
-## V0.7.1 — auto-export recovery
+## Persistence / recovery
 
-Regression thực tế vừa phát hiện:
-
-```text
-Chrome session có raw data
-→ Chrome đóng
-→ lần mở Chrome sau không thấy auto-export file
-→ session tiếp theo phải Manual Export
-```
-
-V0.7.1 sửa theo hướng:
-
-```text
-IndexedDB status-indexed recovery
-→ scan active dangling sessions không phụ thuộc 24 session gần nhất
-→ infer closed
-→ stale verifying/preparing/downloading reset pending
-→ scan closed/closed-inferred còn pending/failed
-→ full integrity verify
-→ offscreen gzip
-→ chrome.downloads.download
-→ chờ chrome.downloads.onChanged state=complete
-→ chỉ sau đó mark autoExport.status=complete
-```
-
-Popup mới có:
-
-```text
-Recent Raw Sessions / Auto Export
-sessionId
-status
-eventCount/chunkCount
-autoExport.status
-autoExport.attempts
-autoExport.error
-downloadId/downloadState
-Retry Auto Export
-```
-
-Auto-export vẫn chỉ là **temporary development convenience**. IndexedDB là persistence chính.
-
-## Current persistence
+Raw store chính vẫn là IndexedDB:
 
 ```text
 RAW_BATCH + batchId
@@ -107,104 +192,97 @@ RAW_BATCH + batchId
    └─ batchReceipts
 ```
 
-Raw schema 0.7.0 nhưng DB name V06 giữ lại để tránh migration không cần thiết.
-
 Chunk size: 1000.
 
-Integrity:
+V0.7.1 auto-export recovery vẫn giữ:
 
 ```text
-checksum
-missing chunk
-event count metadata
-first/last sessionSeq
-cross-chunk sequence gap
+status-indexed dangling/closed session recovery
+full integrity verification
+offscreen gzip
+wait downloads.onChanged state=complete
+recent-session popup diagnostics
+manual Retry Auto Export
 ```
 
-Không tự delete raw khi integrity fail.
+Auto-export chỉ là temporary development convenience; IndexedDB là persistence chính.
 
----
-
-# New observed gap — iframe/frame-aware capture
-
-Session thực tế gặp Google human verification cho thấy Collector top-frame nhìn thấy iframe nhưng chưa quan sát đầy đủ element/state bên trong frame.
-
-Sau khi V0.7.1 auto-export được Chrome-test ổn, bước Collector tiếp theo là frame-aware capture:
+V0.7.2 thêm schema-upgrade isolation:
 
 ```text
-all_frames / frame-aware content execution
-→ tabId + frameId + pageInstanceId + elementRef identity
-→ semantic/physical event trong frame
-→ cross-frame action/state reconstruction
+active session schema cũ
+→ close reason schema_upgrade_to_0.7.2
+→ auto-export/recovery như closed session
+→ tạo clean 0.7.2 session
 ```
 
-Mục tiêu là observation completeness cho UI iframe nói chung; không phải tự động giải CAPTCHA.
+Không trộn raw schema cũ/mới trong một active archive.
 
 ---
 
 # Agent boundary — CAPTCHA / human verification
 
-CAPTCHA có thể xuất hiện bình thường trong test/browsing. Agent phải nhận ra đây là boundary condition.
-
-Policy:
+Policy giữ nguyên:
 
 ```text
-observe challenge
+observe CAPTCHA / human verification
 → Decision.status = blocked
 → reasonCode = human_verification_required
-→ không cố tự giải/vượt challenge
-→ không retry click/reload vô hạn
-→ re-evaluate task
-→ nếu có route/trang khác hợp lệ phục vụ goal: replan
-→ nếu không: stop blocked
+→ không cố tự giải/vượt
+→ không retry vô hạn
+→ re-evaluate goal
+→ route/trang khác hợp lệ nếu phục vụ task
+→ nếu không có thì stop blocked
 ```
 
-Chi tiết:
-
-```text
-docs/AGENT_BOUNDARY_CONDITIONS.md
-```
-
-Việc chuyển trang/route khác phải phục vụ task hợp lệ, không nhằm bypass challenge.
+Chi tiết: `docs/AGENT_BOUNDARY_CONDITIONS.md`.
 
 ---
 
 # Browser validation tiếp theo
 
-Ưu tiên kiểm tra **auto-export recovery**, chưa cần test hover đầy đủ ngay.
+V0.7.2 cần native Chrome validation; CI không thay thế browser test.
 
 ```text
 1 git pull
 2 chrome://extensions → Reload
-3 xác nhận tên V0.7.1 Action Semantics + Export Recovery
-4 đóng/mở Chrome để có clean session
-5 thao tác đơn giản 1–2 phút
-6 KHÔNG Manual Export
-7 đóng toàn bộ Chrome
-8 mở Chrome lại
-9 kiểm tra Downloads/training-collector/
-10 mở popup → Recent Raw Sessions / Auto Export
+3 refresh/reopen target pages để content scripts mới inject
+4 xác nhận tên V0.7.2 Frame-Aware Stream Diagnostics
+5 test một top page bình thường
+6 test Google Search / YouTube SPA route
+7 test embedded video/player hoặc iframe bình thường
+8 nếu CAPTCHA xuất hiện: chỉ quan sát boundary, không cần giải
+9 không Manual Export trong normal test
+10 đóng toàn bộ Chrome → mở lại
+11 kiểm tra auto-export
+12 gửi .raw.jsonl.gz để analyze
 ```
 
-Kỳ vọng session trước:
+Kỳ vọng mới:
 
 ```text
-status = closed-inferred
-autoExport.status = complete
-downloadState = complete
-attempts >= 1
+frame-context cho top + accessible frames
+frameId/documentId populated
+collector-stream-health per pageInstance
+semantic snapshot document-start
+route-change + route semantic snapshot khi SPA đổi route
+DOM/hover/mutation từ iframe interaction nếu Chrome cho content-script injection
 ```
 
-Nếu không có file, popup phải cho thấy `autoExport.status/error` và có `Retry Auto Export`.
-
-Chỉ sau khi test này ổn mới tiếp tục:
+Phân tích tiếp theo phải tập trung:
 
 ```text
-frame-aware capture
-→ repeat iframe regression
-→ repeat YouTube hover-preview / click-control tests
-→ Behavior Dataset Preparation
+all-frame event volume / noise
+per-frame source completeness
+physical-only suspicion = 0
+route snapshot correctness
+embedded media interaction visibility
+iframe local coordinate correctness
+auto-export recovery
+privacy
 ```
+
+Sau native validation mới quyết định có cần frame filtering/parent-frame mapping/semantic label improvements trước Behavior Dataset Preparation.
 
 ---
 
@@ -242,3 +320,4 @@ Natural behavior không dựa vào random delay/jitter; phải derive/learn từ
 5. Không commit raw user session vào repo.
 6. Không thu password/cookie/token/Authorization/clipboard/payment secrets/raw sensitive values.
 7. Recorder, Collector, deterministic Scenario Mode và Agent Runtime giữ boundary rõ ràng.
+8. Frame-aware raw capture không đồng nghĩa Agent Episode/Strategy đã multi-frame; hiện Episode vẫn top-frame only.
