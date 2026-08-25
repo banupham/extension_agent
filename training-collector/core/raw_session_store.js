@@ -3,12 +3,12 @@
 (function initRawSessionStore(root) {
   const NS = root.TrainingCollectorV03 = root.TrainingCollectorV03 || {};
 
-  const VERSION = '0.4.0';
+  const VERSION = '0.5.0';
   const SESSION_KEY_PREFIX = 'tcRawSessionV03:';
   const CHUNK_KEY_PREFIX = 'tcRawChunkV03:';
   const INDEX_KEY = 'tcRawSessionIndexV03';
   const CURRENT_SESSION_KEY = 'tcCurrentBrowserSessionV03';
-  const CHUNK_SIZE = 250;
+  const CHUNK_SIZE = 500;
   const MAX_SESSION_INDEX = 12;
 
   function createSession(sessionId, startedAt) {
@@ -38,24 +38,18 @@
         keyboard: 'timing-and-operation-class-without-printable-character-content',
         wheel: 'raw-delta-samples',
         scroll: 'raw-position-samples',
-        dom: 'privacy-safe-semantic-interaction-events',
-        mutation: 'privacy-safe-structural-mutation-summaries',
-        correlation: 'physical-events-may-carry-semanticTarget-at-capture-time'
+        dom: 'compact-targetRef-events-with-first-seen-descriptors',
+        mutation: '120ms-structural-mutation-bursts',
+        correlation: 'targetRef-at-capture-time-with-first-seen-descriptor',
+        timeline: 'tsEpochMs-is-capture-time-storageSeq-is-persistence-order',
+        export: 'debug-json-and-jsonl-adapters-temporary'
       }
     };
   }
 
-  function sessionKey(sessionId) {
-    return `${SESSION_KEY_PREFIX}${sessionId}`;
-  }
-
-  function chunkKey(sessionId, chunkIndex) {
-    return `${CHUNK_KEY_PREFIX}${sessionId}:${chunkIndex}`;
-  }
-
-  function makeSessionId(now = Date.now()) {
-    return `browser-${now}-${Math.random().toString(36).slice(2, 10)}`;
-  }
+  function sessionKey(sessionId) { return `${SESSION_KEY_PREFIX}${sessionId}`; }
+  function chunkKey(sessionId, chunkIndex) { return `${CHUNK_KEY_PREFIX}${sessionId}:${chunkIndex}`; }
+  function makeSessionId(now = Date.now()) { return `browser-${now}-${Math.random().toString(36).slice(2, 10)}`; }
 
   function normalizeEvent(event) {
     if (!event || typeof event !== 'object') return null;
