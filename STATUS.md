@@ -27,17 +27,19 @@ Deterministic Scenario Mode không bị thay bởi Agent Mode.
 
 ---
 
-# Training Collector — CURRENT: V0.6 IndexedDB Reliable Raw
+# Training Collector — CURRENT: V0.6.1 IndexedDB Auto Export
 
 Manifest name:
 
 ```text
-Training Collector V0.6 IndexedDB Reliable Raw
+Training Collector V0.6.1 IndexedDB Auto Export
 ```
+
+Raw schema vẫn là `0.6.0`; `0.6.1` là extension/runtime version bổ sung temporary auto-export, không đổi semantic raw schema.
 
 Collector observe-only. Không tự click/type/navigate và không dùng `chrome.debugger` để điều khiển trang.
 
-## Capture model inherited from V0.5
+## Capture model
 
 ```text
 Physical Capture
@@ -58,11 +60,11 @@ Mutation
 └─ 120 ms dom-mutation-burst
 ```
 
-Raw physical data không bake speed/acceleration/path distributions. Các behavior features được derive offline.
+Raw physical data không bake speed/acceleration/path distributions. Behavior features được derive offline.
 
 ## V0.6 persistence architecture
 
-V0.6 đã bỏ `chrome.storage.local` khỏi vai trò raw event store chính.
+Raw event store chính là IndexedDB, không còn dựa vào `chrome.storage.local` cho event chunks.
 
 ```text
 content scripts
@@ -79,30 +81,20 @@ IndexedDB trainingCollectorRawV06
 └─ batchReceipts
 ```
 
-Các file chính mới:
-
-```text
-training-collector/core/indexeddb_chunk_store.js
-training-collector/core/reliable_sender.js
-```
-
 ### IndexedDB ChunkStore
 
-- schema raw: `0.6.0`;
+- raw schema: `0.6.0`;
 - chunk size: 1000 events;
-- session metadata lưu riêng;
 - chunk key: `(sessionId, chunkIndex)`;
 - batch receipt key: `(sessionId, batchId)`;
-- event `sessionSeq` vẫn là persistence order;
-- `tsEpochMs` vẫn là capture-time truth.
+- `sessionSeq` = persistence order;
+- `tsEpochMs` = capture-time truth.
 
 ### ACK / retry / duplicate protection
 
-Content script tạo `batchId` trước khi gửi raw batch.
+Content script tạo `batchId`, giữ pending batch trong `chrome.storage.session`, retry nếu chưa nhận ACK.
 
-Batch được giữ tạm trong `chrome.storage.session` journal và retry nếu chưa nhận ACK.
-
-Background + IndexedDB lưu receipt trong cùng write transaction với raw events. Nếu cùng `batchId` tới lại do retry:
+Background + IndexedDB lưu receipt trong cùng transaction với events. Retry cùng `batchId`:
 
 ```text
 receipt exists
@@ -111,11 +103,9 @@ receipt exists
 → không append events lần hai
 ```
 
-Mục tiêu là chịu được MV3 service-worker restart/transient messaging failure tốt hơn V0.5.
-
 ### Chunk integrity
 
-Mỗi IndexedDB chunk có:
+Mỗi chunk có:
 
 ```text
 chunkIndex
@@ -126,108 +116,133 @@ checksum = fnv1a32(...)
 events
 ```
 
-`verifySession()` kiểm tra:
+`verifySession()` kiểm tra missing chunk, checksum mismatch, metadata mismatch và sequence gap giữa chunks.
 
-- missing chunks;
-- checksum mismatch;
-- eventCount metadata mismatch;
-- firstSeq/lastSeq mismatch;
-- sequence gap giữa chunk.
+Khi browser session cũ được inferred closed ở lần Chrome khởi động kế tiếp, background ghi integrity report. V0.6.1 chạy full verification trước temporary auto-export.
 
-Khi browser session cũ được inferred closed ở lần Chrome khởi động kế tiếp, background verify tail chunks và ghi report vào `session.integrity`.
+## V0.6.1 temporary automatic export
 
-Có message contract `VERIFY_RAW_SESSION` để chạy tail/full verification khi cần diagnostics.
+Mục tiêu của auto-export là tiện cho giai đoạn test/phân tích và giảm rủi ro người dùng quên bấm manual export. Đây **không phải persistence architecture dài hạn**.
 
-## V0.6 export
-
-Manual development export không load toàn bộ raw session thành một JSON array.
-
-Popup thực hiện:
+Flow:
 
 ```text
-GET_RAW_EXPORT_META
-↓
-GET_RAW_EXPORT_CHUNK 0
-GET_RAW_EXPORT_CHUNK 1
-...
-↓
-CompressionStream('gzip')
-↓
-.raw.jsonl.gz
+Chrome session A
+→ raw persist liên tục trong IndexedDB
+→ Chrome tắt
+
+Chrome mở lại
+→ session A inferred closed
+→ verify full chunk integrity
+→ offscreen gzip exporter
+→ Downloads/training-collector/training-collector-<sessionId>.raw.jsonl.gz
+→ mark session.autoExport complete
+→ session B tiếp tục capture
 ```
 
-File đầu ra:
+Implementation mới:
 
 ```text
-training-collector-<sessionId>.raw.jsonl.gz
+training-collector/offscreen.html
+training-collector/offscreen.js
 ```
 
-Đây vẫn là **development/debug export adapter**, không phải persistence architecture chính. Persistence chính là IndexedDB ChunkStore.
-
-Auto-download JSON của các version trước chỉ là phương pháp tạm thời trong giai đoạn phát triển và không được coi là kiến trúc dài hạn.
-
-## V0.6 retention policy
-
-Chưa tự động delete raw sessions.
-
-Lý do: retention phải có policy/configuration rõ trước khi destructive cleanup được bật. Không tự xóa chỉ vì vượt số session index.
-
-## V0.6 CI
-
-Workflow `.github/workflows/extension-syntax.yml` hiện check thêm:
+Manifest có thêm permissions:
 
 ```text
-core/indexeddb_chunk_store.js
-core/reliable_sender.js
-tests/v06_storage_contract.js
+offscreen
+alarms
 ```
 
-Storage reliability contract kiểm tra IndexedDB stores, batch receipts, ACK retry, checksum/integrity API và streamed gzip export.
+Auto-export behavior:
 
-Latest verified code milestone at time of this update:
+- chỉ session closed có `eventCount > 0`;
+- session rỗng được mark `skipped-empty`;
+- full integrity verification trước export;
+- gzip JSONL tạo trong offscreen document bằng `CompressionStream('gzip')`;
+- download vào `Downloads/training-collector/`;
+- `session.autoExport.status = complete` sau khi download được tạo;
+- không export lại session đã complete;
+- failure tự retry tối đa 3 lần qua alarm;
+- metadata ghi `temporaryDevelopmentAdapter: true` để tránh nhầm với storage architecture chính.
+
+Nếu integrity report có warning, exporter vẫn cố gắng giữ dữ liệu để phục vụ diagnostics; nếu missing chunk làm export không thể hoàn tất thì session được mark `failed` và retry theo giới hạn.
+
+Manual popup export vẫn tồn tại để debug current session, nhưng không còn là bước bắt buộc cho workflow test bình thường.
+
+## Export format
+
+Native V0.6 export:
 
 ```text
-a90be899ce9d7cb226997107987e48a9d1d2c193
-GitHub Actions runtime-syntax: SUCCESS
-run 32839712686
+JSONL records
+→ CompressionStream(gzip)
+→ .raw.jsonl.gz
 ```
 
-Các commit sau milestone này có thể chỉ mở rộng contract/docs; luôn kiểm tra Actions mới nhất trước khi tuyên bố CI cuối cùng.
+Header record chứa session metadata; các record sau là event từng dòng.
+
+File auto-export:
+
+```text
+Downloads/training-collector/training-collector-<sessionId>.raw.jsonl.gz
+```
+
+## Retention
+
+Chưa tự động delete raw sessions. Retention phải có policy/configuration rõ trước khi destructive cleanup được bật.
+
+## CI latest verified
+
+Latest runtime-syntax run sau V0.6.1 auto-export + offscreen syntax coverage:
+
+```text
+commit 794fbd1c6d18c24c620b4c150ac134370ad13188
+run 32840984301
+result SUCCESS
+```
+
+CI kiểm tra syntax, manifest, existing Collector contracts và `tests/v06_storage_contract.js`, bao gồm assertions cho offscreen/alarms/auto-export contract.
+
+CI không thay manual Chrome validation.
 
 ## Browser validation cần làm tiếp
 
-CI chỉ xác nhận syntax/contracts; chưa thay manual Chrome test.
-
-Test V0.6 thực tế cần:
+Bây giờ ưu tiên test thực tế, chưa thêm feature Collector lớn.
 
 ```text
 1 git pull
 2 chrome://extensions → Reload
-3 xác nhận tên V0.6
-4 đóng/mở Chrome để tạo clean 0.6 session
-5 thao tác 5–15 phút trên nhiều trang/tab
-6 kiểm tra eventCount/chunkCount tăng
-7 Export JSONL.gz
-8 gửi file để analyzer so V0.4/V0.5/V0.6
-9 đóng Chrome → mở lại → kiểm tra session cũ integrity report
+3 xác nhận tên: Training Collector V0.6.1 IndexedDB Auto Export
+4 đóng/mở Chrome để tạo clean session
+5 thao tác 5–15 phút: pointer, click, scroll, typing, nhiều tab
+6 không cần bấm Manual Export
+7 đóng toàn bộ Chrome
+8 mở Chrome lại
+9 kiểm tra Downloads/training-collector/ có .raw.jsonl.gz của session trước
+10 gửi file đó để phân tích
 ```
 
-Cần đặc biệt kiểm tra:
+Phân tích tiếp theo phải kiểm tra:
 
-- không duplicate `sessionSeq`;
-- no missing seq;
-- batch retry không tạo duplicate;
-- chunk checksum ổn;
-- gzip export đọc được;
-- file size/rate MB per minute;
-- pointer↔semantic correlation vẫn giữ chất lượng;
-- privacy red flags = 0.
+```text
+file size / MB per minute
+events per minute
+mutation burst reduction
+pointer sampling gaps
+physical↔semantic correlation
+sessionSeq missing/duplicate
+chunk checksum/integrity
+auto-export reliability
+gzip ratio
+privacy red flags
+```
 
-## Collector next after V0.6 validation
+Nếu auto-export không xuất file, kiểm tra popup/IndexedDB session metadata và `session.autoExport.status/error`; không giả định dữ liệu đã mất vì persistence chính vẫn là IndexedDB.
 
-Không thêm feature lớn trước khi có native V0.6 raw data thật.
+## Collector next after V0.6.1 validation
 
-Nếu V0.6 storage ổn, bước tiếp theo là Behavior Dataset Preparation:
+Sau khi có native `.raw.jsonl.gz` thật và phân tích ổn, bước tiếp theo là Behavior Dataset Preparation:
 
 ```text
 raw physical + semantic
@@ -287,7 +302,7 @@ Behavior Model = HOW to do it naturally
 Executor       = translate execution plan into CDP
 ```
 
-Natural behavior không được xây từ `random delay everywhere` hoặc `random jitter everywhere`. Nó phải dựa trên empirical/learned human demonstrations và condition theo action/target/context.
+Natural behavior không dùng nền tảng `random delay everywhere` / `random jitter everywhere`; phải dựa trên empirical/learned human demonstrations và condition theo action/target/context.
 
 Behavior features dự kiến derive từ Collector:
 
@@ -297,13 +312,9 @@ keyboard: key hold, inter-key interval, burst/pause
 scroll: wheel burst, delta, pause, correction
 ```
 
-Execution Behavior Contract là contract riêng; không làm Strategy phát raw CDP.
+Execution Behavior Contract là contract riêng; Strategy không phát raw CDP.
 
-Chi tiết dài hạn xem:
-
-```text
-docs/AGENT_TRAINING_ARCHITECTURE.md
-```
+Chi tiết dài hạn xem `docs/AGENT_TRAINING_ARCHITECTURE.md`.
 
 ---
 
@@ -312,7 +323,7 @@ docs/AGENT_TRAINING_ARCHITECTURE.md
 1. GitHub là source of truth.
 2. Cập nhật `STATUS.md` sau milestone lớn.
 3. Quyết định kiến trúc dài hạn phải được ghi vào docs tương ứng.
-4. Debug adapters phải ghi rõ temporary.
+4. Debug/auto-export adapters phải ghi rõ temporary.
 5. Không tuyên bố browser-tested nếu chỉ có CI.
 6. Không thu password/cookie/token/Authorization/clipboard/payment secrets/raw sensitive values.
 7. Recorder, Training Collector, deterministic Scenario Mode và Agent Runtime giữ boundary rõ ràng.
