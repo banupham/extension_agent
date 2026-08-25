@@ -47,10 +47,13 @@ jobs:
           node --check training-collector/observer/element_registry.js
           node --check training-collector/observer/semantic_observer.js
           node --check training-collector/observer/mutation_trace.js
+          node --check training-collector/observer/hover_trace.js
           node --check training-collector/correlation/physical_semantic_correlator.js
+          node --check training-collector/correlation/action_target_resolver.js
           node --check training-collector/capture/physical_capture.js
           node --check training-collector/capture/dom_capture.js
           node --check training-collector/tools/analyze_raw.js
+          node --check training-collector/tools/build_action_semantics.js
           node --check training-collector/background.js
           node --check training-collector/content.js
           node --check training-collector/popup.js
@@ -59,6 +62,7 @@ jobs:
           node --check training-collector/tests/raw_session_contract.js
           node --check training-collector/tests/raw_analysis_contract.js
           node --check training-collector/tests/v06_storage_contract.js
+          node --check training-collector/tests/v07_action_semantics_contract.js
       - name: Validate extension manifests
         run: |
           node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8'))"
@@ -70,5 +74,7 @@ jobs:
         run: node training-collector/tests/raw_session_contract.js
       - name: Run Collector raw analysis contract test
         run: node training-collector/tests/raw_analysis_contract.js
-      - name: Run Collector V0.6 storage reliability contract test
+      - name: Run Collector inherited V0.6 storage reliability contract test
         run: node training-collector/tests/v06_storage_contract.js
+      - name: Run Collector V0.7 action semantics contract test
+        run: node training-collector/tests/v07_action_semantics_contract.js
