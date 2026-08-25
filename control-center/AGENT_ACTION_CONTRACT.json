@@ -1,0 +1,37 @@
+{
+  "contractVersion": "0.1.0",
+  "purpose": "Semantic action vocabulary for goal-directed Agent decisions. Strategy chooses WHAT; Behavior Policy chooses HOW naturally; CDP Executor performs browser-native input/navigation.",
+  "terminalStatuses": ["done", "blocked", "failed"],
+  "actionFamilies": {
+    "navigation": ["navigate", "back", "forward", "reload", "switchTab", "openNewTab", "closeTab"],
+    "pointer": ["click", "doubleClick", "hover", "moveTo", "drag"],
+    "scroll": ["scrollVertical", "scrollHorizontal", "scrollIntoView"],
+    "keyboard": ["focus", "typeText", "replaceText", "clear", "pressKey", "keyCombo"],
+    "forms": ["selectOption", "setChecked", "toggle", "submit"],
+    "media": ["play", "pause", "mute", "unmute", "setVolume", "seek", "changePlaybackRate"],
+    "observation": ["hoverAndObserve", "waitAndObserve", "dismiss"]
+  },
+  "targeting": {
+    "primary": "targetRef",
+    "fallbackContext": ["role", "label", "rect", "frameId", "pageInstanceId"],
+    "rule": "Strategy must not emit raw CSS selectors, coordinates, or CDP method names as the primary action representation."
+  },
+  "actionShape": {
+    "type": "string",
+    "targetRef": "string|null",
+    "args": "object",
+    "intent": "string|null",
+    "expectedOutcome": "object"
+  },
+  "boundaries": {
+    "strategy": "select semantic action and target",
+    "behaviorPolicy": "derive context-conditioned natural execution profile from human demonstrations",
+    "cdpPlanner": "turn semantic action + behavior profile into exact CDP execution plan",
+    "executor": "dispatch CDP commands and report low-level execution result"
+  },
+  "humanVerification": {
+    "status": "blocked",
+    "reasonCode": "human_verification_required",
+    "automaticSolveOrBypass": false
+  }
+}
