@@ -6,6 +6,7 @@ const EPISODE_STATE_KEY = 'trainingCollectorStateV03';
 const EpisodeBuilder = globalThis.TrainingCollectorV02.EpisodeBuilder;
 const RawStore = globalThis.TrainingCollectorV03.RawSessionStore;
 const EMPTY = { active: false, episode: null };
+let browserSessionInitPromise = null;
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -71,7 +72,7 @@ async function createBrowserSession() {
   return session;
 }
 
-async function ensureBrowserSession() {
+async function ensureBrowserSessionUnlocked() {
   const current = await chrome.storage.session.get(RawStore.CURRENT_SESSION_KEY);
   const sessionId = current[RawStore.CURRENT_SESSION_KEY];
   if (sessionId) {
@@ -80,6 +81,15 @@ async function ensureBrowserSession() {
     if (data[key]) return data[key];
   }
   return createBrowserSession();
+}
+
+async function ensureBrowserSession() {
+  if (!browserSessionInitPromise) {
+    browserSessionInitPromise = ensureBrowserSessionUnlocked().finally(() => {
+      browserSessionInitPromise = null;
+    });
+  }
+  return browserSessionInitPromise;
 }
 
 async function loadRawSession(sessionId) {
