@@ -73,9 +73,7 @@
       const chunks = tx.objectStore(CHUNK_STORE);
       let chunkIndex = Math.max(0, Number(session.chunkCount || 0) - 1);
       let current = [];
-      if (Number(session.chunkCount || 0) > 0 && Number(session.lastChunkSize || 0) < chunkSize) {
-        current = await req(chunks.get([session.sessionId, chunkIndex]))?.then ? [] : [];
-      }
+
       if (Number(session.chunkCount || 0) > 0 && Number(session.lastChunkSize || 0) < chunkSize) {
         const existing = await req(chunks.get([session.sessionId, chunkIndex]));
         current = Array.isArray(existing?.events) ? existing.events.slice() : [];
