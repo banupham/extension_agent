@@ -2,20 +2,20 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Training Collector V0.6</title>
+  <title>Training Collector V0.6.1</title>
   <style>
     body{font:13px system-ui,sans-serif;margin:14px;width:410px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}.notice{padding:8px;background:#f4f6f8;margin:8px 0;line-height:1.35}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}
   </style>
 </head>
 <body>
-  <strong>Training Collector V0.6 IndexedDB Reliable Raw</strong>
+  <strong>Training Collector V0.6.1 IndexedDB Auto Export</strong>
   <div class="muted">Continuous physical + privacy-safe semantic DOM capture with IndexedDB chunks and ACK/retry persistence.</div>
-  <div class="notice">Raw runtime storage is now IndexedDB. Manual development export streams chunks into <b>.raw.jsonl.gz</b>; the download adapter is still temporary and is not the long-term storage architecture.</div>
+  <div class="notice">Raw runtime storage is IndexedDB. When Chrome starts again, closed sessions with data are verified and automatically downloaded to <b>Downloads/training-collector/*.raw.jsonl.gz</b>. This auto-export is a temporary development convenience, not the long-term storage architecture. Manual export remains available for debugging the current session.</div>
 
   <div id="rawStatus" class="status">Loading raw session...</div>
   <div class="row">
     <button id="previewRaw">Preview Current</button>
-    <button id="exportRaw">Export JSONL.gz</button>
+    <button id="exportRaw">Manual Export Current</button>
   </div>
   <pre id="preview" hidden></pre>
 
