@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Training Collector V0.7.2 Frame-Aware Stream Diagnostics",
-  "version": "0.7.2",
-  "description": "Privacy-first continuous physical and semantic capture with all-frame raw observation, SPA route snapshots, stream-health diagnostics, action semantics, IndexedDB persistence and temporary automatic JSONL.gz recovery/export.",
-  "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage", "downloads", "offscreen", "alarms"],
-  "host_permissions": ["http://*/*", "https://*/*"],
+  "name": "Training Collector V0.8 Socket Mirror",
+  "version": "0.8.0",
+  "description": "Privacy-first continuous physical and semantic DOM capture with frame-aware telemetry, IndexedDB safety buffering and reliable localhost WebSocket mirroring for continuous training data ingest.",
+  "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage"],
+  "host_permissions": ["http://*/*", "https://*/*", "ws://127.0.0.1/*"],
   "background": {"service_worker": "background.js"},
   "content_scripts": [
     {
@@ -33,6 +33,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Training Collector V0.7.2"
+    "default_title": "Training Collector V0.8"
   }
 }
