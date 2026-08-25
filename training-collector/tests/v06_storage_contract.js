@@ -12,10 +12,13 @@ const idb = read('core/indexeddb_chunk_store.js');
 const sender = read('core/reliable_sender.js');
 const background = read('background.js');
 const popup = read('popup.js');
+const offscreen = read('offscreen.js');
 const manifest = JSON.parse(read('manifest.json'));
 
-assert.equal(manifest.version, '0.6.0');
-assert.ok(manifest.name.includes('V0.6'));
+assert.equal(manifest.version, '0.6.1');
+assert.ok(manifest.name.includes('V0.6.1'));
+assert.ok(manifest.permissions.includes('offscreen'));
+assert.ok(manifest.permissions.includes('alarms'));
 assert.ok(manifest.content_scripts[0].js.includes('core/reliable_sender.js'));
 
 assert.ok(idb.includes("const DB_NAME = 'trainingCollectorRawV06'"));
@@ -39,10 +42,21 @@ assert.ok(background.includes('VERIFY_RAW_SESSION'));
 assert.ok(background.includes('batchId'));
 assert.ok(background.includes('duplicate'));
 assert.ok(background.includes('integrity'));
+assert.ok(background.includes('AUTO_EXPORT_MAX_ATTEMPTS'));
+assert.ok(background.includes("reasons: ['BLOBS']"));
+assert.ok(background.includes('autoExportClosedSessions'));
+assert.ok(background.includes("status: 'complete'"));
+assert.ok(background.includes('temporaryDevelopmentAdapter'));
 
 assert.ok(popup.includes("new CompressionStream('gzip')"));
 assert.ok(popup.includes('GET_RAW_EXPORT_META'));
 assert.ok(popup.includes('GET_RAW_EXPORT_CHUNK'));
 assert.ok(popup.includes('.raw.jsonl.gz'));
 
-console.log('Training Collector V0.6 storage reliability contract OK');
+assert.ok(offscreen.includes("new CompressionStream('gzip')"));
+assert.ok(offscreen.includes('AUTO_EXPORT_SESSION'));
+assert.ok(offscreen.includes('chrome.downloads.download'));
+assert.ok(offscreen.includes('training-collector/'));
+assert.ok(offscreen.includes('autoExport: true'));
+
+console.log('Training Collector V0.6.1 storage reliability + temporary auto export contract OK');
