@@ -62,6 +62,7 @@ jobs:
           node --check training-collector/tools/build_action_windows.js
           node --check training-collector/tools/analyze_action_windows.js
           node --check training-collector/tools/extract_behavior_features.js
+          node --check training-collector/tools/analyze_behavior_features.js
           node --check training-collector/socket-server/server.js
           node --check training-collector/socket-server/integration_test.js
           node --check training-collector/background.js
@@ -77,6 +78,7 @@ jobs:
           node --check training-collector/tests/action_window_contract.js
           node --check training-collector/tests/action_window_quality_contract.js
           node --check training-collector/tests/behavior_feature_contract.js
+          node --check training-collector/tests/behavior_feature_analysis_contract.js
       - name: Validate extension manifests and Agent action contract JSON
         run: |
           node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/AGENT_ACTION_CONTRACT.json','utf8'))"
@@ -90,6 +92,8 @@ jobs:
         run: node training-collector/tests/action_window_quality_contract.js
       - name: Run Phase A2 behavior feature contract test
         run: node training-collector/tests/behavior_feature_contract.js
+      - name: Run Phase A2 behavior feature analysis contract test
+        run: node training-collector/tests/behavior_feature_analysis_contract.js
       - name: Run Collector architecture contract smoke test
         run: node training-collector/tests/architecture_contract.js
       - name: Run Collector raw session contract test
