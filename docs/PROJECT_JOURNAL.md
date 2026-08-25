@@ -4,33 +4,31 @@ Mục đích: bộ nhớ kỹ thuật lâu dài cho `banupham/extension_agent`.
 
 ```text
 STATUS.md
-→ current milestone / next step
+→ current milestone / next gate
 
 PROJECT_JOURNAL.md
-→ code lookup / invariants / rationale / traps / regression cases
+→ lookup map / invariants / rationale / regressions
 
 source trên main
 → implementation truth
 ```
 
-Nếu journal và source mâu thuẫn, source hiện tại trên `main` là implementation truth; sau đó journal phải được cập nhật lại.
+Nếu journal mâu thuẫn với source, source hiện tại trên `main` là implementation truth; sau đó cập nhật journal.
 
 ---
 
 # 1. Quy trình trước khi sửa code
 
 ```text
-1. đọc STATUS.md
-2. search PROJECT_JOURNAL.md theo component/problem
-3. fetch đúng source files được chỉ ra
-4. fetch contract/test liên quan
-5. sửa theo boundary hiện có
-6. CI/offline test
-7. browser validation nếu runtime/browser behavior
-8. cập nhật STATUS/JOURNAL khi knowledge dài hạn thay đổi
+1 đọc STATUS.md
+2 đọc/search PROJECT_JOURNAL.md theo component/problem
+3 fetch source hiện tại trên main
+4 fetch contract/test liên quan
+5 sửa theo boundary
+6 chạy CI/offline test
+7 browser validation nếu runtime behavior
+8 cập nhật STATUS/JOURNAL nếu có milestone/invariant mới
 ```
-
-Không quét toàn repo nếu journal đã xác định được vùng code.
 
 ---
 
@@ -44,297 +42,54 @@ TRAINING COLLECTOR
 Human → raw physical + semantic browser session
 
 AGENT
-Task → Strategy → Action Contract → Behavior Policy → CDP Executor
+Task → Strategy → Agent Action → Behavior → CDP Plan → Executor
 ```
+
+Hard boundary:
 
 ```text
-Strategy       = WHAT to do
-Behavior Model = HOW naturally
-Executor       = translate execution plan to CDP
+Strategy       = WHAT
+Behavior Policy= HOW naturally
+CDP Planner    = exact browser-native plan
+Executor       = dispatch browser commands
 ```
 
-Recorder không phải raw training collector. Collector observe-only. Agent Strategy/model không phát raw CDP.
+Scenario Mode không bị thay bằng Agent Mode.
 
 ---
 
-# 3. Training Collector current architecture — V0.8
+# 3. Training Collector stable baseline — V0.8
 
 Runtime:
 
 ```text
-manifest version: 0.8.0
-raw schema:       0.7.2
+manifest 0.8.0
+raw schema 0.7.2
 ```
 
-Primary development flow:
+Primary flow:
 
 ```text
-content scripts / all frames
+all-frame content capture
 → RAW_BATCH + batchId
 → background normalize + sessionSeq
-→ IndexedDB append / receipt dedupe
+→ IndexedDB append/receipt dedupe
 → localhost WebSocket mirror
-→ append-only JSONL server archive
+→ append-only server JSONL
 ```
 
 Critical invariant:
 
 ```text
 persist IndexedDB first
-→ mirror socket second
+→ socket mirror second
 ```
 
-Socket send is never allowed to replace browser-side persistence.
+Socket failure must never remove/replace browser-side raw persistence.
 
-Manual `.raw.jsonl.gz` export remains fallback/debug only.
-
----
-
-# 4. Code Lookup Map — capture / semantics
-
-## Physical pointer / wheel / keyboard / idle / focus
+## Socket lookup
 
 Read:
-
-```text
-training-collector/capture/physical_capture.js
-training-collector/correlation/physical_semantic_correlator.js
-training-collector/content.js
-training-collector/core/reliable_sender.js
-```
-
-Invariants:
-
-- raw physical stays un-derived;
-- printable keyboard does not store actual char/code;
-- sensitive targets filtered before raw leaves content script;
-- physical↔semantic correlation near capture time.
-
-## DOM click/focus/input/change/submit
-
-Read:
-
-```text
-training-collector/capture/dom_capture.js
-training-collector/correlation/action_target_resolver.js
-training-collector/observer/semantic_observer.js
-training-collector/observer/element_registry.js
-training-collector/content.js
-```
-
-Target contract:
-
-```text
-targetRef          legacy/raw event target
-rawTargetRef       raw DOM event.target
-resolvedTargetRef  interpreted actionable target
-targetResolution   method + confidence
-```
-
-Never overwrite raw target with resolved target.
-
-## Hover / preview
-
-Read:
-
-```text
-training-collector/observer/hover_trace.js
-training-collector/observer/mutation_trace.js
-training-collector/correlation/action_target_resolver.js
-training-collector/tools/build_action_semantics.js
-training-collector/tests/v07_action_semantics_contract.js
-```
-
-Raw facts:
-
-```text
-dom-hover-enter
-dom-hover-dwell
-dom-hover-leave
-```
-
-Derived offline:
-
-```text
-hover
-hover-dwell
-hover-preview
-```
-
-Regression case:
-
-```text
-YouTube thumbnail hover
-→ dwell
-→ animated preview
-→ mute/audio control appears
-→ no navigation
-```
-
-Need distinguish `hover-preview`, `click-open`, `click-control`.
-
-## Mutation
-
-Read:
-
-```text
-training-collector/observer/mutation_trace.js
-training-collector/tools/analyze_raw.js
-training-collector/tools/build_action_semantics.js
-```
-
-Current capture-time compromise:
-
-```text
-dom-mutation-burst ~120 ms
-```
-
-Do not dump innerHTML/textContent/raw values. Mutation relevance remains dataset/derived concern.
-
----
-
-# 5. Frame / SPA / stream diagnostics — inherited V0.7.2
-
-Read:
-
-```text
-training-collector/manifest.json
-training-collector/content.js
-training-collector/observer/route_trace.js
-training-collector/background.js
-training-collector/tools/analyze_raw.js
-training-collector/tests/v072_frame_stream_contract.js
-```
-
-Manifest:
-
-```text
-all_frames = true
-match_about_blank = true
-match_origin_as_fallback = true
-```
-
-Persisted identity:
-
-```text
-tabId
-windowId
-frameId
-documentId
-documentLifecycle
-pageInstanceId
-elementRef
-```
-
-Composite element identity:
-
-```text
-tabId + frameId + pageInstanceId + elementRef
-```
-
-Do not treat `e17` as globally unique.
-
-Coordinates inside iframe are frame-client coordinates.
-
-Continuous raw = all-frame. Optional Task Episode = top-frame only until Agent Observation has an explicit multi-frame contract.
-
-SPA route trace:
-
-```text
-popstate
-hashchange
-location poll 500 ms
-→ route-change
-→ semantic-snapshot snapshotReason=route-change
-```
-
-Stream diagnostics:
-
-```text
-collector-stream-start
-collector-stream-health
-collector-stream-stop
-```
-
-Used to distinguish “no interaction” from “capture module appears silent”.
-
----
-
-# 6. Timeline / ordering
-
-Read:
-
-```text
-training-collector/content.js
-training-collector/background.js
-training-collector/observer/mutation_trace.js
-training-collector/observer/hover_trace.js
-```
-
-Fields:
-
-```text
-tsEpochMs  capture timestamp
-pageSeq    page-local capture order
-sourceSeq  source-local order
-sessionSeq durable background persistence order
-```
-
-`sessionSeq` is not chronological truth across asynchronous sources.
-
----
-
-# 7. IndexedDB reliability
-
-Read:
-
-```text
-training-collector/core/raw_session_store.js
-training-collector/core/indexeddb_chunk_store.js
-training-collector/core/reliable_sender.js
-training-collector/background.js
-training-collector/tests/v06_storage_contract.js
-```
-
-Current DB:
-
-```text
-trainingCollectorRawV06
-stores:
-  sessions
-  chunks
-  batchReceipts
-chunk size: 1000
-```
-
-DB name remains V06 for storage continuity; raw schema is 0.7.2.
-
-Retry invariant:
-
-```text
-same batchId retry
-→ receipt exists
-→ ACK again
-→ do not append duplicate events
-```
-
-Integrity checks:
-
-```text
-missing chunk
-checksum mismatch
-event-count mismatch
-firstSeq/lastSeq mismatch
-cross-chunk sequence gap
-```
-
-Never auto-delete raw data because integrity verification failed.
-
----
-
-# 8. V0.8 socket mirror lookup
-
-Read first:
 
 ```text
 training-collector/core/socket_mirror.js
@@ -342,14 +97,7 @@ training-collector/background.js
 training-collector/socket-server/server.js
 training-collector/socket-server/integration_test.js
 training-collector/socket-server/README.md
-training-collector/popup.js
 training-collector/tests/v08_socket_mirror_contract.js
-```
-
-Endpoint:
-
-```text
-ws://127.0.0.1:8765/training-collector
 ```
 
 Protocol:
@@ -365,242 +113,411 @@ session-close
 heartbeat
 ```
 
-Mirror rules:
+Server rules:
 
 ```text
-1. background persists normalized events first
-2. only non-duplicate persisted batch is published live
-3. reconnect → session-open
-4. server returns durable resumeFromSeq
-5. extension replays missing IndexedDB chunks in bounded batches
-6. server ignores <= lastSeq duplicate events
-7. sequence gap → resync
+duplicate <= lastSeq → ignore
+gap → resync
+append JSONL → persist meta → ACK
+server restart → scan durable JSONL → resumeFromSeq
 ```
 
-`core/socket_mirror.js` owns connection/reconnect/heartbeat/session ACK state.
-
-`background.js` owns:
+Native validation achieved:
 
 ```text
-session lifecycle
-sessionSeq assignment
-IndexedDB durability
-chunk-by-chunk replay callback
+continuous socket archive      PASS
+late-server replay             PASS
+no missing/duplicate seq       PASS
+multi-browser concurrent       PASS
+multi-tab / multi-frame        PASS
+SPA routes                     PASS
+login-form observation         PASS
+credential privacy             PASS
+browser close >45s finalize    PASS
+session-end                    PASS
 ```
 
-Do not move IndexedDB persistence behind socket ACK.
+Collector now enters stability/regression support. Do not keep optimizing transport without a regression.
 
-## Socket server
-
-Files:
-
-```text
-training-collector/socket-server/package.json
-training-collector/socket-server/server.js
-training-collector/socket-server/integration_test.js
-training-collector/socket-server/START_SOCKET_SERVER.bat
-training-collector/socket-server/README.md
-```
-
-Default output:
-
-```text
-training-collector/socket-data/<sessionId>.raw.jsonl
-training-collector/socket-data/<sessionId>.meta.json
-```
-
-Server binds localhost by default.
-
-Server durability rules:
-
-```text
-append JSONL batch
-→ persist meta lastSeq
-→ send batch-ack
-```
-
-On startup/session-open server scans existing JSONL to recover `lastSeq`; meta alone is not trusted as the only recovery source.
-
-Browser-exit heuristic:
-
-```text
-WebSocket disconnect
-→ 45 s grace
-→ no reconnect
-→ append session-end
-→ status closed
-```
-
-A same-session reconnect may resume after a provisional close.
-
-## Socket integration CI
-
-`training-collector/socket-server/integration_test.js` is a real localhost protocol/durability test. It verifies:
-
-```text
-session-open / resumeFromSeq
-normal append
-exact duplicate ignored
-sequence gap → resync
-session-close/meta durability
-server restart on same JSONL
-resumeFromSeq recovered from durable archive
-continued append without duplicate/gap
-```
-
-CI run `32863776613` on commit `278df8c53c22923c0a4e1a2c74367589d3be0386` passed.
-
-The first integration attempt exposed a startup bind race (`ECONNREFUSED` a few ms after the server printed its startup line). Test client now retries briefly during bind. This is useful test-harness knowledge, not evidence of a protocol failure.
-
-## Backlog recovery
-
-Important V0.8 property:
-
-```text
-server can start late
-OR
-server can restart
-OR
-previous browser session can already be closed
-```
-
-and missing events can still be replayed from IndexedDB.
-
-This is why old sessions that failed automatic download may still be recoverable.
+Manual gzip remains fallback/debug only. Downloads/offscreen auto-export is not the architecture.
 
 ---
 
-# 9. Manual export — fallback only
+# 4. Collector semantic/capture lookup
 
-Read:
+## Physical
 
 ```text
-training-collector/popup.js
-training-collector/background.js
+training-collector/capture/physical_capture.js
+training-collector/correlation/physical_semantic_correlator.js
+training-collector/content.js
 ```
 
-Flow:
+Raw physical remains un-derived.
+
+## Action targets
 
 ```text
-GET_RAW_EXPORT_META
-GET_RAW_EXPORT_CHUNK
-→ popup CompressionStream(gzip)
-→ manual .raw.jsonl.gz
+training-collector/capture/dom_capture.js
+training-collector/correlation/action_target_resolver.js
+training-collector/observer/semantic_observer.js
+training-collector/observer/element_registry.js
 ```
 
-No offscreen auto-export runtime remains in V0.8.
-
-Removed from active architecture:
+Keep both:
 
 ```text
-offscreen.html
-offscreen.js
-downloads permission
-offscreen permission
-alarms permission
-auto-export retry path
+rawTargetRef
+resolvedTargetRef
 ```
 
-Do not reintroduce Downloads API as the main persistence/extraction architecture.
+Never overwrite raw fact with interpreted target.
 
----
-
-# 10. Analyzer / dataset lookup
-
-Read:
+## Hover
 
 ```text
-training-collector/tools/analyze_raw.js
-training-collector/tests/raw_analysis_contract.js
+training-collector/observer/hover_trace.js
+training-collector/observer/mutation_trace.js
 training-collector/tools/build_action_semantics.js
-training-collector/tests/v07_action_semantics_contract.js
 ```
 
-Analyzer reads:
+Raw:
 
 ```text
-legacy JSON
-JSONL
-JSONL.gz
+dom-hover-enter
+dom-hover-dwell
+dom-hover-leave
 ```
 
-Socket server `.raw.jsonl` can be analyzed directly.
-
-Metrics include:
+Derived offline:
 
 ```text
-event/source distributions
-pointer gaps
-physical↔semantic correlation
-mutation volume
-sessionSeq integrity
-timestamp inversions
-privacy flags
-frame/document/pageInstance coverage
-route/snapshot counts
-stream-health / physical-only suspicion
+hover
+hover-dwell
+hover-preview
 ```
 
-Derived semantics remain interpretation, not raw truth.
+Regression: YouTube thumbnail hover → animated preview/control appears without navigation.
+
+## Frame identity
+
+```text
+tabId + frameId + pageInstanceId + elementRef
+```
+
+`elementRef` is not globally unique.
+
+## SPA
+
+```text
+route-change
+→ semantic snapshot re-anchor
+```
+
+## Timeline
+
+```text
+tsEpochMs  = capture time / primary global reconstruction axis
+pageSeq    = page-local order
+sourceSeq  = source-local order
+sessionSeq = durable persistence order
+```
+
+Never use `sessionSeq` as chronological truth in dataset generation.
 
 ---
 
-# 11. Agent lookup / CAPTCHA boundary
+# 5. Privacy invariants
 
-Strategy:
+Never capture/store/train raw:
 
-```text
-control-center/manager/strategy/
-docs/AGENT_TRAINING_ARCHITECTURE.md
-docs/AGENT_BOUNDARY_CONDITIONS.md
-```
-
-Execution:
-
-```text
-control-center/extension/agent-runtime-extension/background.js
-control-center/ACTION_CONTRACT.json
-```
-
-CAPTCHA policy:
-
-```text
-observe CAPTCHA / human verification
-→ Decision.status = blocked
-→ reasonCode = human_verification_required
-→ do not solve/bypass automatically
-→ do not retry blindly
-→ re-evaluate goal
-→ alternative legitimate route/page only if it serves task
-→ otherwise stop blocked
-```
-
-Frame-aware observation exists for completeness, not challenge bypass.
-
----
-
-# 12. Privacy invariants
-
-Do not capture/store:
-
-- password values;
+- password/credential values;
 - cookies;
 - Authorization/access/refresh tokens;
-- localStorage/sessionStorage secret contents;
+- local/session storage secrets;
 - clipboard contents;
 - payment secrets;
 - raw sensitive input values;
-- printable keyboard actual character/code;
-- URL query values/hash content;
-- raw document title under current policy.
+- printable human key content;
+- URL query/hash secret contents.
 
-Socket transport does not expand capture scope. It mirrors only already-filtered Collector raw events.
-
-Do not commit `socket-data/` or user raw sessions to GitHub.
+Typing Behavior may learn timing/operation classes, not human typed content.
 
 ---
 
-# 13. CI map
+# 6. Agent Phase A0 — semantic action + behavior + CDP map
+
+Read first:
+
+```text
+control-center/AGENT_ACTION_CONTRACT.json
+control-center/manager/strategy/agent_action_contract.js
+control-center/manager/strategy/execution_behavior_contract.js
+control-center/script/checks/agent_action_contract.js
+docs/AGENT_ACTION_CDP_MAP.md
+docs/AGENT_TRAINING_ARCHITECTURE.md
+```
+
+Deterministic contract remains separate:
+
+```text
+control-center/ACTION_CONTRACT.json
+```
+
+Do not migrate Scenario Mode onto Agent vocabulary.
+
+## Agent Action Contract v0.1
+
+Vocabulary:
+
+```text
+navigation:
+  navigate back forward reload switchTab openNewTab closeTab
+
+pointer:
+  click doubleClick hover moveTo drag
+
+scroll:
+  scrollVertical scrollHorizontal scrollIntoView
+
+keyboard:
+  focus typeText replaceText clear pressKey keyCombo
+
+forms:
+  selectOption setChecked toggle submit
+
+media:
+  play pause mute unmute setVolume seek changePlaybackRate
+
+observation:
+  hoverAndObserve waitAndObserve dismiss
+```
+
+Strategy action must use semantic `targetRef` when target-bound. Strategy must not emit raw selector, coordinate or CDP method as its primary representation.
+
+## Behavior families v0.1
+
+```text
+pointer-click
+pointer-hover
+pointer-drag
+scroll-vertical
+scroll-horizontal
+scroll-target-acquisition
+keyboard-text
+keyboard-key
+focus-acquisition
+form-control
+media-control
+navigation
+observation-wait
+```
+
+## CDP mapping principles
+
+```text
+click/hover/drag
+→ Input.dispatchMouseEvent
+
+scroll vertical/horizontal
+→ Input.dispatchMouseEvent(mouseWheel)
+
+typeText/pressKey
+→ Input.dispatchKeyEvent / Input.insertText
+
+navigate
+→ Page.navigate
+
+back/forward
+→ Page.getNavigationHistory + Page.navigateToHistoryEntry
+```
+
+`chrome.tabs.*` is allowed as tab lifecycle control-plane; in-page interaction should be standardized around CDP/browser-native execution.
+
+## Existing Agent Runtime state
+
+Read:
+
+```text
+control-center/extension/agent-runtime-extension/background.js
+```
+
+Current runtime is experimental and currently directly implements only:
+
+```text
+openUrl
+pressKey
+type
+```
+
+Do not confuse current executor coverage with the Agent semantic contract target. Runtime expansion happens after A1/A2/A3 design is stable enough.
+
+---
+
+# 7. Human demonstrations → natural execution
+
+Human demonstration is NOT trajectory replay.
+
+Learn context-conditioned distributions/constraints.
+
+Pointer click features:
+
+```text
+start position
+path length / displacement
+duration
+velocity / acceleration / jerk
+curvature
+overshoot/correction
+near-target slowdown
+dwell
+mouseDown→mouseUp hold
+```
+
+Hover:
+
+```text
+approach
+enter
+dwell
+UI mutation/state response
+leave
+```
+
+Scroll:
+
+```text
+axis
+delta burst
+timing
+pause
+settling/correction
+```
+
+Horizontal and vertical scroll are separate families. Facebook carousel is a regression case for horizontal scroll.
+
+Keyboard:
+
+```text
+focus-to-type pause
+inter-key timing
+burst/pause structure
+Backspace/Delete/Tab/Enter timing
+```
+
+Drag/slider:
+
+```text
+handle acquisition
+press
+continuous trajectory
+correction near requested value
+release
+```
+
+Natural behavior is not random delay/jitter everywhere.
+
+---
+
+# 8. NEXT — Phase A1 Action Window Builder
+
+Purpose:
+
+```text
+raw human session
+→ candidate semantic demonstrations
+```
+
+Window shape:
+
+```text
+BEFORE
+→ physical approach / hover / focus / wheel / key timing
+→ SEMANTIC ACTION
+→ AFTER / mutation / route / semantic state
+→ OUTCOME
+```
+
+Initial derived actions:
+
+```text
+click
+hover / hoverAndObserve
+scrollVertical
+scrollHorizontal
+typeText
+pressKey
+drag
+toggle
+dismiss
+```
+
+A1 dataset-side responsibilities:
+
+```text
+actionable-parent semantic-label enrichment
+hover html/body/container noise filtering
+frame-aware target identity
+tsEpochMs reconstruction
+before/action/after/outcome windows
+```
+
+Do not modify raw Collector facts to make the dataset cleaner.
+
+Regression demonstrations to keep:
+
+```text
+YouTube hover-preview
+embedded iframe controls
+YouTube media controls / playback rate
+Facebook like / comments
+Facebook horizontal carousel
+login without credential leakage
+TikTok dynamic video routes
+short-drama login-gated modal + dismiss
+multi-tab/multi-frame
+```
+
+---
+
+# 9. Agent roadmap after A1
+
+```text
+A2 Behavior Feature Extractor
+↓
+A3 Empirical context-conditioned Behavior Baseline
+↓
+A4 One-action Agent Runtime Bridge
+↓
+A5 Goal Checker + Replan
+↓
+retrieval/learned Strategy
+↓
+learned Behavior policy only after stable offline metrics
+```
+
+A3 should start with empirical distributions, not a complex model.
+
+---
+
+# 10. Agent safety boundary
+
+CAPTCHA/human verification:
+
+```text
+observe
+→ status=blocked
+→ reasonCode=human_verification_required
+→ no automatic solve/bypass
+→ no blind reload/click loop
+→ legitimate alternate route only if independently serves task
+```
+
+See `docs/AGENT_BOUNDARY_CONDITIONS.md`.
+
+---
+
+# 11. CI map
 
 Workflow:
 
@@ -608,57 +525,53 @@ Workflow:
 .github/workflows/extension-syntax.yml
 ```
 
-Collector contracts/tests:
+Agent checks:
 
 ```text
-training-collector/tests/architecture_contract.js
-training-collector/tests/raw_session_contract.js
-training-collector/tests/raw_analysis_contract.js
-training-collector/tests/v06_storage_contract.js
-training-collector/tests/v07_action_semantics_contract.js
-training-collector/tests/v072_frame_stream_contract.js
-training-collector/tests/v08_socket_mirror_contract.js
-training-collector/socket-server/integration_test.js
+control-center/script/checks/strategy_contract.js
+control-center/script/checks/agent_action_contract.js
 ```
 
-Node socket-server integration CI exists. Native Chrome MV3 WebSocket behavior still requires browser validation.
+Collector checks include storage/action/frame/socket contracts and real localhost socket integration test.
+
+CI success != native Chrome runtime validation.
 
 ---
 
-# 14. Architectural decisions
+# 12. Architectural decisions
 
 ## D001 — Scenario Mode and Agent Mode stay separate
 Protect deterministic execution.
 
 ## D002 — Recorder and Training Collector are different products
-Recorder → deterministic Scenario; Collector → training telemetry.
+Recorder → Scenario; Collector → training telemetry.
 
 ## D003 — Physical raw stays un-derived
-Behavior features are derived offline.
+Behavior features are offline-derived.
 
-## D004 — DOM is core semantic signal; physical is supplementary
-Agent needs target/state/outcome, not trajectory alone.
+## D004 — DOM semantic signal is core; physical supplements it
+Agent needs target/state/outcome.
 
 ## D005 — Physical↔semantic correlation near capture time
 Avoid target drift.
 
 ## D006 — Mutation uses bursts
-V0.4 showed mutation noise dominating raw streams.
+Raw mutation noise otherwise dominates.
 
 ## D007 — IndexedDB is browser-side raw persistence
-Do not depend on browser downloads as storage.
+Downloads are not storage architecture.
 
-## D008 — Download export is debug/fallback only
-V0.8 removes auto-download runtime entirely.
+## D008 — Manual/download export is debug fallback only
+V0.8 primary development archive is socket JSONL.
 
 ## D009 — Batch receipts make RAW_BATCH retries idempotent
-Serialized append alone is insufficient for ACK loss.
+ACK loss must not duplicate raw events.
 
 ## D010 — Natural Execution is a separate layer
-Strategy=WHAT, Behavior=HOW, Executor=CDP.
+Strategy=WHAT; Behavior=HOW.
 
-## D011 — Hover can be an action with outcome
-Dynamic UI may respond without click/navigation.
+## D011 — Hover can be a semantic action with outcome
+Not all meaningful actions navigate/click.
 
 ## D012 — Raw and resolved action targets coexist
 Interpretation must not destroy raw fact.
@@ -667,104 +580,81 @@ Interpretation must not destroy raw fact.
 sessionSeq is persistence order.
 
 ## D014 — hover-preview is derived offline
-Raw keeps lifecycle/state facts.
+Raw keeps hover/state facts.
 
 ## D015 — CAPTCHA is an Agent boundary condition
-Blocked/replan legitimately; no automatic solving/bypass.
+Blocked/replan legitimately; no automatic solve/bypass.
 
 ## D016 — Frame identity is composite
 `tabId + frameId + pageInstanceId + elementRef`.
 
 ## D017 — All-frame raw does not imply multi-frame Agent Episode
-Episode stays top-frame until contract explicitly changes.
+Explicit Agent Observation contract is required first.
 
 ## D018 — SPA route changes need semantic re-anchor
 route-change + semantic snapshot.
 
 ## D019 — Stream silence must be observable
-collector-stream-health exists for diagnostics.
+collector-stream-health diagnostics.
 
 ## D020 — Socket mirror is post-persist transport
 IndexedDB first, socket second.
 
 ## D021 — Socket resume uses server durable sequence
-Server returns `resumeFromSeq`; extension replays from IndexedDB.
+Server returns `resumeFromSeq`; extension replays IndexedDB.
 
-## D022 — Server rejects sequence gaps and tolerates duplicates
-`<= lastSeq` duplicate ignored; gap → resync.
+## D022 — Server tolerates duplicates and rejects sequence gaps
+Duplicate ignore; gap → resync.
 
-## D023 — WebSocket disconnect is not immediately browser-session end
-Use grace period because MV3/runtime/network can reconnect.
+## D023 — Socket disconnect is not immediate session end
+Use grace window.
 
-## D024 — Continuous server JSONL is the preferred development archive
-Manual gzip remains fallback; production storage architecture can evolve later.
+## D024 — Continuous JSONL is preferred development archive
+Manual gzip is fallback.
 
-## D025 — Socket server protocol needs real integration CI
-Static source contracts are insufficient for durable append/resume/resync behavior. Keep the localhost integration test in CI.
+## D025 — Socket protocol requires integration CI
+Static contracts are insufficient.
 
----
+## D026 — Agent has its own semantic Action Contract
+Do not reuse deterministic selector-heavy `ACTION_CONTRACT.json` as Agent brain vocabulary.
 
-# 15. Engineering diary — key regressions/milestones
+## D027 — CDP is Agent execution standard
+Strategy stays semantic; exact CDP belongs below Behavior Policy.
 
-## 2026-08-25 — persistent journal introduced
-Needed because repo became multi-product and long-running.
+## D028 — Agent execution is four-layered
+`Action → Behavior → CDP Plan → Executor` keeps reasoning, fidelity and mechanics independently testable.
 
-## V0.6.1 — temporary auto-export
-Offscreen gzip/download adapter added for development convenience.
-
-## V0.7 — Action Semantics
-Added Action Target Resolver, hover lifecycle, pageSeq/sourceSeq, offline hover-preview derivation.
-
-## CAPTCHA/iframe regression
-Native test exposed missing iframe observation and established CAPTCHA as blocked boundary.
-
-## V0.7.1 — export recovery
-Status-indexed recovery + download completion diagnostics were added, but download remained fragile.
-
-## YouTube Playables regression
-Resolved actionable target was often better than raw child text/img target. Actionable-parent labels can still be empty; semantic label propagation remains backlog with privacy considerations.
-
-## Google Search embedded YouTube regression
-Embedded video and gray overlay exposed need for frame-aware capture and direct stream-health diagnostics.
-
-## V0.7.2 — Frame-Aware Stream Diagnostics
-Added all-frame raw, frame/document identity, route re-anchors, stream-health, gzip-aware analyzer.
-
-## V0.8 — Socket Mirror
-Native popup showed a closed session with:
-
-```text
-autoExport=failed
-Cannot read properties of undefined (reading 'download')
-```
-
-Decision: stop optimizing Downloads adapter. Add localhost WebSocket server + resume/ACK/replay protocol. Remove offscreen auto-export runtime and permissions. Keep IndexedDB as safety source and manual gzip fallback.
-
-## V0.8 — real socket server integration CI
-Added `socket-server/integration_test.js` and CI installation/test step. The test validates append, duplicate tolerance, gap/resync, close durability, server restart and resume. Final run `32863776613` passed.
-
-Next gate:
-
-```text
-start socket server
-→ Chrome V0.8 native test
-→ confirm connected + growing JSONL
-→ stop/restart server → resume no duplicate/gap
-→ close Chrome → server finalizes after grace
-→ analyze native socket JSONL
-```
+## D029 — Human demonstrations define distributions/context, not literal replay
+Natural execution must generalize to unseen geometry/state.
 
 ---
 
-# 16. Maintenance rule
+# 13. Engineering milestones
 
-Update this journal when:
+```text
+V0.7 Action Semantics
+→ raw/resolved targets + hover lifecycle
 
-- module responsibility changes;
-- a new contract/protocol is introduced;
-- a difficult bug reveals an invariant;
-- a temporary mechanism is added/removed;
-- migration/version changes future lookup entry points;
-- CI/browser validation path changes.
+V0.7.2 Frame-Aware Stream Diagnostics
+→ all-frame + route re-anchor + stream health
 
-Do not turn this into a dump of every commit.
+V0.8 Socket Mirror
+→ IndexedDB safety + localhost continuous JSONL
+
+V0.8 native transport gate
+→ late-server replay + concurrent sessions + close finalization validated
+
+Agent Phase A0
+→ Agent Action Contract v0.1
+→ Execution Behavior Contract v0.1
+→ Action→Behavior→CDP mapping
+→ CI smoke test
+```
+
+Current next gate: **A1 Action Window Builder**.
+
+---
+
+# 14. Maintenance rule
+
+Update journal when module responsibility, contract/protocol, difficult invariant, version/migration, test gate or architecture boundary changes. Do not log every commit.
