@@ -87,7 +87,7 @@ function analyze(data) {
   const durationMs = timestamps.length > 1 ? Math.max(0, Math.max(...timestamps) - Math.min(...timestamps)) : 0;
 
   return {
-    exportVersion: data?.exportVersion || data?.session?.schemaVersion || null,
+    exportVersion: data?.session?.schemaVersion || data?.exportVersion || null,
     sessionId: data?.session?.sessionId || null,
     totalEvents: events.length,
     durationMs,
@@ -126,7 +126,7 @@ function parseInput(text) {
   const records = trimmed.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
   const sessionRecord = records.find(x => x.recordType === 'session') || {};
   return {
-    exportVersion: sessionRecord.exportVersion || sessionRecord.session?.schemaVersion || null,
+    exportVersion: sessionRecord.session?.schemaVersion || sessionRecord.exportVersion || null,
     exportedAt: sessionRecord.exportedAt || null,
     session: sessionRecord.session || null,
     events: records.filter(x => x.recordType === 'event').map(({ recordType, ...event }) => event)
