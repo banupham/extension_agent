@@ -2,329 +2,318 @@
 
 ## Source of truth
 
-GitHub `banupham/extension_agent` là source chính của dự án. Mỗi milestone kiến trúc/implementation quan trọng phải cập nhật file này để có thể tiếp tục từ trạng thái hiện tại mà không cần khảo sát lại từ đầu.
+GitHub `banupham/extension_agent` là source chính của dự án. Sau milestone implementation/architecture quan trọng phải cập nhật file này để lần sau có thể tiếp tục ngay mà không khảo sát lại từ đầu.
 
-Workflow local thường dùng:
+Local workflow thường dùng:
 
 ```bat
 git pull
 ```
 
-Deterministic Scenario Mode tiếp tục được giữ. Agent Mode và Training Collector phát triển song song, không thay thế scenario runner hiện tại.
-
-## Ba sản phẩm tách biệt
+## Product boundaries
 
 ```text
 RECORDER
 Human → deterministic Scenario
 
 TRAINING COLLECTOR
-Human → raw browser session + semantic/physical training data
+Human → raw physical + semantic browser session
 
 AGENT
 Task → Strategy → Action Contract → Behavior Policy → CDP Executor
 ```
 
-## Training Collector hiện tại — V0.5 Compact Raw
+Deterministic Scenario Mode không bị thay bởi Agent Mode.
 
-Collector observe-only, không tự click/type/navigate và không dùng `chrome.debugger` để điều khiển trang.
+---
 
-Kiến trúc hiện tại:
+# Training Collector — CURRENT: V0.6 IndexedDB Reliable Raw
+
+Manifest name:
 
 ```text
-Browser Session
-│
-├─ Physical Capture
-│  ├─ pointer trajectory
-│  ├─ pointer down/up
-│  ├─ wheel / scroll
-│  ├─ keyboard timing + operation class
-│  └─ idle/focus/visibility lifecycle
-│
-├─ Semantic DOM Capture
-│  ├─ stable page-scoped element refs
-│  ├─ role / label / selector candidates
-│  ├─ rendered / inViewport / interactable
-│  ├─ click/focus/input/change/submit
-│  └─ state snapshots/diffs
-│
-├─ Physical ↔ Semantic Correlation
-│  └─ targetRef at capture time
-│
-├─ Mutation Trace
-│  └─ 120 ms compact mutation bursts
-│
-└─ Raw Session Store
-   └─ chrome.storage.local chunks (development-stage only)
+Training Collector V0.6 IndexedDB Reliable Raw
 ```
 
-### V0.5 compact changes
+Collector observe-only. Không tự click/type/navigate và không dùng `chrome.debugger` để điều khiển trang.
 
-- physical events giữ `targetRef`; descriptor chỉ xuất hiện lần đầu cần thiết;
-- mutation được gom thành `dom-mutation-burst` 120 ms thay vì từng MutationRecord;
-- visibility tách `rendered`, `inViewport`, `interactable`;
-- selector có `selectorCandidates` + score;
-- Task Episode ưu tiên state diff thay vì full snapshot lặp lại;
-- `tsEpochMs` là capture time, `sessionSeq` chỉ là persistence order;
-- chunk size tăng 250 → 500;
-- manual debug export dùng `.raw.jsonl`;
-- analyzer đọc V0.4 JSON và V0.5 JSONL.
-
-### Kết quả thực nghiệm V0.4 dẫn tới V0.5
-
-Một phiên thật ~29k events cho thấy:
-
-- physical capture: tốt;
-- pointer ↔ DOM correlation: ~100% trên pointer/wheel trong phiên thử;
-- mutation chiếm quá nhiều dữ liệu ở V0.4;
-- visibility cũ chưa phân biệt ngoài viewport;
-- `sessionSeq` ổn về integrity nhưng không phải chronological truth;
-- selector đơn lẻ thường quá chung.
-
-Một phiên V0.4.1 khác có 17,719 events đã được convert thử sang V0.5-compatible JSONL:
+## Capture model inherited from V0.5
 
 ```text
-source events        17,719
-converted events     11,755
-source mutations      6,273
-mutation bursts         309
-source size           17.35 MB
-converted size         9.33 MB
-reduction              46.2%
+Physical Capture
+├─ pointer trajectory/down/up
+├─ wheel + scroll positions
+├─ keyboard timing + operation class
+├─ focus / visibility / heartbeat / idle
+└─ targetRef correlation at capture time
+
+Semantic DOM
+├─ stable page-scoped element refs
+├─ click/focus/input/change/submit
+├─ rendered / inViewport / interactable
+├─ selectorCandidates + score
+└─ semantic snapshot / episode state diff
+
+Mutation
+└─ 120 ms dom-mutation-burst
 ```
 
-Đây là compatibility conversion, không thay thế native V0.5 capture.
+Raw physical data không bake speed/acceleration/path distributions. Các behavior features được derive offline.
 
-## Collector storage roadmap
+## V0.6 persistence architecture
 
-`.json`, `.jsonl` và auto-download hiện tại chỉ là development/debug adapters phục vụ phân tích.
-
-Không coi auto-export khi Chrome mở lại là storage architecture dài hạn.
-
-Roadmap chính:
+V0.6 đã bỏ `chrome.storage.local` khỏi vai trò raw event store chính.
 
 ```text
-V0.5
-compact raw + JSONL debug export
+content scripts
 ↓
-V0.6
-IndexedDB ChunkStore
-+ streaming export
-+ gzip .jsonl.gz
-+ checksum/recovery
-+ retention/session index
+RAW_BATCH + batchId
 ↓
-Dataset Pipeline
-normalize / derive features
-→ Parquet cho analytics/training
+ACK/retry sender
+↓
+background serialized append
+↓
+IndexedDB trainingCollectorRawV06
+├─ sessions
+├─ chunks
+└─ batchReceipts
 ```
 
-Raw collection không bake speed/acceleration/path distributions. Các feature này được derive offline để raw source có thể tái xử lý.
-
-## Privacy boundary
-
-Không thu/lưu:
-
-- password values;
-- cookies;
-- localStorage/sessionStorage secrets;
-- Authorization/access tokens;
-- clipboard contents;
-- payment secrets;
-- raw printable keyboard characters/codes;
-- raw input values;
-- URL query values/hash content;
-- raw document title.
-
-Sensitive target phải bị loại ở content script trước khi dữ liệu rời page.
-
-## Agent architecture hiện tại
-
-Agent phải có đồng thời 3 năng lực:
+Các file chính mới:
 
 ```text
-1. hiểu đúng vấn đề / mục tiêu
-2. chọn đúng hành động
-3. thực hiện hành động tự nhiên
+training-collector/core/indexeddb_chunk_store.js
+training-collector/core/reliable_sender.js
 ```
 
-Kiến trúc chuẩn:
+### IndexedDB ChunkStore
+
+- schema raw: `0.6.0`;
+- chunk size: 1000 events;
+- session metadata lưu riêng;
+- chunk key: `(sessionId, chunkIndex)`;
+- batch receipt key: `(sessionId, batchId)`;
+- event `sessionSeq` vẫn là persistence order;
+- `tsEpochMs` vẫn là capture-time truth.
+
+### ACK / retry / duplicate protection
+
+Content script tạo `batchId` trước khi gửi raw batch.
+
+Batch được giữ tạm trong `chrome.storage.session` journal và retry nếu chưa nhận ACK.
+
+Background + IndexedDB lưu receipt trong cùng write transaction với raw events. Nếu cùng `batchId` tới lại do retry:
+
+```text
+receipt exists
+→ duplicate=true
+→ ACK lại
+→ không append events lần hai
+```
+
+Mục tiêu là chịu được MV3 service-worker restart/transient messaging failure tốt hơn V0.5.
+
+### Chunk integrity
+
+Mỗi IndexedDB chunk có:
+
+```text
+chunkIndex
+eventCount
+firstSeq
+lastSeq
+checksum = fnv1a32(...)
+events
+```
+
+`verifySession()` kiểm tra:
+
+- missing chunks;
+- checksum mismatch;
+- eventCount metadata mismatch;
+- firstSeq/lastSeq mismatch;
+- sequence gap giữa chunk.
+
+Khi browser session cũ được inferred closed ở lần Chrome khởi động kế tiếp, background verify tail chunks và ghi report vào `session.integrity`.
+
+Có message contract `VERIFY_RAW_SESSION` để chạy tail/full verification khi cần diagnostics.
+
+## V0.6 export
+
+Manual development export không load toàn bộ raw session thành một JSON array.
+
+Popup thực hiện:
+
+```text
+GET_RAW_EXPORT_META
+↓
+GET_RAW_EXPORT_CHUNK 0
+GET_RAW_EXPORT_CHUNK 1
+...
+↓
+CompressionStream('gzip')
+↓
+.raw.jsonl.gz
+```
+
+File đầu ra:
+
+```text
+training-collector-<sessionId>.raw.jsonl.gz
+```
+
+Đây vẫn là **development/debug export adapter**, không phải persistence architecture chính. Persistence chính là IndexedDB ChunkStore.
+
+Auto-download JSON của các version trước chỉ là phương pháp tạm thời trong giai đoạn phát triển và không được coi là kiến trúc dài hạn.
+
+## V0.6 retention policy
+
+Chưa tự động delete raw sessions.
+
+Lý do: retention phải có policy/configuration rõ trước khi destructive cleanup được bật. Không tự xóa chỉ vì vượt số session index.
+
+## V0.6 CI
+
+Workflow `.github/workflows/extension-syntax.yml` hiện check thêm:
+
+```text
+core/indexeddb_chunk_store.js
+core/reliable_sender.js
+tests/v06_storage_contract.js
+```
+
+Storage reliability contract kiểm tra IndexedDB stores, batch receipts, ACK retry, checksum/integrity API và streamed gzip export.
+
+Latest verified code milestone at time of this update:
+
+```text
+a90be899ce9d7cb226997107987e48a9d1d2c193
+GitHub Actions runtime-syntax: SUCCESS
+run 32839712686
+```
+
+Các commit sau milestone này có thể chỉ mở rộng contract/docs; luôn kiểm tra Actions mới nhất trước khi tuyên bố CI cuối cùng.
+
+## Browser validation cần làm tiếp
+
+CI chỉ xác nhận syntax/contracts; chưa thay manual Chrome test.
+
+Test V0.6 thực tế cần:
+
+```text
+1 git pull
+2 chrome://extensions → Reload
+3 xác nhận tên V0.6
+4 đóng/mở Chrome để tạo clean 0.6 session
+5 thao tác 5–15 phút trên nhiều trang/tab
+6 kiểm tra eventCount/chunkCount tăng
+7 Export JSONL.gz
+8 gửi file để analyzer so V0.4/V0.5/V0.6
+9 đóng Chrome → mở lại → kiểm tra session cũ integrity report
+```
+
+Cần đặc biệt kiểm tra:
+
+- không duplicate `sessionSeq`;
+- no missing seq;
+- batch retry không tạo duplicate;
+- chunk checksum ổn;
+- gzip export đọc được;
+- file size/rate MB per minute;
+- pointer↔semantic correlation vẫn giữ chất lượng;
+- privacy red flags = 0.
+
+## Collector next after V0.6 validation
+
+Không thêm feature lớn trước khi có native V0.6 raw data thật.
+
+Nếu V0.6 storage ổn, bước tiếp theo là Behavior Dataset Preparation:
+
+```text
+raw physical + semantic
+↓
+action-window segmentation
+↓
+target acquisition trajectories
+↓
+pointer / click / typing / scroll features
+↓
+Execution Behavior training dataset
+```
+
+Sau đó mới xây empirical/learned Behavior Policy cho Agent.
+
+---
+
+# Agent architecture
+
+Agent phải đồng thời:
+
+```text
+1 hiểu đúng vấn đề/mục tiêu
+2 chọn đúng hành động
+3 thực hiện hành động tự nhiên
+```
+
+Chuẩn kiến trúc:
 
 ```text
 TASK
 ↓
 OBSERVE
 ↓
-UNDERSTAND / STRATEGY / PLANNER
+STRATEGY / PLANNER
 ↓
-NORMALIZED ACTION CONTRACT
+NORMALIZED ACTION
 ↓
-NATURAL EXECUTION POLICY / BEHAVIOR MODEL
+BEHAVIOR MODEL / NATURAL EXECUTION POLICY
 ↓
 CDP EXECUTOR
 ↓
-CHROME
+BROWSER
 ↓
-OBSERVE stateAfter
+OBSERVE AFTER
 ↓
-GOAL CHECKER
+GOAL CHECK
 ↓
-repeat
+REPLAN
 ```
 
-### Trách nhiệm từng lớp
+Responsibilities:
 
 ```text
-Strategy = WHAT to do
+Strategy       = WHAT to do
 Behavior Model = HOW to do it naturally
-Executor = translate execution plan into CDP
+Executor       = translate execution plan into CDP
 ```
 
-Strategy không phát raw CDP và không quyết định chi tiết mouse path/timing vi mô.
+Natural behavior không được xây từ `random delay everywhere` hoặc `random jitter everywhere`. Nó phải dựa trên empirical/learned human demonstrations và condition theo action/target/context.
 
-Ví dụ Strategy:
-
-```js
-{
-  action: "click",
-  targetRef: "e17"
-}
-```
-
-Behavior layer có thể quyết định dựa trên learned human data:
+Behavior features dự kiến derive từ Collector:
 
 ```text
-pointer acquisition
-→ velocity/deceleration profile
-→ correction near target
-→ hover timing
-→ mouseDown hold
-→ mouseUp
+pointer: velocity, acceleration, jerk, curvature, correction, hover, click hold
+keyboard: key hold, inter-key interval, burst/pause
+scroll: wheel burst, delta, pause, correction
 ```
 
-Không dùng cách tiếp cận `random delay everywhere` / `random jitter everywhere` làm nền tảng. Natural execution phải được học/ước lượng từ distribution của human demonstrations và condition theo target/context.
+Execution Behavior Contract là contract riêng; không làm Strategy phát raw CDP.
 
-## Behavior learning data từ Collector
-
-Collector là nguồn dữ liệu cho Natural Execution Policy.
-
-Derived offline features dự kiến:
+Chi tiết dài hạn xem:
 
 ```text
-pointer
-- path shape
-- velocity
-- acceleration
-- jerk
-- curvature
-- correction / overshoot
-- hover pause
-- click hold duration
-
-keyboard
-- key down/up duration
-- inter-key interval
-- typing burst
-- pause distribution
-
-scroll
-- wheel burst
-- delta distribution
-- pause
-- correction
+docs/AGENT_TRAINING_ARCHITECTURE.md
 ```
 
-Correlation cho phép học behavior conditioned on semantic target, ví dụ small button / large card / textbox có acquisition profile khác nhau.
+---
 
-## Execution Behavior Contract — planned
-
-Không thay Action Contract hiện tại. Sẽ thêm contract riêng giữa normalized action và executor:
-
-```text
-Normalized Action
-↓
-Execution Behavior Contract
-↓
-CDP Executor
-```
-
-Contract này mô tả execution policy/profile, không chứa planning semantics và không làm Strategy phụ thuộc vào CDP.
-
-## Agent Runtime one-action loop
-
-```text
-1 receive Task
-2 validate
-3 observe
-4 redact
-5 strategy.decide
-6 validate Decision
-7 behavior policy prepares execution
-8 execute ONE action
-9 observe after
-10 goal/outcome check
-11 append trajectory
-12 repeat
-```
-
-Budgets bắt buộc:
-
-- maxSteps
-- maxDurationMs
-- maxConsecutiveFailures
-- maxReplans
-- domain/navigation constraints nếu task yêu cầu
-
-Terminal states:
-
-```text
-DONE
-FAILED
-BLOCKED
-BUDGET_EXHAUSTED
-CANCELLED
-```
-
-## Strategy hiện tại
-
-`control-center/manager/strategy/` đã có Task/Observation/Decision/Outcome/Episode contracts và baseline strategy để smoke-test kiến trúc.
-
-Baseline hiện chỉ là rules baseline, chưa phải trained/general planner.
-
-Strategy chưa được nối trực tiếp vào manager production loop; integration chỉ thực hiện sau khi Observer + goal checker + one-action executor bridge ổn định.
-
-## Agent Runtime extension
-
-`control-center/extension/agent-runtime-extension/` là runtime thử nghiệm riêng, không thay deterministic executor hiện tại.
-
-Backbone dùng `chrome.debugger`/CDP và normalized actions. Model/Strategy không được phát CDP trực tiếp.
-
-## Recorder
-
-Recorder V4 giữ nhiệm vụ Human → deterministic Scenario. Recorder và Training Collector là hai sản phẩm riêng; không gộp raw training telemetry vào deterministic scenario format.
-
-## Việc tiếp theo
-
-### Collector V0.5 validation
-
-- thu native V0.5 browser session;
-- so sánh V0.4 vs V0.5: file size, mutation count/burst count, correlation, pointer sampling, privacy/integrity;
-- sửa tiếp compact representation nếu còn duplication;
-- sau đó bắt đầu V0.6 IndexedDB ChunkStore.
-
-### Agent natural execution
-
-- định nghĩa Execution Behavior Contract;
-- xây offline behavior feature extractor từ Collector raw;
-- phân tách target acquisition / typing / scroll behavior;
-- tạo baseline Behavior Policy từ empirical distributions;
-- chỉ sau đó mới nối Behavior Policy vào Agent Runtime executor bridge.
-
-## Nguyên tắc duy trì repo
+# Development rules
 
 1. GitHub là source of truth.
-2. Sau milestone quan trọng phải cập nhật `STATUS.md`.
-3. Quyết định kiến trúc dài hạn cập nhật `docs/AGENT_TRAINING_ARCHITECTURE.md` hoặc README module tương ứng.
-4. Debug adapters tạm thời phải được ghi rõ là temporary, không để vô tình trở thành architecture chính.
-5. Không tuyên bố browser-tested nếu chưa có test Chrome thật; CI và manual browser validation phải phân biệt rõ.
-6. Deterministic Scenario Mode, Training Collector và Agent Runtime phải giữ boundary rõ ràng.
+2. Cập nhật `STATUS.md` sau milestone lớn.
+3. Quyết định kiến trúc dài hạn phải được ghi vào docs tương ứng.
+4. Debug adapters phải ghi rõ temporary.
+5. Không tuyên bố browser-tested nếu chỉ có CI.
+6. Không thu password/cookie/token/Authorization/clipboard/payment secrets/raw sensitive values.
+7. Recorder, Training Collector, deterministic Scenario Mode và Agent Runtime giữ boundary rõ ràng.
+8. Trước khi thêm feature Collector lớn, ưu tiên phân tích native raw session mới nhất.
