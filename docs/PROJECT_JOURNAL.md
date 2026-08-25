@@ -29,8 +29,6 @@ Nếu journal và source mâu thuẫn, fetch source hiện tại trên `main`, s
 7 update STATUS/JOURNAL nếu có knowledge dài hạn mới
 ```
 
-Không quét toàn repo nếu journal đã xác định được vùng code.
-
 ---
 
 # 2. Product boundaries
@@ -46,13 +44,13 @@ AGENT
 Task → Strategy → Action Contract → Behavior Policy → CDP Executor
 ```
 
-Recorder không phải raw training collector. Collector observe-only. Agent Strategy/model không phát raw CDP.
-
 ```text
 Strategy       = WHAT to do
 Behavior Model = HOW naturally
 Executor       = translate execution plan to CDP
 ```
+
+Recorder không phải raw training collector. Collector observe-only. Strategy/model không phát raw CDP.
 
 ---
 
@@ -88,22 +86,13 @@ training-collector/observer/element_registry.js
 training-collector/content.js
 ```
 
-V0.7 click target contract:
+V0.7 target contract:
 
 ```text
 targetRef          legacy/raw event target
 rawTargetRef       raw DOM event.target
 resolvedTargetRef  best actionable target
 targetResolution   method + confidence
-```
-
-Resolver priority:
-
-```text
-composedPath actionable
-→ elementFromPoint actionable
-→ raw target actionable ancestor
-→ raw target
 ```
 
 Không overwrite raw target bằng resolved target.
@@ -115,14 +104,13 @@ Không overwrite raw target bằng resolved target.
 ```text
 training-collector/observer/hover_trace.js
 training-collector/correlation/action_target_resolver.js
-training-collector/capture/physical_capture.js
 training-collector/observer/mutation_trace.js
 training-collector/content.js
 training-collector/tools/build_action_semantics.js
 training-collector/tests/v07_action_semantics_contract.js
 ```
 
-Raw V0.7 chỉ ghi direct facts:
+Raw V0.7 ghi direct facts:
 
 ```text
 dom-hover-enter
@@ -130,20 +118,19 @@ dom-hover-dwell
 dom-hover-leave
 ```
 
-Không ghi `hover-preview` trực tiếp vào raw. `hover-preview` là derived semantic action ở offline builder.
+`hover-preview` derive offline, không ghi trực tiếp vào raw.
 
 Regression case chuẩn:
 
 ```text
-YouTube recommended thumbnail
-→ pointer enters thumbnail
+YouTube thumbnail hover
 → dwell
-→ animated preview starts
+→ animated preview
 → mute/audio control appears
 → no navigation
 ```
 
-Phải phân biệt:
+Phân biệt ít nhất:
 
 ```text
 hover-preview
@@ -157,43 +144,11 @@ click-control
 
 ```text
 training-collector/observer/mutation_trace.js
-training-collector/observer/element_registry.js
-training-collector/content.js
 training-collector/tools/analyze_raw.js
 training-collector/tools/build_action_semantics.js
 ```
 
-Current raw policy:
-
-```text
-dom-mutation-burst ~120 ms
-```
-
-Không dump innerHTML/textContent/raw value. Mutation relevance là dataset/derived concern.
-
-V0.7 timeline detail: mutation burst nhận `pageSeq/sourceSeq` lúc burst bắt đầu, không phải lúc flush sau 120 ms.
-
-## Semantic element / visibility / selector
-
-Đọc:
-
-```text
-training-collector/observer/semantic_observer.js
-training-collector/observer/element_registry.js
-training-collector/correlation/physical_semantic_correlator.js
-training-collector/core/state_diff.js
-```
-
-Current fields:
-
-```text
-rendered
-inViewport
-interactable
-selectorCandidates + score
-```
-
-`elementRef` chỉ stable trong page context; không coi `e17` globally unique qua page/tab/frame.
+Current raw policy: `dom-mutation-burst ~120 ms`. Không dump innerHTML/textContent/raw values. Mutation relevance là derived/dataset concern.
 
 ## Timeline ordering
 
@@ -208,8 +163,6 @@ training-collector/observer/hover_trace.js
 training-collector/background.js
 ```
 
-V0.7 ordering fields:
-
 ```text
 tsEpochMs  capture timestamp
 pageSeq    page-local capture order
@@ -217,7 +170,7 @@ sourceSeq  source-local order
 sessionSeq background persistence order
 ```
 
-`sessionSeq` không phải chronological truth.
+`sessionSeq` không phải chronological truth. Mutation burst nhận page/source sequence lúc burst bắt đầu.
 
 ---
 
@@ -230,19 +183,22 @@ training-collector/core/raw_session_store.js
 training-collector/core/indexeddb_chunk_store.js
 training-collector/core/reliable_sender.js
 training-collector/background.js
+training-collector/offscreen.js
+training-collector/popup.js
 training-collector/tests/v06_storage_contract.js
 ```
 
 Current:
 
 ```text
-runtime/raw schema: 0.7.0
+runtime: 0.7.1
+raw schema: 0.7.0
 IndexedDB DB: trainingCollectorRawV06
 chunk size: 1000
 stores: sessions / chunks / batchReceipts
 ```
 
-DB name V06 được giữ để không tạo migration storage không cần thiết; schema session/event mới là 0.7.0.
+DB name V06 được giữ để không tạo migration storage không cần thiết.
 
 Retry invariant:
 
@@ -265,86 +221,74 @@ sequence gap between chunks
 
 Không tự xóa raw data khi integrity fail.
 
----
+## V0.7.1 auto-export recovery
 
-# 5. Export lookup
+Regression thực tế: Chrome session có data được đóng, lần mở Chrome sau không thấy file auto-export; session tiếp theo phải Manual Export để lấy dữ liệu.
 
-Manual:
-
-```text
-training-collector/popup.js
-training-collector/background.js
-training-collector/popup.html
-```
-
-Automatic development export:
+Files cần đọc khi sửa:
 
 ```text
+training-collector/core/indexeddb_chunk_store.js
 training-collector/background.js
-training-collector/offscreen.html
 training-collector/offscreen.js
-training-collector/manifest.json
+training-collector/popup.js
+training-collector/popup.html
 training-collector/tests/v06_storage_contract.js
 ```
 
-Flow:
+V0.7.1 changes:
 
 ```text
-closed IndexedDB session
+status-indexed session query
+→ không phụ thuộc scan 24 sessions gần nhất
+
+startup recovery
+→ active dangling sessions inferred closed
+→ stale verifying/preparing/downloading reset to pending
+
+closed session scan
+→ tìm closed/closed-inferred sessions còn pending/failed
+
+export
 → full integrity verify
-→ offscreen CompressionStream(gzip)
-→ Downloads/training-collector/*.raw.jsonl.gz
+→ offscreen gzip
+→ chrome.downloads.download
+→ wait chrome.downloads.onChanged state=complete
+→ chỉ sau đó mark autoExport.status=complete
+
+popup
+→ recent session diagnostics
+→ autoExport.status / attempts / error / downloadId
+→ Retry Auto Export cho closed session
 ```
 
-Important invariant:
+Invariant:
 
 ```text
 IndexedDB = persistence chính
 JSONL.gz download = temporary development convenience only
 ```
 
-Auto-export có per-session in-flight lock + persisted complete status + retry limit.
+Không đánh dấu complete chỉ vì đã nhận `downloadId`.
 
 ---
 
-# 6. Analyzer / derived dataset lookup
-
-Raw diagnostics:
+# 5. Analyzer / derived dataset lookup
 
 ```text
 training-collector/tools/analyze_raw.js
 training-collector/tests/raw_analysis_contract.js
-```
-
-V0.7 action semantics:
-
-```text
 training-collector/tools/build_action_semantics.js
 training-collector/tests/v07_action_semantics_contract.js
 ```
 
-`build_action_semantics.js` đọc raw JSON/JSONL/JSONL.gz và hiện derive hover windows từ:
+Derived action semantics hiện dùng hover lifecycle + mutation + click evidence + page/timestamp ordering.
 
-```text
-hover enter/dwell/leave
-+ mutation bursts
-+ click evidence
-+ pageSeq/timestamp ordering
-```
-
-Output hiện phân loại conservative:
-
-```text
-hover
-hover-dwell
-hover-preview
-```
-
-Không coi heuristic derived output là raw truth. Thuật toán có thể thay đổi mà không cần thu lại raw data.
+Derived output là heuristic, không phải raw truth.
 
 ---
 
-# 7. Agent lookup
+# 6. Agent lookup
 
 Strategy:
 
@@ -354,6 +298,7 @@ control-center/manager/strategy/contracts.js
 control-center/manager/strategy/baseline_strategy.js
 control-center/manager/strategy/README.md
 docs/AGENT_TRAINING_ARCHITECTURE.md
+docs/AGENT_BOUNDARY_CONDITIONS.md
 ```
 
 Execution:
@@ -364,7 +309,7 @@ control-center/ACTION_CONTRACT.json
 control-center/script/checks/strategy_contract.js
 ```
 
-Natural Execution planned flow:
+Natural Execution:
 
 ```text
 Normalized Action
@@ -373,11 +318,32 @@ Normalized Action
 → CDP Executor
 ```
 
-Không dùng random delay/jitter làm nền tảng behavior.
+Không dùng random delay/jitter làm nền tảng.
+
+## CAPTCHA / human-verification boundary
+
+CAPTCHA có thể xuất hiện tự nhiên trong quá trình test hoặc browsing. Agent không coi đây là một execution error cần retry mù quáng.
+
+Policy:
+
+```text
+observe CAPTCHA / human verification
+→ Decision.status = blocked
+→ reasonCode = human_verification_required
+→ không cố tự giải/vượt challenge
+→ không click/reload lặp vô hạn
+→ re-evaluate task
+→ nếu có route/trang khác hợp lệ phục vụ goal: replan
+→ nếu không: dừng task blocked
+```
+
+Chuyển sang trang/route khác phải phục vụ task hợp lệ, không phải nhằm bypass challenge.
+
+Nếu challenge nằm trong iframe, frame-aware Collector/Observer cần quan sát đúng target/state; mục tiêu là observation completeness, không phải tự động giải CAPTCHA.
 
 ---
 
-# 8. Recorder / deterministic scenario lookup
+# 7. Recorder / deterministic scenario lookup
 
 ```text
 recorder/content.js
@@ -401,15 +367,7 @@ Không phá deterministic Scenario Mode khi phát triển Agent/Collector.
 
 ---
 
-# 9. Privacy invariants
-
-Đọc:
-
-```text
-training-collector/core/privacy.js
-training-collector/observer/semantic_observer.js
-training-collector/capture/physical_capture.js
-```
+# 8. Privacy invariants
 
 Không thu/lưu:
 
@@ -426,7 +384,7 @@ Không thu/lưu:
 
 ---
 
-# 10. CI map
+# 9. CI map
 
 Workflow:
 
@@ -444,19 +402,11 @@ training-collector/tests/v06_storage_contract.js
 training-collector/tests/v07_action_semantics_contract.js
 ```
 
-V0.7 new syntax coverage:
-
-```text
-observer/hover_trace.js
-correlation/action_target_resolver.js
-tools/build_action_semantics.js
-```
-
 CI success != Chrome integration tested.
 
 ---
 
-# 11. Architectural decisions
+# 10. Architectural decisions
 
 ## D001 — Scenario Mode và Agent Mode tách biệt
 Bảo vệ deterministic execution hiện có.
@@ -474,13 +424,13 @@ Agent cần target/state/outcome, không chỉ trajectory.
 Tránh target drift do DOM/focus thay đổi.
 
 ## D006 — Mutation dùng burst
-Quyết định sau V0.4 cho thấy mutation chiếm ~89% stream trong một session thật.
+Quyết định sau V0.4 cho thấy mutation noise áp đảo stream.
 
 ## D007 — IndexedDB là raw persistence chính
-`chrome.storage.local` không phù hợp long-session raw event store.
+Download không được trở thành persistence architecture.
 
 ## D008 — Download export chỉ là development adapter
-Không biến temporary auto-export thành production architecture.
+Temporary convenience only.
 
 ## D009 — Batch receipt bảo đảm retry idempotent
 Serialized append không đủ chống ACK loss.
@@ -489,89 +439,81 @@ Serialized append không đủ chống ACK loss.
 Strategy=WHAT, Behavior=HOW, Executor=CDP.
 
 ## D011 — Hover có thể là semantic action có outcome
-Hover có thể mở preview/menu/tooltip/control mà không click/navigation.
+Hover có thể mở preview/menu/control mà không click/navigation.
 
-## D012 — Raw target và resolved action target phải cùng tồn tại
-Do DOM `event.target` có thể là wrapper/container; resolved target là interpretation, không được phá raw fact.
+## D012 — Raw target và resolved action target cùng tồn tại
+Resolved target là interpretation, không phá raw fact.
 
-## D013 — V0.7 thêm pageSeq/sourceSeq
-`sessionSeq` là persistence order; dataset reconstruction cần page/source-local ordering bên cạnh timestamp.
+## D013 — pageSeq/sourceSeq cho reconstruction
+SessionSeq là persistence order.
 
-## D014 — `hover-preview` derive offline
-Raw lưu hover lifecycle + mutation/state facts; classification algorithm được phép thay đổi sau này.
+## D014 — hover-preview derive offline
+Raw giữ lifecycle/state facts.
+
+## D015 — Auto-export complete chỉ sau download complete
+`chrome.downloads.download()` trả ID chưa đủ. V0.7.1 chờ download state `complete`; interrupted/timeout → failed + recovery.
+
+## D016 — CAPTCHA là Agent boundary condition
+Challenge/human verification → blocked/replan hợp lệ; không tự động giải/vượt challenge.
 
 ---
 
-# 12. Engineering diary
+# 11. Engineering diary
 
 ## 2026-08-25 — Journal created
-Dự án dài và nhiều product/module; cần persistent lookup memory trên GitHub.
+Persistent code lookup memory được thêm để dự án dài hạn không phải khảo sát lại toàn repo.
 
 ## 2026-08-25 — V0.6.1 temporary auto-export
-Offscreen gzip exporter + startup detection cho closed IndexedDB sessions. Explicitly development-only.
+Offscreen gzip exporter + startup detection cho closed IndexedDB sessions.
 
-## 2026-08-25 — Native V0.6.1 hover regression discovered
-User-confirmed:
+## 2026-08-25 — V0.7 Action Semantics
+Thêm Action Target Resolver, hover lifecycle facts, pageSeq/sourceSeq và offline hover-preview derivation.
 
-```text
-Action A
-hover YouTube thumbnail
-→ preview động
-→ nút loa/mute xuất hiện
-→ không navigation
-
-Action B
-click "Bỏ qua" quảng cáo
-→ local ad/control state transition
-```
-
-Case này dẫn tới V0.7 Action Semantics.
-
-## 2026-08-25 — V0.7 Action Semantics implemented
-New files:
+## 2026-08-25 — Native V0.7 CAPTCHA/iframe + auto-export recovery case
+Thực tế test:
 
 ```text
-training-collector/correlation/action_target_resolver.js
-training-collector/observer/hover_trace.js
-training-collector/tools/build_action_semantics.js
-training-collector/tests/v07_action_semantics_contract.js
+Chrome mở
+→ Google human verification xuất hiện
+→ pointer/click vào CAPTCHA frame
+→ challenge mở
+→ Chrome đóng
+→ lần mở Chrome sau không thấy auto-export file
+→ session kế tiếp Manual Export để lấy raw phân tích
 ```
 
-Changed contracts:
+Kết luận:
+
+- iframe/frame-aware capture là gap observation cần xử lý sau recovery;
+- auto-export cần recovery/diagnostics trước;
+- CAPTCHA là normal boundary condition, không phải thứ Agent phải cố vượt.
+
+## 2026-08-25 — V0.7.1 export recovery implemented
+
+Added:
 
 ```text
-raw schema 0.6.0 → 0.7.0
-hover direct facts added
-rawTargetRef/resolvedTargetRef added for DOM click
-pageSeq/sourceSeq added at content capture
-mutation sequence assigned at burst start
+IndexedDB status-indexed session recovery
+startup stale-state recovery
+closed session retry scan
+wait-for-download-complete
+recent-session popup diagnostics
+manual retry auto-export
 ```
-
-Synthetic regression fixture is embedded in contract test. Không commit raw user session vào repo.
 
 Next gate:
 
 ```text
-native Chrome V0.7 session
-→ validate hover lifecycle
-→ validate target resolver
-→ validate page/source ordering
-→ run offline action semantics builder
-→ decide remaining fixes before Behavior Dataset
+manual Chrome test V0.7.1 close/reopen auto-export
+→ verify prior closed session appears/downloads
+→ then implement frame-aware capture
+→ then repeat YouTube hover/action tests
 ```
 
 ---
 
-# 13. Journal maintenance rules
+# 12. Journal maintenance rules
 
-Update journal khi:
-
-- file/module responsibility thay đổi;
-- contract mới xuất hiện;
-- dependency khó nhớ xuất hiện;
-- bug khó lộ invariant mới;
-- temporary mechanism thêm/xóa;
-- architecture decision thay đổi;
-- migration/version đổi điểm bắt đầu cho future edits.
+Update journal khi module responsibility, contract, dependency, difficult bug/invariant, temporary mechanism, architecture decision hoặc migration/version thay đổi.
 
 Không dump mọi commit vào journal.
