@@ -1,11 +1,12 @@
 'use strict';
 
-if (!window.__TRAINING_COLLECTOR_V04__) {
-  window.__TRAINING_COLLECTOR_V04__ = true;
+if (!window.__TRAINING_COLLECTOR_V05__) {
+  window.__TRAINING_COLLECTOR_V05__ = true;
 
   const NS2 = window.TrainingCollectorV02 = window.TrainingCollectorV02 || {};
   const NS3 = window.TrainingCollectorV03 = window.TrainingCollectorV03 || {};
   const NS4 = window.TrainingCollectorV04 = window.TrainingCollectorV04 || {};
+  const NS5 = window.TrainingCollectorV05 = window.TrainingCollectorV05 || {};
   NS2.pageInstanceId = `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const Observer = NS2.SemanticObserver;
@@ -14,6 +15,7 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
   const CorrelatorFactory = NS4.PhysicalSemanticCorrelator;
   const DomCaptureFactory = NS4.DomCapture;
   const MutationTraceFactory = NS4.MutationTrace;
+  const StateDiff = NS5.StateDiff;
 
   const S = {
     rawActive: false,
@@ -22,6 +24,8 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
     transitionSeq: 0,
     lastKeyByRef: new Map(),
     beforeInputByRef: new Map(),
+    transitionBefore: new Map(),
+    lastEpisodeState: null,
     scrollTimer: null,
     browserSessionId: null,
     physical: null,
@@ -30,9 +34,7 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
     correlator: null
   };
 
-  function relTime() {
-    return Math.max(0, performance.now() - S.startedAt);
-  }
+  function relTime() { return Math.max(0, performance.now() - S.startedAt); }
 
   function send(type, payload = {}) {
     return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...payload }).catch(() => null);
@@ -58,12 +60,16 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
   function begin(rawAction, stateBefore) {
     if (!S.episodeActive) return null;
     const id = transitionId();
+    const currentBefore = stateBefore || Observer.snapshot();
     const action = Normalizer.normalize({ ...rawAction, t: Math.round(relTime()) });
+    const canDiff = !!(StateDiff?.diffObservation && S.lastEpisodeState && S.lastEpisodeState.pageInstanceId === currentBefore.pageInstanceId);
+    S.transitionBefore.set(id, currentBefore);
     send('TRANSITION_START', {
       transition: {
         transitionId: id,
         startedAtMs: Math.round(relTime()),
-        stateBefore: stateBefore || Observer.snapshot(),
+        stateBefore: canDiff ? null : currentBefore,
+        stateBeforeDiff: canDiff ? StateDiff.diffObservation(S.lastEpisodeState, currentBefore) : null,
         action
       }
     });
@@ -74,14 +80,20 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
     if (!id) return;
     setTimeout(() => {
       if (!S.episodeActive) return;
+      const before = S.transitionBefore.get(id) || null;
+      const after = Observer.snapshot();
+      const canDiff = !!(before && StateDiff?.diffObservation && before.pageInstanceId === after.pageInstanceId);
       send('TRANSITION_END', {
         transition: {
           transitionId: id,
           endedAtMs: Math.round(relTime()),
-          stateAfter: Observer.snapshot(),
+          stateAfter: canDiff ? null : after,
+          stateAfterDiff: canDiff ? StateDiff.diffObservation(before, after) : null,
           actionSucceeded: true
         }
       });
+      S.transitionBefore.delete(id);
+      S.lastEpisodeState = after;
     }, delay);
   }
 
@@ -93,7 +105,6 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
   function startRawCapture() {
     if (S.rawActive || !PhysicalCapture?.createPhysicalCapture) return;
     S.rawActive = true;
-
     S.correlator = CorrelatorFactory?.createCorrelator?.({ observer: Observer }) || null;
 
     S.physical = PhysicalCapture.createPhysicalCapture({
@@ -110,9 +121,7 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
       enrichEvent(event) {
         return S.correlator ? S.correlator.correlate(event) : event;
       },
-      emitBatch(events) {
-        rawBatch(events, 'physical');
-      }
+      emitBatch(events) { rawBatch(events, 'physical'); }
     });
 
     S.domCapture = DomCaptureFactory?.createDomCapture?.({
@@ -162,7 +171,6 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
       : event.key === 'Tab' ? 'tab'
       : event.key.length === 1 ? 'type-char'
       : 'other-key';
-
     const kind = editable ? 'text-key' : 'key';
     const ref = semantic?.ref || null;
     if (ref) S.lastKeyByRef.set(ref, performance.now());
@@ -196,10 +204,8 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
     if (!el || Observer.isSensitive(el)) return;
     const semantic = Observer.semanticElement(el);
     if (!semantic) return;
-
     const recentKeyAt = S.lastKeyByRef.get(semantic.ref) || 0;
     if (performance.now() - recentKeyAt < 120) return;
-
     const pending = S.beforeInputByRef.get(semantic.ref);
     S.beforeInputByRef.delete(semantic.ref);
     const valueLength = typeof el.value === 'string' ? el.value.length : (el.textContent || '').length;
@@ -235,11 +241,15 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
     if (message?.scope !== 'TRAINING_COLLECTOR_V03') return false;
     if (message.type === 'START_EPISODE_CAPTURE') {
       S.episodeActive = true;
+      S.lastEpisodeState = Observer.snapshot();
+      S.transitionBefore.clear();
       sendResponse({ ok: true, pageInstanceId: NS2.pageInstanceId });
       return false;
     }
     if (message.type === 'STOP_EPISODE_CAPTURE') {
       S.episodeActive = false;
+      S.lastEpisodeState = null;
+      S.transitionBefore.clear();
       sendResponse({ ok: true });
       return false;
     }
@@ -260,6 +270,7 @@ if (!window.__TRAINING_COLLECTOR_V04__) {
     if (!response?.ok) return;
     S.browserSessionId = response.browserSessionId || null;
     S.episodeActive = !!response.episodeActive;
+    if (S.episodeActive) S.lastEpisodeState = Observer.snapshot();
     startRawCapture();
   });
 }
