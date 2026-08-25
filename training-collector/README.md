@@ -1,136 +1,193 @@
-# Training Collector V0.4 DOM Core + Physical/Semantic Correlation
+# Training Collector V0.5 Compact Raw
 
-Extension riêng cho human demonstration capture phục vụ dataset/agent training.
+Extension observe-only cho human demonstration capture phục vụ dataset/agent training.
 
-## Boundary
+## Mục tiêu V0.5
 
-Collector là **observe-only**. Không tự click, type, navigate và không dùng `chrome.debugger` để điều khiển trang.
+V0.5 được điều chỉnh dựa trên phiên raw thực tế ~29k events của V0.4. Các vấn đề chính được xử lý:
 
-V0.4 có hai stream chạy song song trong cùng một Chrome browser session:
+- semantic target bị lặp trên từng pointer/wheel sample;
+- DOM mutation chiếm phần lớn raw stream;
+- `visible` trước đây không phân biệt rendered với nằm trong viewport;
+- selector đơn lẻ thường quá chung;
+- task episode lặp full semantic observation;
+- JSON debug export không phù hợp cho session dài.
 
-```text
-Raw Physical Stream
-+ Semantic DOM Stream
--> shared browserSessionId / pageInstanceId / elementRef
--> chunked raw persistence
--> raw JSON export
-```
-
-Optional Task Episode vẫn tồn tại như nhãn/segment; episode không bật/tắt raw capture.
-
-## DOM Core V0.4
+## Kiến trúc runtime
 
 ```text
-observer/element_registry.js
-observer/semantic_observer.js
-capture/dom_capture.js
-observer/mutation_trace.js
-correlation/physical_semantic_correlator.js
+Physical Capture -----------\
+                             -> targetRef correlation -> Raw Session
+Semantic DOM Capture -------/
+Mutation Observer -> 120ms mutation bursts
+Semantic Observer -> full page-instance snapshot anchor
+Optional Task Episode -> initial full observation + state diffs
 ```
 
-### Element Registry
+Collector không tự click/type/navigate và không dùng `chrome.debugger` để điều khiển trang.
 
-Một `WeakMap<Element, ref>` dùng chung là nguồn element identity trong một page instance. Cùng DOM element giữ cùng ref như `e17` cho snapshot, DOM interaction và physical correlation. Navigation/reload tạo `pageInstanceId` mới nên ref không được coi là global identity giữa hai document.
+## Compact target correlation
 
-### Semantic Observer
-
-Observation V0.4 giữ:
-
-- `pageInstanceId`;
-- page `origin + pathname`;
-- chỉ tên query parameter, không giữ query value/hash content;
-- title chỉ giữ length/empty metrics, không lưu title text;
-- viewport/devicePixelRatio;
-- scroll position;
-- focused element ref;
-- visible interactive elements với ref/tag/role/label/editable/enabled/selector/rect;
-- registry assigned-count diagnostics.
-
-Sensitive elements bị loại trước khi semantic data rời content script.
-
-### Raw DOM Interaction Stream
-
-Các event DOM raw hiện gồm:
-
-```text
-dom-click
-dom-focus
-dom-input
-dom-change
-dom-submit
-```
-
-`dom-input` chỉ giữ `inputType + length`; không giữ raw value. Select chỉ giữ selected index; checkbox/radio chỉ giữ checked state.
-
-### Mutation Trace
-
-Mutation trace không lưu text/HTML/value. Nó chỉ giữ structural/state facts:
-
-- child added/removed counts và semantic descriptors khi an toàn;
-- role/hidden/open/disabled/checked/selected;
-- aria expanded/hidden/disabled/selected/checked/pressed.
-
-Không theo dõi class/style ở V0.4 để tránh animation/render noise làm phình raw stream.
-
-## Physical/Semantic Correlation
-
-Physical events `pointer`, `wheel`, `keyboard` được correlate **ngay tại thời điểm capture**, không đợi đến batch flush.
-
-Ví dụ:
+V0.4 có thể lặp cả semantic descriptor trên mỗi mouse sample. V0.5 chuyển sang:
 
 ```js
 {
   type: 'pointer',
-  phase: 'down',
-  tsEpochMs: 123456.1,
-  x: 500,
-  y: 320,
-  semanticTarget: {
+  x: 100,
+  y: 200,
+  targetRef: 'e17'
+}
+```
+
+Descriptor đầy đủ chỉ được gắn lần đầu ref đó xuất hiện trong stream tương ứng:
+
+```js
+{
+  type: 'pointer',
+  targetRef: 'e17',
+  targetDescriptor: {
     elementRef: 'e17',
     tag: 'button',
     role: 'button',
     label: 'Search',
     selector: '#search',
-    rect: {...}
+    selectorCandidates: [...],
+    rect: {...},
+    rendered: true,
+    inViewport: true,
+    interactable: true
   }
 }
 ```
 
-Nếu element dưới pointer/focus là sensitive thì `semanticTarget` không được gắn.
+Những sample tiếp theo chỉ giữ `targetRef`.
 
-## Raw physical data
+## Visibility / interactability
 
-Collector giữ raw browser samples, không bake feature engineering vào source:
-
-- pointer move/down/up/cancel + coalesced samples khi có;
-- client/screen coordinates, movement delta, button/buttons, pressure, pointer type;
-- wheel delta X/Y/Z + deltaMode;
-- scroll positions;
-- keyboard down/up timing + operation class;
-- printable key chỉ giữ class `printable`, không giữ ký tự/code;
-- focus/blur/visibility;
-- heartbeat;
-- `idle-gap` marker cho physical gap >= 500 ms.
-
-Speed, acceleration, path distance, curvature, pause distributions và gesture segmentation được tính offline sau.
-
-## Browser session + persistence
-
-Một lần Chrome mở là một browser raw session. Background ghi chunk 250 event vào `chrome.storage.local` và gắn:
+Semantic element tách rõ:
 
 ```text
-rawVersion
-captureSource
-sessionSeq
-tabId
-windowId
-frameId
-pageInstanceId
+rendered      -> có layout và không display/visibility/opacity hidden
+inViewport    -> rect giao với viewport hiện tại
+interactable  -> rendered + inViewport + enabled + pointer-events hợp lệ
 ```
 
-Ghi raw từ nhiều tab được serialize qua một write chain để tránh hai tab ghi đè sequence/chunk của nhau.
+Field `visible` vẫn được giữ tạm để compatibility và hiện tương đương `rendered`.
 
-Khi Chrome đóng, extension cũng dừng. Lần Chrome mở sau, active session cũ chưa finalize sẽ thành `closed-inferred`, `endedAt` dùng `lastSeenAt` cuối đã persist.
+## Selector candidates
+
+Mỗi element có danh sách selector candidate có score thay vì chỉ một selector:
+
+```text
+id       1.00
+data-testid 0.98
+name     0.90
+role     0.65
+tag      0.20
+```
+
+`selector` hiện là candidate score cao nhất; `selectorCandidates` giữ fallback set.
+
+## Mutation burst
+
+V0.4 ghi từng MutationRecord, dẫn tới mutation có thể chiếm gần toàn bộ file. V0.5 gom mutation theo burst 120 ms:
+
+```js
+{
+  type: 'dom-mutation-burst',
+  windowMs: 120,
+  recordCount: 35,
+  addedCount: 4,
+  removedCount: 2,
+  attributes: {
+    'aria-expanded': 2,
+    hidden: 4
+  },
+  targetRefs: [...],
+  addedRefs: [...],
+  removedRefs: [...]
+}
+```
+
+Không lưu innerHTML/textContent/value.
+
+## State diff cho Task Episode
+
+Episode V0.5 dùng:
+
+```text
+initialObservation = full snapshot một lần
+transition 1 -> stateBeforeDiff / stateAfterDiff
+transition 2 -> stateBeforeDiff / stateAfterDiff
+...
+```
+
+Diff hiện tập trung vào:
+
+- focused element ref;
+- scroll x/y;
+- added/removed element refs;
+- rendered/inViewport/interactable/enabled;
+- rect thay đổi.
+
+Nếu page instance thay đổi hoặc không thể diff an toàn, transition có thể fallback về full snapshot.
+
+## Timeline
+
+Hai thứ tự được phân biệt rõ:
+
+```text
+tsEpochMs  = thời điểm event xảy ra/capture
+sessionSeq = thứ tự background persist event
+```
+
+Do nhiều source flush batch khác nhau, `sessionSeq` không được coi là chronological truth. Khi dựng trajectory offline, ưu tiên `tsEpochMs`, sau đó `tPageMs`, rồi `sessionSeq` làm tie-breaker.
+
+## Chunk persistence
+
+V0.5 hiện vẫn dùng `chrome.storage.local` như development-stage raw store nhưng tăng chunk từ 250 lên 500 events để giảm metadata/chunk overhead.
+
+Đây **không phải storage architecture cuối cùng**. Hướng tiếp theo V0.6 là IndexedDB ChunkStore + recovery/retention + streaming export.
+
+## Export format trong giai đoạn phát triển
+
+Manual popup export chuyển sang JSONL/NDJSON:
+
+```text
+{"recordType":"session", ...}
+{"recordType":"event", ...}
+{"recordType":"event", ...}
+...
+```
+
+File:
+
+```text
+*.raw.jsonl
+```
+
+JSONL giúp đọc theo stream và không cần parse một JSON array lớn. Gzip `.jsonl.gz` dự kiến ở V0.6 cùng streaming export.
+
+Auto-export JSON của previous session vẫn chỉ là **development/debug adapter tạm thời**, không phải phương thức lưu chính dài hạn.
+
+## Analyzer
+
+Analyzer đọc cả raw JSON V0.4 cũ và raw JSONL V0.5:
+
+```bat
+node training-collector\tools\analyze_raw.js path\to\session.raw.jsonl
+```
+
+Report gồm:
+
+- total events / duration;
+- event/source/tab distribution;
+- pointer sampling gaps;
+- physical -> semantic correlation coverage;
+- mutation burst count và số raw MutationRecord đại diện;
+- sessionSeq discontinuity;
+- capture timestamp backwards theo persistence order;
+- privacy red flags.
 
 ## Privacy boundary
 
@@ -142,68 +199,39 @@ Collector không đọc/lưu:
 - Authorization/token secret;
 - clipboard content;
 - raw text value của input;
-- printable character/code trong raw keyboard stream;
+- printable character/code trong keyboard raw stream;
 - URL query values/hash content;
 - raw document title.
 
-## Offline analysis loop
+Sensitive targets bị loại trước khi semantic data rời content script.
 
-Sau khi export raw JSON:
-
-```bat
-node training-collector\tools\analyze_raw.js path\to\session.raw.json
-```
-
-Analyzer báo:
-
-- total/duration/event type distribution;
-- capture source distribution;
-- per-tab event counts;
-- pointer sampling gap p50/p90/p99/max;
-- physical->semantic correlation coverage;
-- DOM/mutation counts;
-- sessionSeq discontinuity;
-- timestamp-backwards count;
-- simple privacy red flags.
-
-Đây là vòng cải thiện chính:
-
-```text
-Collect real Chrome session
--> Export raw JSON
--> Analyze raw
--> inspect anomalies/coverage/noise/privacy
--> adjust Collector
--> repeat
-```
-
-## Test thủ công V0.4
+## Test V0.5
 
 1. `git pull`.
 2. Reload unpacked `training-collector/` ở `chrome://extensions`.
-3. Nên đóng/mở lại Chrome để có browser session mới dùng schema V0.4.
-4. Mở một trang http/https bình thường.
-5. Di chuột chậm/nhanh, nghỉ vài giây, hover/click nhiều element, scroll, focus và gõ vào field không nhạy cảm, mở tab thứ hai và thao tác tiếp.
-6. Popup -> `Preview Raw` để kiểm nhanh.
-7. Popup -> `Export Raw JSON`.
-8. Chạy offline analyzer hoặc gửi file `.raw.json` để review dữ liệu thực tế.
+3. Đóng/mở Chrome để bắt đầu browser session mới dùng schema V0.5.
+4. Thực hiện phiên thao tác tương tự V0.4: pointer chậm/nhanh/nghỉ, hover/click, wheel/scroll, focus/input, đổi tab.
+5. Popup -> `Manual Export JSONL`.
+6. Chạy analyzer hoặc gửi `.raw.jsonl` để so sánh với V0.4.
 
-Trong raw output nên thấy song song:
+Các số nên so sánh trực tiếp:
 
 ```text
-captureSource=physical -> pointer/wheel/keyboard/idle...
-captureSource=dom      -> dom-click/dom-focus/dom-input...
-captureSource=mutation -> dom-mutation...
-captureSource=semantic -> semantic-snapshot
+file size
+raw event count
+mutation event count
+mutation represented record count
+correlation coverage
+pointer sampling distribution
+privacy red flags
 ```
 
-Pointer/wheel/keyboard trên element an toàn nên có `semanticTarget.elementRef`; DOM event trên cùng element nên dùng cùng ref trong cùng `pageInstanceId`.
-
-## Files V0.4
+## Files chính
 
 ```text
 core/privacy.js
 core/action_normalizer.js
+core/state_diff.js
 core/episode_builder.js
 core/raw_session_store.js
 observer/element_registry.js
@@ -217,22 +245,17 @@ content.js
 background.js
 popup.html
 popup.js
-tests/architecture_contract.js
-tests/raw_session_contract.js
-tests/raw_analysis_contract.js
 ```
 
-## Chưa làm sau V0.4
+## V0.6 dự kiến
 
-- deep Shadow DOM observer;
-- iframe semantic identity/correlation beyond current content-script frame behavior;
-- selector candidate scoring/fallback set;
-- hover semantic transition stream;
-- scroll-container identity instead of page-only scroll position;
-- retry journal khi RAW_BATCH delivery thất bại;
-- streaming export cho session rất lớn;
-- session retention/cleanup UI;
-- cross-navigation episode reconciliation;
-- derived feature pipeline / dataset JSONL conversion.
+```text
+IndexedDB ChunkStore
+-> streaming JSONL export
+-> gzip .jsonl.gz
+-> chunk checksum/recovery
+-> storage retention
+-> session index
+```
 
-Các phần này sẽ được ưu tiên dựa trên dữ liệu raw thật từ vòng manual test V0.4.
+Sau đó dataset pipeline mới chuyển cleaned/normalized data sang Parquet cho analytics/training. Raw archive vẫn giữ khả năng tái xử lý bằng thuật toán mới.
