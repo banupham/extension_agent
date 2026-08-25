@@ -340,6 +340,7 @@ Read first:
 training-collector/core/socket_mirror.js
 training-collector/background.js
 training-collector/socket-server/server.js
+training-collector/socket-server/integration_test.js
 training-collector/socket-server/README.md
 training-collector/popup.js
 training-collector/tests/v08_socket_mirror_contract.js
@@ -396,6 +397,7 @@ Files:
 ```text
 training-collector/socket-server/package.json
 training-collector/socket-server/server.js
+training-collector/socket-server/integration_test.js
 training-collector/socket-server/START_SOCKET_SERVER.bat
 training-collector/socket-server/README.md
 ```
@@ -430,6 +432,25 @@ WebSocket disconnect
 ```
 
 A same-session reconnect may resume after a provisional close.
+
+## Socket integration CI
+
+`training-collector/socket-server/integration_test.js` is a real localhost protocol/durability test. It verifies:
+
+```text
+session-open / resumeFromSeq
+normal append
+exact duplicate ignored
+sequence gap → resync
+session-close/meta durability
+server restart on same JSONL
+resumeFromSeq recovered from durable archive
+continued append without duplicate/gap
+```
+
+CI run `32863776613` on commit `278df8c53c22923c0a4e1a2c74367589d3be0386` passed.
+
+The first integration attempt exposed a startup bind race (`ECONNREFUSED` a few ms after the server printed its startup line). Test client now retries briefly during bind. This is useful test-harness knowledge, not evidence of a protocol failure.
 
 ## Backlog recovery
 
@@ -587,7 +608,7 @@ Workflow:
 .github/workflows/extension-syntax.yml
 ```
 
-Collector contracts:
+Collector contracts/tests:
 
 ```text
 training-collector/tests/architecture_contract.js
@@ -597,9 +618,10 @@ training-collector/tests/v06_storage_contract.js
 training-collector/tests/v07_action_semantics_contract.js
 training-collector/tests/v072_frame_stream_contract.js
 training-collector/tests/v08_socket_mirror_contract.js
+training-collector/socket-server/integration_test.js
 ```
 
-CI success != Chrome/server integration tested.
+Node socket-server integration CI exists. Native Chrome MV3 WebSocket behavior still requires browser validation.
 
 ---
 
@@ -677,6 +699,9 @@ Use grace period because MV3/runtime/network can reconnect.
 ## D024 — Continuous server JSONL is the preferred development archive
 Manual gzip remains fallback; production storage architecture can evolve later.
 
+## D025 — Socket server protocol needs real integration CI
+Static source contracts are insufficient for durable append/resume/resync behavior. Keep the localhost integration test in CI.
+
 ---
 
 # 15. Engineering diary — key regressions/milestones
@@ -714,6 +739,9 @@ Cannot read properties of undefined (reading 'download')
 ```
 
 Decision: stop optimizing Downloads adapter. Add localhost WebSocket server + resume/ACK/replay protocol. Remove offscreen auto-export runtime and permissions. Keep IndexedDB as safety source and manual gzip fallback.
+
+## V0.8 — real socket server integration CI
+Added `socket-server/integration_test.js` and CI installation/test step. The test validates append, duplicate tolerance, gap/resync, close durability, server restart and resume. Final run `32863776613` passed.
 
 Next gate:
 
