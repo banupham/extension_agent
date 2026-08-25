@@ -8,7 +8,7 @@ A2 consumes A1 Action Windows and derives deterministic behavior features. This 
 
 This is a development dataset gate, not a claim that every family already has enough samples for a learned model.
 
-## A2.0.2 feature additions
+## Behavior Feature v0.2.0 additions
 
 A2 now includes features that are important for natural execution but were missing from the first skeleton:
 
