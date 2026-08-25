@@ -27,7 +27,7 @@ async function exportSession(sessionId) {
 
   await writer.write(encoder.encode(`${JSON.stringify({
     recordType: 'session',
-    exportVersion: meta.exportVersion || '0.6.0',
+    exportVersion: session.schemaVersion || meta.exportVersion || '0.7.0',
     exportedAt: meta.exportedAt || new Date().toISOString(),
     autoExport: true,
     session
