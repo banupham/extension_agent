@@ -5,150 +5,112 @@ const Semantics = require('./build_action_semantics.js');
 const Windows = require('./build_action_windows.js');
 const Features = require('./extract_behavior_features.js');
 
-function finiteValues(values) {
-  return values.map(Number).filter(Number.isFinite);
-}
-
-function quantile(sorted, p) {
-  if (!sorted.length) return null;
-  if (sorted.length === 1) return sorted[0];
-  const pos = (sorted.length - 1) * p;
-  const lo = Math.floor(pos), hi = Math.ceil(pos);
-  if (lo === hi) return sorted[lo];
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
-}
-
-function round(value, digits = 4) {
-  if (!Number.isFinite(value)) return null;
-  const m = 10 ** digits;
-  return Math.round(value * m) / m;
+function finite(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function distribution(values) {
-  const xs = finiteValues(values).sort((a, b) => a - b);
-  if (!xs.length) return { count: 0, min: null, p10: null, median: null, p90: null, max: null };
+  const xs = values.map(finite).filter(Number.isFinite).sort((a, b) => a - b);
+  const q = p => Features.percentile(xs, p);
+  if (!xs.length) return { count: 0, min: null, median: null, p90: null, p99: null, max: null, mean: null };
   return {
     count: xs.length,
-    min: round(xs[0]),
-    p10: round(quantile(xs, 0.1)),
-    median: round(quantile(xs, 0.5)),
-    p90: round(quantile(xs, 0.9)),
-    max: round(xs.at(-1))
+    min: xs[0],
+    median: q(0.5),
+    p90: q(0.9),
+    p99: q(0.99),
+    max: xs.at(-1),
+    mean: xs.reduce((a, b) => a + b, 0) / xs.length
   };
 }
 
-function summarizeBehaviorFeatures(result) {
-  const rows = Array.isArray(result?.rows) ? result.rows : [];
+function summarizeBehaviorFeatures(featureSets) {
+  const sets = Array.isArray(featureSets) ? featureSets : [featureSets];
+  const rows = sets.flatMap(set => Array.isArray(set?.rows) ? set.rows : []);
   const byType = {};
-  let semanticTargetPresent = 0;
-  let physicalEvidencePresent = 0;
-
-  const clickApproach = [];
-  const clickStraightness = [];
-  const clickSpeed = [];
-  const clickPause = [];
-  const hoverApproach = [];
-  const hoverLeave = [];
-  const hoverDwell = [];
-  const dragDistance = [];
-  const dragDuration = [];
-  const horizontalDuration = [];
-  const horizontalDelta = [];
-  const verticalDuration = [];
-  const verticalDelta = [];
-  const keyboardDuration = [];
-  const keyboardGapMedian = [];
+  const sessions = new Set(sets.map(set => set?.sourceSessionId).filter(Boolean));
 
   for (const row of rows) {
     const type = row.actionType || 'unknown';
-    const bucket = byType[type] = byType[type] || { count: 0, semanticTarget: 0, physicalEvidence: 0 };
+    const bucket = byType[type] = byType[type] || { count: 0, physical: 0, semantic: 0 };
     bucket.count += 1;
-    if (row.quality?.targetSemanticPresent) { semanticTargetPresent += 1; bucket.semanticTarget += 1; }
-    if (row.quality?.physicalEvidencePresent) { physicalEvidencePresent += 1; bucket.physicalEvidence += 1; }
-
-    const f = row.features || {};
-    if (['click', 'dismiss', 'toggle'].includes(type)) {
-      if (f.approach?.available) {
-        clickApproach.push(f.approach.pathLengthPx);
-        clickStraightness.push(f.approach.straightness);
-        clickSpeed.push(f.approach.meanSpeedPxS);
-      }
-      clickPause.push(f.acquisitionPauseMs);
-    } else if (['hover', 'hoverAndObserve'].includes(type)) {
-      if (f.approach?.available) hoverApproach.push(f.approach.pathLengthPx);
-      if (f.leave?.available) hoverLeave.push(f.leave.pathLengthPx);
-      hoverDwell.push(f.dwellMs);
-    } else if (type === 'drag') {
-      dragDistance.push(f.displacementPx);
-      dragDuration.push(f.durationMs);
-    } else if (type === 'scrollHorizontal') {
-      horizontalDuration.push(f.timing?.durationMs);
-      horizontalDelta.push(f.absolutePrimaryDelta);
-    } else if (type === 'scrollVertical') {
-      verticalDuration.push(f.timing?.durationMs);
-      verticalDelta.push(f.absolutePrimaryDelta);
-    } else if (type === 'typeText' || type === 'pressKey') {
-      keyboardDuration.push(f.timing?.durationMs);
-      keyboardGapMedian.push(f.timing?.gapMedianMs);
-    }
+    if (row.quality?.physicalEvidencePresent) bucket.physical += 1;
+    if (row.quality?.targetSemanticPresent) bucket.semantic += 1;
   }
-
   for (const bucket of Object.values(byType)) {
-    bucket.semanticTargetRate = bucket.count ? round(bucket.semanticTarget / bucket.count) : 0;
-    bucket.physicalEvidenceRate = bucket.count ? round(bucket.physicalEvidence / bucket.count) : 0;
+    bucket.physicalEvidenceRate = bucket.count ? bucket.physical / bucket.count : 0;
+    bucket.semanticTargetRate = bucket.count ? bucket.semantic / bucket.count : 0;
   }
 
-  return {
-    behaviorFeatureVersion: result?.behaviorFeatureVersion || null,
-    sourceSessionId: result?.sourceSessionId || null,
-    totalRows: rows.length,
+  const clickTypes = ['click', 'dismiss', 'toggle'];
+  const hoverTypes = ['hover', 'hoverAndObserve'];
+  const keyboardTypes = ['typeText', 'pressKey'];
+  const select = (types, getter) => rows.filter(r => types.includes(r.actionType)).map(getter);
+  const rate = (subset, predicate) => subset.length ? subset.filter(predicate).length / subset.length : 0;
+  const clickRows = rows.filter(r => clickTypes.includes(r.actionType));
+  const hoverRows = rows.filter(r => hoverTypes.includes(r.actionType));
+  const keyRows = rows.filter(r => keyboardTypes.includes(r.actionType));
+
+  const summary = {
+    behaviorFeatureVersion: sets.find(x => x?.behaviorFeatureVersion)?.behaviorFeatureVersion || null,
+    sessionCount: sessions.size,
+    rowCount: rows.length,
     byType,
     coverage: {
-      semanticTargetPresent,
-      semanticTargetRate: rows.length ? round(semanticTargetPresent / rows.length) : 0,
-      physicalEvidencePresent,
-      physicalEvidenceRate: rows.length ? round(physicalEvidencePresent / rows.length) : 0
+      physicalEvidenceRate: rate(rows, r => r.quality?.physicalEvidencePresent),
+      semanticTargetRate: rate(rows, r => r.quality?.targetSemanticPresent),
+      clickPressHoldRate: rate(clickRows, r => r.features?.press?.available),
+      clickAcquisitionRate: rate(clickRows, r => r.features?.acquisition?.available),
+      hoverApproachRate: rate(hoverRows, r => r.features?.approach?.available),
+      hoverLeaveRate: rate(hoverRows, r => r.features?.leave?.available),
+      keyboardHoldRate: rate(keyRows, r => Number(r.features?.rhythm?.holdCount || 0) > 0)
     },
-    pointerClick: {
-      approachPathLengthPx: distribution(clickApproach),
-      straightness: distribution(clickStraightness),
-      meanSpeedPxS: distribution(clickSpeed),
-      acquisitionPauseMs: distribution(clickPause)
+    distributions: {
+      clickApproachDurationMs: distribution(select(clickTypes, r => r.features?.approach?.durationMs)),
+      clickApproachPathPx: distribution(select(clickTypes, r => r.features?.approach?.pathLengthPx)),
+      clickStraightness: distribution(select(clickTypes, r => r.features?.approach?.straightness)),
+      clickMeanSpeedPxS: distribution(select(clickTypes, r => r.features?.approach?.meanSpeedPxS)),
+      clickMeanAbsTurnDeg: distribution(select(clickTypes, r => r.features?.approach?.meanAbsTurnDeg)),
+      clickCorrectionCount: distribution(select(clickTypes, r => r.features?.approach?.correctionCount45Deg)),
+      clickAcquisitionPauseMs: distribution(select(clickTypes, r => r.features?.acquisitionPauseMs)),
+      clickHoldMs: distribution(select(clickTypes, r => r.features?.press?.holdMs)),
+      clickEndToCenterNormalized: distribution(select(clickTypes, r => r.features?.acquisition?.endToCenterNormalized)),
+      hoverDwellMs: distribution(select(hoverTypes, r => r.features?.dwellMs)),
+      hoverApproachDurationMs: distribution(select(hoverTypes, r => r.features?.approach?.durationMs)),
+      hoverLeaveDurationMs: distribution(select(hoverTypes, r => r.features?.leave?.durationMs)),
+      verticalScrollAbsDelta: distribution(select(['scrollVertical'], r => r.features?.absolutePrimaryDelta)),
+      horizontalScrollAbsDelta: distribution(select(['scrollHorizontal'], r => r.features?.absolutePrimaryDelta)),
+      verticalScrollDurationMs: distribution(select(['scrollVertical'], r => r.features?.timing?.durationMs)),
+      horizontalScrollDurationMs: distribution(select(['scrollHorizontal'], r => r.features?.timing?.durationMs)),
+      keyboardInterKeyMedianMs: distribution(select(keyboardTypes, r => r.features?.rhythm?.interKeyMedianMs)),
+      keyboardHoldMedianMs: distribution(select(keyboardTypes, r => r.features?.rhythm?.holdMedianMs)),
+      dragDistancePx: distribution(select(['drag'], r => r.features?.displacementPx)),
+      dragDurationMs: distribution(select(['drag'], r => r.features?.durationMs))
     },
-    hover: {
-      approachPathLengthPx: distribution(hoverApproach),
-      leavePathLengthPx: distribution(hoverLeave),
-      dwellMs: distribution(hoverDwell)
-    },
-    drag: {
-      count: Number(byType.drag?.count || 0),
-      distancePx: distribution(dragDistance),
-      durationMs: distribution(dragDuration)
-    },
-    scroll: {
-      horizontal: { durationMs: distribution(horizontalDuration), absoluteDelta: distribution(horizontalDelta) },
-      vertical: { durationMs: distribution(verticalDuration), absoluteDelta: distribution(verticalDelta) }
-    },
-    keyboard: {
-      durationMs: distribution(keyboardDuration),
-      medianEventGapMs: distribution(keyboardGapMedian)
-    },
-    privacy: result?.privacy || {}
+    warnings: []
   };
+
+  const dragCount = Number(byType.drag?.count || 0);
+  if (dragCount < 20) summary.warnings.push({ code: 'drag_sparse', count: dragCount, recommendation: 'do_not_fit_confident_drag_distribution' });
+  if (clickRows.length >= 10 && summary.coverage.clickPressHoldRate < 0.5) summary.warnings.push({ code: 'click_hold_low_coverage', rate: summary.coverage.clickPressHoldRate });
+  if (hoverRows.length >= 10 && summary.coverage.hoverApproachRate < 0.7) summary.warnings.push({ code: 'hover_approach_low_coverage', rate: summary.coverage.hoverApproachRate });
+  if (keyRows.length >= 10 && summary.coverage.keyboardHoldRate < 0.5) summary.warnings.push({ code: 'keyboard_hold_low_coverage', rate: summary.coverage.keyboardHoldRate });
+  return summary;
 }
 
 function main(argv = process.argv.slice(2)) {
-  const input = argv[0];
-  if (!input) {
-    console.error('Usage: node training-collector/tools/analyze_behavior_features.js <session.raw.jsonl[.gz]>');
+  if (!argv.length) {
+    console.error('Usage: node training-collector/tools/analyze_behavior_features.js <session.raw.jsonl[.gz]> [more sessions...]');
     process.exitCode = 2;
     return;
   }
-  const raw = Semantics.readRaw(input);
-  const windows = Windows.buildActionWindows(raw);
-  const features = Features.extractBehaviorFeatures(windows);
-  const summary = summarizeBehaviorFeatures(features);
-  console.log(JSON.stringify({ input: path.resolve(input), sourceEvents: raw.events.length, ...summary }, null, 2));
+  const featureSets = argv.map(input => {
+    const raw = Semantics.readRaw(input);
+    const windows = Windows.buildActionWindows(raw);
+    return Features.extractBehaviorFeatures(windows);
+  });
+  console.log(JSON.stringify({ inputs: argv.map(x => path.resolve(x)), ...summarizeBehaviorFeatures(featureSets) }, null, 2));
 }
 
 if (require.main === module) main();
