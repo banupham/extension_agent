@@ -1,59 +1,32 @@
-# Browser Action Recorder V3.9 Gesture Metrics
+# Browser Action Recorder V4.0 Detailed Input + Mouse Path
 
 ## Mục tiêu
 
-Scenario gốc vẫn deterministic, nhưng Recorder giữ dữ liệu đủ chi tiết để phân tích và sinh variant sau này mà không phải đoán lại hành vi gốc.
+Scenario gốc vẫn deterministic, nhưng Recorder giữ đủ dữ liệu gốc để replay sát thao tác và để Scenario Variants về sau có thể thay đổi timing/hành vi có kiểm soát.
 
 ## Exact waits
 
-Khoảng nghỉ không còn bị clamp ở 5000 ms. Khoảng nghỉ từ 1200 ms trở lên được xuất thành action `wait` riêng; khoảng ngắn hơn vẫn nằm trong `delay` của action kế tiếp.
+Khoảng nghỉ không bị clamp ở 5000 ms. Khoảng nghỉ từ 1200 ms trở lên được xuất thành action `wait` riêng; khoảng ngắn hơn nằm trong `delay` của action kế tiếp.
 
 Navigation do click/Enter tạo ra không reset timing anchor, nên thời gian load/chờ sau thao tác vẫn được giữ.
 
-## Click / pointer
+## Click + mouse path
 
 `clickRecorded` vẫn replay theo `rx/ry` trong element và không thêm random offset vào scenario gốc.
 
-Recorder lưu thêm `pointerGesture`: thời điểm pointerdown/pointerup, duration, pointer type, button, điểm bắt đầu/kết thúc và pressure khi trình duyệt cung cấp.
+Recorder lưu `pointerGesture` gồm pointerdown/pointerup, thời gian giữ, pointer type, button và điểm đầu/cuối.
 
-## Text / keyboard
-
-Semantic mode vẫn giữ nguyên:
-- sửa/xóa trong field -> một `replaceText` cuối;
-- `editTrace.changes` giữ timeline chỉnh sửa gồm timestamp, inputType, value và selection;
-- Backspace/Delete trong editable không được replay hai lần;
-- Backspace/Delete ngoài editable vẫn là `pressKey`.
-
-## Scroll / swipe gesture metrics
-
-Một gesture scroll được gom cho đến khi trang ngừng scroll khoảng 420 ms. Mỗi gesture vẫn là một `scrollTo` deterministic, nhưng metadata hiện lưu cả quỹ đạo và raw wheel input.
-
-`scrollTrace` gồm:
+V4.0 lưu thêm đường di chuyển chuột trước click:
 
 ```js
-{
-  startedAtMs,
-  endedAtMs,
-  durationMs,
+mousePath: {
   samples: [
-    { t, x, y }
-  ],
-  wheelSamples: [
-    {
-      t,
-      deltaX,
-      deltaY,
-      deltaZ,
-      deltaMode,
-      clientX,
-      clientY,
-      ctrlKey,
-      shiftKey,
-      altKey,
-      metaKey
-    }
+    { t, x, y, buttons }
   ],
   metrics: {
+    startedAtMs,
+    endedAtMs,
+    durationMs,
     start: { x, y },
     end: { x, y },
     displacementX,
@@ -62,12 +35,7 @@ Một gesture scroll được gom cho đến khi trang ngừng scroll khoảng 4
     pathDistancePx,
     averageSpeedPxPerSec,
     peakSpeedPxPerSec,
-    direction,
-    sourceHint,
     sampleCount,
-    wheelSampleCount,
-    wheelTotalDeltaX,
-    wheelTotalDeltaY,
     speedSamples: [
       { t, speedPxPerSec, distancePx, dtMs }
     ]
@@ -75,34 +43,89 @@ Một gesture scroll được gom cho đến khi trang ngừng scroll khoảng 4
 }
 ```
 
-### Ý nghĩa
+Mouse samples được giữ trong cửa sổ gần click để tránh file scenario phình quá lớn.
 
-- `durationMs`: thời gian trang thực sự di chuyển trong gesture.
-- `displacementX/Y`: độ dịch chuyển từ đầu đến cuối.
-- `straightDistancePx`: khoảng cách thẳng giữa điểm đầu/cuối.
-- `pathDistancePx`: tổng quãng đường thực qua các sample.
-- `averageSpeedPxPerSec`: tốc độ trung bình của viewport.
-- `peakSpeedPxPerSec`: tốc độ lớn nhất đo được giữa hai sample liên tiếp.
-- `direction`: up/down/left/right.
-- `wheelSamples`: delta gốc từ `wheel` event để phân tích profile input.
+## Text / keyboard — Detailed Input
 
-`sourceHint` cố ý chỉ là hint. Browser không cung cấp cách đáng tin cậy để luôn phân biệt mouse wheel và touchpad. Recorder dùng các nhãn bảo thủ như `touch`, `wheel-pixel`, `wheel-line`, `wheel-page`, `pointer-scroll-or-scrollbar`, `unknown` thay vì gán nhãn chắc chắn sai.
+V4.0 không còn mặc định biến cả phiên sửa input thành một `replaceText`.
+
+Khi chuỗi chỉnh sửa có thể tái dựng chắc chắn từ bàn phím, Recorder lưu `textEditRecorded` với từng operation thực:
+
+```js
+editTrace: {
+  initialValue: "abc",
+  finalValue: "abxy",
+  operations: [
+    { kind: "type", text: "d", t: 1200 },
+    { kind: "pressKey", key: "Backspace", t: 1390 },
+    { kind: "pressKey", key: "Backspace", t: 1510 },
+    { kind: "type", text: "x", t: 1650 },
+    { kind: "type", text: "y", t: 1760 }
+  ],
+  summary: {
+    backspaceCount: 2,
+    deleteCount: 0,
+    typedCharCount: 3,
+    keyComboCount: 0,
+    operationCount: 5
+  }
+}
+```
+
+Exporter biến chuỗi đó thành action thật:
+
+```js
+{ action: "type", text: "d", delay: ... }
+{ action: "pressKey", key: "Backspace", delay: ... }
+{ action: "pressKey", key: "Backspace", delay: ... }
+{ action: "type", text: "x", delay: ... }
+{ action: "type", text: "y", delay: ... }
+```
+
+Vì vậy số lần Backspace/Delete được replay đúng theo thao tác đã ghi thay vì chỉ áp final value.
+
+Recorder vẫn giữ `initialValue`, `finalValue`, `changes[]`, selection/caret và timing để kiểm tra lại kết quả.
+
+### Khi nào vẫn dùng replaceText
+
+`replaceText` chỉ là fallback khi không thể suy ra chắc chắn chuỗi phím, ví dụ:
+
+- paste;
+- drag/drop text;
+- IME/composition;
+- browser autofill/replacement;
+- undo/redo;
+- thay đổi DOM/input không khớp chuỗi keyboard operation.
+
+Metadata ghi rõ `reconstruction.mode` và `uncertainReasons` để biết vì sao fallback.
+
+## Keyboard ngoài input
+
+Recorder vẫn ghi `pressKey` và `keyCombo`, kèm `key`, `code`, `location`, modifier và repeat.
+
+## Scroll / swipe gesture metrics
+
+Một gesture scroll được gom đến khi trang ngừng scroll khoảng 420 ms. Scenario gốc vẫn dùng `scrollTo`, nhưng metadata giữ cả quỹ đạo viewport và raw wheel input.
+
+`scrollTrace.metrics` gồm duration, displacement, straight/path distance, average/peak speed, direction, sourceHint, wheel totals và speed samples.
+
+`sourceHint` chỉ là hint; Recorder không khẳng định mouse wheel hay touchpad khi browser không cung cấp đủ tín hiệu chắc chắn.
 
 ## Variant-ready data
 
-V3.9 có đủ dữ liệu để generator sau này thay đổi có kiểm soát:
-- idle/transition delay;
-- scroll duration;
-- distance;
-- average/peak speed;
-- speed profile theo sample;
-- wheel delta profile;
-- direction;
-- click hold duration;
-- text edit cadence.
+V4.0 hiện giữ dữ liệu cho:
 
-Scenario gốc không sử dụng metadata này để random. Metadata chỉ phục vụ diagnostics và Scenario Variants.
+- idle/transition delay;
+- mouse path duration/distance/speed;
+- click hold duration;
+- từng phím gõ/xóa và số lần Backspace/Delete;
+- cadence giữa các keyboard operation;
+- text initial/final state;
+- scroll duration/distance/average speed/peak speed;
+- wheel delta profile và speed profile.
+
+Scenario gốc không tự random các metadata này. Chúng dành cho diagnostics và Scenario Variants.
 
 ## Popup / export
 
-Popup vẫn chỉ có 3 nút Start / Stop / Export .js và vẫn nhớ thư mục export đã chọn bằng File System Access API + IndexedDB.
+Popup vẫn chỉ có 3 nút Start / Stop / Export .js và vẫn nhớ thư mục export bằng File System Access API + IndexedDB.
