@@ -5,6 +5,7 @@ const statusEl = document.getElementById('status');
 const rawStatusEl = document.getElementById('rawStatus');
 const previewEl = document.getElementById('preview');
 const sessionsEl = document.getElementById('sessions');
+const socketStatusEl = document.getElementById('socketStatus');
 
 function send(type, extra = {}) {
   return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...extra });
@@ -33,14 +34,28 @@ function showRaw(session, error) {
   ].join('\n');
 }
 
+function showSocket(socket, error) {
+  if (error) { socketStatusEl.textContent = `Socket error: ${error}`; return; }
+  if (!socket) { socketStatusEl.textContent = 'Socket mirror unavailable'; return; }
+  const sessionRows = Object.entries(socket.sessions || {}).map(([sessionId, row]) =>
+    `${sessionId}\n  ack=${row.ackedThrough || 0}/${row.eventCount || 0} sent=${row.sentThrough || 0} queued=${row.queuedBatches || 0}`
+  );
+  socketStatusEl.textContent = [
+    `State: ${socket.state || '-'}`,
+    `Endpoint: ${socket.endpoint || '-'}`,
+    `Connected: ${socket.connectedAt || '-'}`,
+    `Last server message: ${socket.lastMessageAt || '-'}`,
+    socket.lastError ? `Last error: ${socket.lastError}` : null,
+    ...sessionRows.slice(0, 4)
+  ].filter(Boolean).join('\n');
+}
+
 function sessionText(session) {
-  const auto = session.autoExport || {};
   return [
     session.sessionId,
-    `status=${session.status} events=${session.eventCount || 0} chunks=${session.chunkCount || 0}`,
-    `autoExport=${auto.status || '-'} attempts=${auto.attempts || 0}`,
-    auto.downloadId != null ? `downloadId=${auto.downloadId} downloadState=${auto.downloadState || '-'}` : null,
-    auto.error ? `error=${auto.error}` : null
+    `status=${session.status} schema=${session.schemaVersion || '-'} events=${session.eventCount || 0} chunks=${session.chunkCount || 0}`,
+    session.endedAt ? `ended=${session.endedAt}` : null,
+    session.integrity?.ok === false ? `integrity problems=${session.integrity.problems?.length || 0}` : null
   ].filter(Boolean).join('\n');
 }
 
@@ -59,34 +74,21 @@ async function loadSessions() {
   for (const session of rows) {
     const row = document.createElement('div');
     row.className = 'session-row';
-    const text = document.createElement('div');
-    text.textContent = sessionText(session);
-    row.appendChild(text);
-    if (session.status !== 'active' && Number(session.eventCount || 0) > 0 && session.autoExport?.status !== 'complete') {
-      const retry = document.createElement('button');
-      retry.textContent = 'Retry Auto Export';
-      retry.addEventListener('click', async () => {
-        retry.disabled = true;
-        retry.textContent = 'Retrying...';
-        try {
-          const result = await send('RETRY_AUTO_EXPORT', { sessionId: session.sessionId });
-          if (!result?.ok || result.result?.ok === false) throw new Error(result?.result?.error || result?.error || 'retry_failed');
-          await loadSessions();
-        } catch (error) {
-          retry.textContent = `Failed: ${String(error?.message || error)}`;
-          retry.disabled = false;
-        }
-      });
-      row.appendChild(retry);
-    }
+    row.textContent = sessionText(session);
     sessionsEl.appendChild(row);
   }
+}
+
+async function loadSocket() {
+  const res = await send('GET_SOCKET_STATUS');
+  showSocket(res?.socket, res?.error);
 }
 
 async function refresh() {
   const res = await send('GET_STATE');
   showEpisode(res.state, res.error);
   showRaw(res.rawSession, res.error);
+  showSocket(res.socket, res.error);
   await loadSessions();
 }
 
@@ -104,7 +106,7 @@ async function previewRaw() {
 
 async function exportRaw() {
   if (typeof CompressionStream !== 'function') throw new Error('CompressionStream is unavailable in this Chrome version');
-  rawStatusEl.textContent = 'Streaming IndexedDB chunks to JSONL.gz...';
+  rawStatusEl.textContent = 'Streaming IndexedDB chunks to fallback JSONL.gz...';
   const metaRes = await send('GET_RAW_EXPORT_META');
   if (!metaRes?.ok || !metaRes.data?.session) throw new Error(metaRes?.error || 'export_meta_failed');
   const meta = metaRes.data;
@@ -116,14 +118,14 @@ async function exportRaw() {
 
   await writer.write(encoder.encode(`${JSON.stringify({
     recordType: 'session',
-    exportVersion: session.schemaVersion || meta.exportVersion || '0.7.0',
+    exportVersion: session.schemaVersion || meta.exportVersion || '0.7.2',
     exportedAt: meta.exportedAt || new Date().toISOString(),
     session
   })}\n`));
 
   const chunkCount = Number(session.chunkCount || 0);
   for (let i = 0; i < chunkCount; i += 1) {
-    rawStatusEl.textContent = `Streaming chunk ${i + 1}/${chunkCount}...`;
+    rawStatusEl.textContent = `Streaming fallback chunk ${i + 1}/${chunkCount}...`;
     const chunkRes = await send('GET_RAW_EXPORT_CHUNK', { sessionId: session.sessionId, chunkIndex: i });
     if (!chunkRes?.ok || !chunkRes.data) throw new Error(chunkRes?.error || `export_chunk_${i}_failed`);
     for (const event of chunkRes.data.events || []) {
@@ -141,7 +143,7 @@ async function exportRaw() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
-  rawStatusEl.textContent = `Exported ${session.eventCount || 0} events as JSONL.gz`;
+  rawStatusEl.textContent = `Fallback export created for ${session.eventCount || 0} events`;
   showRaw(session);
 }
 
@@ -151,6 +153,7 @@ document.getElementById('previewRaw').addEventListener('click', () => previewRaw
 }));
 document.getElementById('exportRaw').addEventListener('click', () => exportRaw().catch(error => showRaw(null, String(error?.message || error))));
 document.getElementById('refreshSessions').addEventListener('click', () => loadSessions().catch(error => { sessionsEl.textContent = String(error?.message || error); }));
+document.getElementById('refreshSocket').addEventListener('click', () => loadSocket().catch(error => showSocket(null, String(error?.message || error))));
 
 document.getElementById('start').addEventListener('click', async () => {
   const instruction = taskEl.value.trim();
@@ -168,5 +171,6 @@ refresh().catch(error => {
   const text = String(error?.message || error);
   showEpisode(null, text);
   showRaw(null, text);
+  showSocket(null, text);
   sessionsEl.textContent = text;
 });
