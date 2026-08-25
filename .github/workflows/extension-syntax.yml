@@ -41,13 +41,19 @@ jobs:
           node --check training-collector/core/action_normalizer.js
           node --check training-collector/core/episode_builder.js
           node --check training-collector/core/raw_session_store.js
+          node --check training-collector/observer/element_registry.js
           node --check training-collector/observer/semantic_observer.js
+          node --check training-collector/observer/mutation_trace.js
+          node --check training-collector/correlation/physical_semantic_correlator.js
           node --check training-collector/capture/physical_capture.js
+          node --check training-collector/capture/dom_capture.js
+          node --check training-collector/tools/analyze_raw.js
           node --check training-collector/background.js
           node --check training-collector/content.js
           node --check training-collector/popup.js
           node --check training-collector/tests/architecture_contract.js
           node --check training-collector/tests/raw_session_contract.js
+          node --check training-collector/tests/raw_analysis_contract.js
       - name: Validate extension manifests
         run: |
           node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8'))"
@@ -57,3 +63,5 @@ jobs:
         run: node training-collector/tests/architecture_contract.js
       - name: Run Collector raw session contract test
         run: node training-collector/tests/raw_session_contract.js
+      - name: Run Collector V0.4 raw analysis contract test
+        run: node training-collector/tests/raw_analysis_contract.js
