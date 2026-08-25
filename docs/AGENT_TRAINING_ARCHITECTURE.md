@@ -2,297 +2,332 @@
 
 ## 1. Mục tiêu
 
-Hệ thống tiến từ deterministic browser automation sang goal-directed browser agent.
+Hệ thống tiến từ deterministic browser automation sang goal-directed browser agent nhưng vẫn giữ Scenario Mode ổn định.
 
-Input runtime mong muốn:
+Agent cuối cùng phải đồng thời có ba năng lực:
+
+```text
+1. hiểu đúng task / trạng thái / vấn đề
+2. chọn đúng next action
+3. thực thi action theo hành vi tự nhiên, ổn định và phù hợp context
+```
+
+Runtime đích:
 
 ```text
 TASK
-  ↓
+↓
 OBSERVE current browser state
-  ↓
-STRATEGY / PLANNER chooses next action
-  ↓
-EXECUTOR performs action
-  ↓
-OBSERVE new state
-  ↓
-GOAL CHECKER evaluates progress / completion
-  ↓
+↓
+UNDERSTAND / STRATEGY / PLANNER
+↓
+NORMALIZED ACTION CONTRACT
+↓
+NATURAL EXECUTION POLICY / BEHAVIOR MODEL
+↓
+CDP EXECUTOR
+↓
+CHROME
+↓
+OBSERVE stateAfter
+↓
+GOAL CHECKER
+↓
 repeat until DONE / FAILED / budget exhausted
 ```
 
-Scenario deterministic hiện tại vẫn được giữ nguyên. Agent Mode là lớp mới chạy song song, không thay thế Recorder/Scenario Mode.
+Scenario deterministic, Recorder, Training Collector và Agent Runtime là các boundary riêng; chúng có thể chia sẻ contract/dataset nhưng không gộp trách nhiệm.
 
----
+## 2. Boundary trách nhiệm
 
-## 2. Nguyên tắc chuẩn hoá
+```text
+Strategy       = WHAT to do
+Behavior Model = HOW to do it naturally
+Executor       = translate execution instructions into CDP
+```
 
-### 2.1 Task contract
+Strategy/Planner không được phát raw CDP.
 
-Task phải mô tả mục tiêu, không mô tả chuỗi click cứng.
+Ví dụ Strategy chỉ cần trả:
 
 ```js
 {
-  taskId: "...",
-  type: "web_search",
-  instruction: "Search Google for OpenAI",
-  args: { query: "OpenAI" },
-  successCriteria: [...],
-  constraints: {...}
+  action: "click",
+  targetRef: "e17"
 }
 ```
 
-### 2.2 Observation contract
+Strategy không quyết định trực tiếp quỹ đạo chuột chi tiết, số ms hover, mouse-down hold hoặc từng CDP packet.
 
-Observer tạo semantic state thay vì screenshot/DOM dump thuần túy.
+Behavior layer nhận normalized action + semantic target/context và tạo execution profile.
+
+## 3. Core contracts
+
+### 3.1 Task
 
 ```js
 {
+  taskId,
+  type,
+  instruction,
+  args: {},
+  successCriteria: [],
+  constraints: {},
+  metadata: {}
+}
+```
+
+Task mô tả goal, không hard-code chuỗi click.
+
+### 3.2 Observation
+
+Observation là semantic browser state đã privacy-redact, không phải DOM dump thô.
+
+```js
+{
+  observationId,
+  capturedAt,
   url,
   title,
-  viewport,
-  scroll,
-  focusedElement,
-  interactiveElements: [
-    {
-      id,
-      tag,
-      role,
-      label,
-      text,
-      editable,
-      enabled,
-      visible,
-      checked,
-      selected,
-      rect,
-      selectors
-    }
-  ]
+  viewport: {},
+  scroll: {},
+  focusedElement: null,
+  interactiveElements: [],
+  pageSignals: {},
+  privacy: { redacted: true }
 }
 ```
 
-Không đưa password, cookie, token, authorization header hoặc secret storage vào observation.
+Semantic elements cần stable page-scoped refs và các state như role/label, selector candidates, rendered/inViewport/interactable, editable/enabled, rect và relevant state.
 
-### 2.3 Action contract
-
-Strategy chỉ được sinh action nằm trong action contract executor hiện tại:
-
-- navigation: `openUrl`, `reload`, `goBack`, `goForward`, `waitForUrl`
-- pointer: `clickRecorded`, `click`, `clickSelector`, `clickFirstMatch`, `doubleClickSelector`, `hoverSelector`, `moveMouse`, `dragAndDrop`, `scroll`, `scrollTo`, `scrollBy`
-- keyboard: `type`, `replaceText`, `clearInput`, `pressKey`, `keyCombo`
-- forms: `focusSelector`, `selectOption`, `setChecked`
-- wait: `wait`, `waitForSelector`, `waitForUrl`
-- inspection: `getElementPosition`, `getActiveTab`, `getElementText`, `getPageInfo`, `listTabs`, `getCapabilities`
-
-### 2.4 Decision contract
+### 3.3 Decision
 
 ```js
 {
+  contractVersion,
   status: "act" | "done" | "blocked" | "failed",
   action: {...} | null,
-  targetRef: "element-id" | null,
-  confidence: 0.0,
-  reasonCode: "...",
-  expectedOutcome: {...},
-  recovery: {...}
+  targetRef,
+  confidence,
+  reasonCode,
+  expectedOutcome: {},
+  recovery: {},
+  metadata: {}
 }
 ```
 
-`reasonCode` là label ngắn phục vụ diagnostics/training. Không lưu chain-of-thought.
+Không lưu chain-of-thought. `reasonCode` là diagnostic/training label ngắn.
 
-### 2.5 Outcome contract
-
-Mỗi step phải biết action có thành công hay không và task đã hoàn tất chưa.
+### 3.4 Outcome
 
 ```js
 {
-  actionSucceeded: true,
-  taskSucceeded: false,
-  progress: 0.6,
-  evidence: [...],
-  errorCode: null
+  actionSucceeded,
+  taskSucceeded,
+  progress,
+  evidence: [],
+  errorCode,
+  metadata: {}
 }
 ```
 
----
-
-## 3. Kiến trúc dữ liệu từ Recorder đến training
-
-```text
-Recorder V4 interaction telemetry
-       ↓
-Training Capture
-       ↓
-Privacy Redaction
-       ↓
-Episode Builder
-       ↓
-Dataset Validator
-       ↓
-Dataset Split
- train / validation / test
-       ↓
-Training / Retrieval Index
-       ↓
-Strategy Provider
-       ↓
-Agent Runtime
-```
-
-### 3.1 Recorder
-
-Recorder giữ interaction fidelity:
-
-- exact waits
-- click target + rx/ry
-- mouse path
-- pointer hold
-- detailed keyboard operations
-- Backspace/Delete count
-- scroll/wheel metrics
-- navigation timing
-
-Recorder không chịu trách nhiệm suy luận goal.
-
-### 3.2 Training Capture
-
-Lớp mới sẽ ghép Recorder event với:
-
-```text
-TASK
-STATE_BEFORE
-ACTION
-STATE_AFTER
-OUTCOME
-```
-
-Đây là đơn vị demonstration chuẩn.
-
-### 3.3 Privacy Redaction
-
-Mặc định không lưu:
-
-- password / credential fields
-- cookie
-- access/refresh token
-- Authorization header
-- clipboard content
-- payment-card/secret values
-- raw sensitive form text
-
-Với text analytics có thể chỉ lưu:
+### 3.5 Episode
 
 ```js
 {
-  typedCharCount,
-  backspaceCount,
-  deleteCount,
-  keyIntervalsMs,
-  finalLength
-}
-```
-
-Task datasets có nội dung semantic cần thiết phải được cung cấp riêng hoặc đã được kiểm soát/redact.
-
-### 3.4 Episode format
-
-```js
-{
+  contractVersion,
   episodeId,
   task,
   environment,
-  steps: [
-    {
-      index,
-      stateBefore,
-      action,
-      stateAfter,
-      outcome,
-      interactionMeta
-    }
-  ],
+  steps,
   finalOutcome,
   recorderMeta
 }
 ```
 
----
+## 4. Execution Behavior Contract
 
-## 4. Hướng huấn luyện
+Action Contract hiện tại vẫn là semantic normalized action contract. Không nhồi natural behavior fields trực tiếp vào Strategy Decision.
 
-Không bắt đầu bằng model phức tạp. Phát triển theo tầng để có baseline đo được.
-
-### Phase A — Rule/heuristic baseline
-
-Mục tiêu: kiểm chứng contracts + runtime loop.
-
-Ví dụ `web_search`:
+Thêm một contract riêng ở execution layer:
 
 ```text
-searchbox visible → focus/type
-query present → Enter
-results visible → done
+Decision.action
+↓
+Execution Behavior Contract
+↓
+CDP Executor
 ```
 
-### Phase B — Demonstration retrieval
+Phiên bản đầu dự kiến:
 
-Tìm episode/step gần nhất theo:
+```js
+{
+  behaviorVersion: "0.1",
+  actionId: "a17",
+  action: "click",
+  targetRef: "e17",
+  pointer: {
+    profile: "learned",
+    targetAcquisition: "adaptive"
+  },
+  timing: {
+    profile: "learned"
+  },
+  keyboard: null,
+  scroll: null,
+  metadata: {}
+}
+```
+
+Contract không cần chứa toàn bộ sampled trajectory nếu execution policy có thể sinh nó runtime; mục tiêu là giữ boundary sạch giữa planner và executor.
+
+## 5. Natural execution không phải randomization
+
+Không dùng nền tảng:
 
 ```text
-task type + URL/domain + semantic state
+random delay everywhere
+random jitter everywhere
 ```
 
-Sau đó dùng action mẫu làm candidate.
+Natural execution phải xuất phát từ human demonstration distributions và phụ thuộc context/target.
 
-### Phase C — Behavior cloning / action prediction
-
-Training samples:
+Ví dụ click execution:
 
 ```text
-(task + stateBefore) -> action
+current pointer position
+→ target acquisition path
+→ velocity/deceleration profile
+→ corrections near target nếu distribution phù hợp
+→ hover/acquisition pause
+→ mouseDown
+→ hold duration
+→ mouseUp
 ```
 
-Đánh giá bằng action accuracy và task success rate, không chỉ loss.
+Typing:
 
-### Phase D — Candidate ranking / value model
+```text
+focus acquisition
+→ initial pause
+→ key timing rhythm
+→ burst/pause structure
+→ editing operations
+```
 
-Sinh nhiều action candidate rồi xếp hạng theo xác suất tạo progress/success.
+Scroll:
 
-### Phase E — Planner policy
+```text
+wheel burst
+→ delta/time profile
+→ pause
+→ optional correction
+```
 
-Planner có thể tạo subgoal và re-plan sau mỗi observation.
+Mục tiêu là correctness + fidelity, không phải bot-evasion heuristics.
 
-Model không được tự gọi browser trực tiếp; mọi action phải đi qua Strategy contract và Executor contract.
+## 6. Training Collector là nguồn Behavior Learning
 
----
+Training Collector chạy song song với Agent Runtime và thu hai raw stream đồng bộ:
 
-## 5. Agent Runtime chuẩn
+```text
+RAW PHYSICAL
+pointer / wheel / keyboard timing / idle / scroll
++
+SEMANTIC DOM
+stable element refs / role / selector / rect / state / action / mutation
+↓
+CORRELATION
+physical ↔ targetRef
+```
+
+Raw capture không bake derived speed/acceleration/path/pause distributions.
+
+Derived offline behavior features dự kiến:
+
+### Pointer
+
+- path shape;
+- duration/distance;
+- velocity profile;
+- acceleration / jerk;
+- curvature;
+- overshoot/correction;
+- target acquisition slowdown;
+- hover/acquisition pause;
+- mouse down→up duration.
+
+### Keyboard
+
+- keyDown→keyUp duration;
+- inter-key intervals;
+- typing bursts;
+- pauses;
+- Backspace/Delete/Tab/Enter operation timing.
+
+### Scroll
+
+- wheel burst duration;
+- delta distribution;
+- velocity profile;
+- pauses;
+- correction/settling behavior.
+
+Semantic correlation cho phép condition behavior theo target/context, ví dụ small button, large card và textbox có acquisition/timing distributions khác nhau.
+
+## 7. Collector raw storage/dataset architecture
+
+Current development direction:
+
+```text
+V0.5 Compact Raw
+→ targetRef instead of repeated semanticTarget
+→ mutation burst
+→ state diff
+→ JSONL debug export
+
+V0.6
+→ IndexedDB ChunkStore
+→ streaming export
+→ gzip .jsonl.gz
+→ recovery/checksum/retention
+
+Dataset Pipeline
+→ validate/redact
+→ derive features
+→ episodes/behavior samples
+→ Parquet for analytics/training
+```
+
+Debug auto-export/manual download không phải storage architecture dài hạn.
+
+## 8. Agent Runtime one-action loop
 
 ```text
 1. receive Task
 2. validate Task
 3. observe state
-4. redact state
+4. privacy redact
 5. strategy.decide(task, state, history)
 6. validate Decision
-7. execute one action
-8. observe stateAfter
-9. evaluate outcome / goal
-10. append trajectory step
-11. repeat
+7. Behavior Policy prepares execution contract
+8. Executor executes ONE normalized action
+9. observe stateAfter
+10. evaluate Outcome / Goal
+11. append trajectory
+12. repeat
 ```
 
-Runtime budgets bắt buộc:
+Budgets:
 
-- maxSteps
-- maxDurationMs
-- maxConsecutiveFailures
-- maxReplans
-- domain/navigation constraints nếu task yêu cầu
+- maxSteps;
+- maxDurationMs;
+- maxConsecutiveFailures;
+- maxReplans;
+- domain/navigation constraints.
 
-Agent dừng với một trong:
+Terminal states:
 
 ```text
 DONE
@@ -302,182 +337,152 @@ BUDGET_EXHAUSTED
 CANCELLED
 ```
 
----
+## 9. Strategy learning roadmap
 
-## 6. Module Strategy mới
+```text
+Rule/heuristic baseline
+↓
+Demonstration retrieval
+↓
+Behavior cloning / action prediction
+↓
+Candidate ranking / value model
+↓
+Goal-directed planner + replanning
+```
 
-Vị trí:
+Strategy quality được đánh giá bằng task progress/success, không chỉ action classification accuracy.
+
+## 10. Natural Behavior learning roadmap
+
+Behavior learning là roadmap riêng nhưng dùng cùng demonstrations.
+
+```text
+Raw Collector Session
+↓
+Physical/Semantic Correlation
+↓
+Feature Extractor
+↓
+Behavior Dataset
+↓
+Empirical Distribution Baseline
+↓
+Context-conditioned Behavior Model
+↓
+Execution Behavior Contract
+↓
+Executor
+```
+
+### Phase N0 — Feature extraction
+
+- pointer segments quanh action target;
+- hover/acquisition windows;
+- click hold distributions;
+- key timing/bursts;
+- wheel/scroll bursts.
+
+### Phase N1 — Empirical baseline
+
+Không train model phức tạp ngay. Fit distributions theo action/target context và sample từ distributions có constraints.
+
+### Phase N2 — Context-conditioned policy
+
+Condition theo:
+
+```text
+action type
+current pointer position
+target rect/size
+target semantic role
+editable state
+scroll state
+recent interaction history
+```
+
+### Phase N3 — Learned trajectory/timing policy
+
+Chỉ sau khi có dataset đủ và offline metrics rõ mới thử learned trajectory/timing model.
+
+## 11. Evaluation
+
+Agent phải được đo trên ba trục riêng:
+
+```text
+Task Understanding / Planning
+→ goal success / progress / recovery
+
+Action Correctness
+→ đúng target + đúng normalized action
+
+Execution Fidelity
+→ trajectory/timing distributions so với held-out human demonstrations
+```
+
+Natural execution không được phép làm giảm task correctness.
+
+## 12. Privacy
+
+Không thu/lưu:
+
+- password/credential values;
+- cookies;
+- access/refresh tokens;
+- Authorization headers;
+- clipboard content;
+- payment secrets;
+- local/session storage secrets;
+- raw sensitive form text;
+- printable key content trong raw physical stream.
+
+Sensitive filtering phải xảy ra trước khi data rời content script.
+
+## 13. Module boundaries hiện tại
 
 ```text
 control-center/manager/strategy/
-├─ index.js
-├─ contracts.js
-├─ baseline_strategy.js
-└─ README.md
+  Task/Observation/Decision/Outcome contracts
+  baseline strategy
+
+control-center/extension/agent-runtime-extension/
+  experimental normalized-action → CDP runtime
+
+training-collector/
+  physical + semantic human demonstration telemetry
+
+recorder/
+  deterministic Scenario generation
 ```
 
-Strategy không phụ thuộc trực tiếp vào UI hay queue manager.
+Strategy chưa được nối trực tiếp vào production manager loop cho tới khi Observer + goal checker + one-action executor bridge được kiểm chứng.
 
-Interface:
+## 14. Milestones tiếp theo
 
-```js
-const strategy = createStrategy({ provider });
-const decision = await strategy.decide({ task, observation, history });
-```
+### Collector
 
-Provider roadmap:
+- native V0.5 validation bằng dữ liệu Chrome thật;
+- so V0.4/V0.5 về size, mutation reduction, correlation và integrity;
+- V0.6 IndexedDB ChunkStore + streaming gzip archive.
 
-```text
-baseline
-retrieval
-trained-policy
-planner-model
-```
+### Agent
 
-Tất cả provider phải trả cùng Decision contract.
+- định nghĩa `Execution Behavior Contract v0.1` trong code;
+- behavior feature extractor offline;
+- empirical natural timing/pointer baseline;
+- one-action Agent Runtime bridge;
+- goal checker + trajectory diagnostics;
+- sau đó mới nối trained/retrieval Strategy.
 
----
-
-## 7. Mapping với code hiện tại
-
-### Recorder
-
-Hiện tại:
-
-```text
-interaction capture
-```
-
-Sẽ thêm sau:
-
-```text
-Training Capture Mode
-stateBefore/stateAfter hooks
-privacy-redacted episode export
-```
-
-### Stealth Executor
-
-Giữ vai trò Action Executor. Không chứa planning policy.
-
-### run_check.js
-
-Giữ deterministic scenario runner.
-
-Agent Runtime sẽ tái sử dụng cùng action contract nhưng gọi từng action theo vòng observe/decide/execute.
-
-### Control Center
-
-Sau khi Strategy contract ổn sẽ thêm Agent Mode:
-
-```text
-Task input
-Browser selection
-Strategy provider
-Budgets
-Live trajectory
-Goal status
-```
-
-Queue/scheduling hiện tại vẫn được tái sử dụng ở mức job.
-
----
-
-## 8. Kế hoạch phát triển / test
-
-### M0 — Architecture + contracts
-
-- [x] vẽ kiến trúc end-to-end
-- [x] tạo Strategy module skeleton
-- [x] định nghĩa Task/Observation/Decision/Outcome/Episode contracts
-- [ ] contract smoke test trong CI
-
-### M1 — Observer
-
-- [ ] semantic interactive-element snapshot
-- [ ] focused element
-- [ ] URL/title/viewport/scroll
-- [ ] stable element refs
-- [ ] privacy redaction
-- [ ] observer fixtures/tests
-
-### M2 — Training Capture
-
-- [ ] gắn Task vào recording session
-- [ ] stateBefore/action/stateAfter
-- [ ] outcome labels
-- [ ] Episode JSON export
-- [ ] password/credential exclusion tests
-
-### M3 — Baseline Strategy Runtime
-
-- [ ] Agent Runtime loop
-- [ ] one-action-at-a-time executor bridge
-- [ ] baseline rules for a small task set
-- [ ] budgets/recovery
-- [ ] live trajectory diagnostics
-
-### M4 — Dataset pipeline
-
-- [ ] schema validator
-- [ ] sanitizer/redactor
-- [ ] episode quality scoring
-- [ ] train/validation/test split by task/domain/session
-- [ ] dataset statistics
-
-### M5 — Retrieval Strategy
-
-- [ ] semantic state fingerprint
-- [ ] nearest demonstrations
-- [ ] candidate action ranking baseline
-
-### M6 — Trained policy
-
-- [ ] training export format
-- [ ] action prediction model
-- [ ] offline evaluation
-- [ ] shadow-mode evaluation before browser execution
-
-### M7 — Goal-directed Planner
-
-- [ ] subgoal representation
-- [ ] progress model
-- [ ] re-planning
-- [ ] recovery from changed UI
-- [ ] multi-step benchmark
-
----
-
-## 9. Benchmark đầu tiên
-
-Không bắt đầu bằng web phức tạp. Bộ benchmark ban đầu:
-
-```text
-B1: open a known URL
-B2: locate and focus a semantic input
-B3: type requested text
-B4: submit with Enter/button
-B5: verify resulting state
-B6: recover from one dismissible overlay
-B7: scroll to locate a target
-```
-
-Sau khi B1-B7 ổn mới map thành task tổng hợp kiểu:
-
-```text
-"Open Google and search for <query>"
-```
-
-Success phải được đo bằng state/outcome, không đo bằng việc agent đã phát đủ số action.
-
----
-
-## 10. Nguyên tắc phát triển tiếp theo
+## 15. Nguyên tắc phát triển
 
 1. Contract trước, implementation sau.
-2. Observer/goal checker quan trọng ngang planner.
-3. Không train trực tiếp từ raw Recorder log chưa ghép state/task/outcome.
-4. Deterministic Scenario Mode và Agent Mode tách biệt.
-5. Mọi provider dùng chung action contract.
-6. Privacy redaction xảy ra trước khi ghi dataset training.
-7. Mỗi milestone phải có fixture + offline test trước khi chạy browser thật.
+2. Strategy/Planner chỉ quyết định WHAT.
+3. Natural Behavior Policy quyết định HOW naturally.
+4. Executor là nơi duy nhất dịch normalized execution thành CDP.
+5. Không train trực tiếp từ raw telemetry chưa qua correlation/validation.
+6. Raw Collector giữ dữ liệu nguyên thủy; derived features nằm ngoài raw capture.
+7. Privacy boundary ở nguồn capture.
+8. Deterministic Scenario Mode không bị thay thế bởi Agent Mode.
+9. Mỗi milestone cần CI/offline tests; browser manual validation được ghi riêng.
+10. GitHub `STATUS.md` phải được cập nhật thường xuyên để giữ project continuity.
