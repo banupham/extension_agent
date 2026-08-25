@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('target_registry.js');
+importScripts('target_registry.js', 'cdp_plan_dispatcher.js');
 
 const SCOPE = 'AGENT_RUNTIME_V02';
 const LEGACY_SCOPE = 'AGENT_RUNTIME_V01';
@@ -74,30 +74,32 @@ async function observe(tabId) {
     const selector = 'a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]';
     const nodes = [...document.querySelectorAll(selector)].filter(visible).slice(0, 500);
     const active = document.activeElement;
+    let focusedRef = null;
+    const interactiveElements = nodes.map((el, i) => {
+      const r = el.getBoundingClientRect();
+      const tag = el.tagName.toLowerCase();
+      const ref = 'e' + i;
+      if (el === active) focusedRef = ref;
+      return {
+        ref,
+        tag,
+        role: el.getAttribute('role') || null,
+        label: label(el),
+        editable: el.isContentEditable || ['input','textarea','select'].includes(tag),
+        enabled: !el.matches(':disabled'),
+        visible: true,
+        selector: safeSelector(el),
+        rect: { x: r.x, y: r.y, width: r.width, height: r.height }
+      };
+    });
     return {
       schemaVersion: '0.2.0',
       url: location.href,
       title: document.title,
       viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
       scroll: { x: scrollX, y: scrollY },
-      focusedRef: null,
-      interactiveElements: nodes.map((el, i) => {
-        const r = el.getBoundingClientRect();
-        const tag = el.tagName.toLowerCase();
-        const ref = 'e' + i;
-        if (el === active) this.focusedRef = ref;
-        return {
-          ref,
-          tag,
-          role: el.getAttribute('role') || null,
-          label: label(el),
-          editable: el.isContentEditable || ['input','textarea','select'].includes(tag),
-          enabled: !el.matches(':disabled'),
-          visible: true,
-          selector: safeSelector(el),
-          rect: { x: r.x, y: r.y, width: r.width, height: r.height }
-        };
-      })
+      focusedRef,
+      interactiveElements
     };
   })()`;
   const result = await command(tabId, 'Runtime.evaluate', {
@@ -108,8 +110,6 @@ async function observe(tabId) {
   const raw = result?.result?.value || null;
   if (!raw) return null;
 
-  // focusedRef cannot safely be assigned through `this` in the map callback above.
-  // Reconstruct it without exposing a selector to Strategy when unavailable.
   const observationId = nextObservationId(tabId);
   const registered = registry.register({
     observationId,
@@ -127,6 +127,7 @@ async function observe(tabId) {
     title: raw.title,
     viewport: raw.viewport,
     scroll: raw.scroll,
+    focusedRef: raw.focusedRef || null,
     interactiveElements: registered.targets
   };
 }
@@ -175,6 +176,31 @@ async function navigateHistory(tabId, direction) {
   if (!entry?.id) throw new Error(`history_${direction}_unavailable`);
   registry.invalidateTab(tabId);
   return command(tabId, 'Page.navigateToHistoryEntry', { entryId: entry.id });
+}
+
+function planRequiresTarget(plan) {
+  return ['click', 'doubleClick', 'hover', 'moveTo', 'focus', 'drag', 'toggle', 'dismiss', 'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek'].includes(plan?.actionType);
+}
+
+async function executeCdpPlan(tabId, plan, observationId = null) {
+  const normalized = AgentCdpPlanDispatcher.validatePlan(plan);
+  if (planRequiresTarget(normalized)) {
+    const url = await currentUrl(tabId);
+    registry.resolve({ tabId, observationId, targetRef: normalized.targetRef, currentUrl: url });
+  }
+  const result = await AgentCdpPlanDispatcher.dispatchPlan(
+    normalized,
+    async (method, params) => {
+      const value = await command(tabId, method, params);
+      if (method === 'Input.dispatchMouseEvent' && params?.type === 'mouseMoved') {
+        pointerByTab.set(tabId, { x: Number(params.x), y: Number(params.y), ts: Date.now() });
+      }
+      return value;
+    },
+    sleep
+  );
+  registry.invalidateTab(tabId);
+  return { ...result, observationInvalidated: true };
 }
 
 async function executeNormalizedAction(tabId, action) {
@@ -232,7 +258,7 @@ async function executeNormalizedAction(tabId, action) {
 
     case 'scrollVertical':
     case 'scrollHorizontal': {
-      const point = pointerByTab.get(tabId) || { x: Number(action.x || 400), y: Number(action.y || 300) };
+      const point = pointerByTab.get(tabId) || { x: 400, y: 300 };
       const amount = Number(action.delta ?? action.amount ?? 480);
       const horizontal = action.action === 'scrollHorizontal';
       await command(tabId, 'Input.dispatchMouseEvent', {
@@ -281,6 +307,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         attached: attachedTabs.has(tab.id),
         tabId: tab.id,
         targetRegistry: registry.status(tab.id),
+        planExecution: { version: '0.1.0', allowlistedOnly: true },
         supportedActions: [
           'openUrl', 'reload', 'back', 'forward',
           'pressKey', 'type', 'typeText',
@@ -292,6 +319,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'ATTACH') return { ok: true, ...(await attach(tab.id)) };
     if (message.type === 'DETACH') return { ok: true, ...(await detach(tab.id)) };
     if (message.type === 'OBSERVE') return { ok: true, observation: await observe(tab.id) };
+    if (message.type === 'EXECUTE_PLAN') return { ok: true, result: await executeCdpPlan(tab.id, message.plan, message.observationId || null) };
     if (message.type === 'EXECUTE') return { ok: true, result: await executeNormalizedAction(tab.id, message.action) };
     return { ok: false, error: 'unknown_message' };
   })().then(sendResponse).catch(error => sendResponse({ ok: false, error: String(error?.message || error) }));
