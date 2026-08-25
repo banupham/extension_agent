@@ -1,15 +1,20 @@
 'use strict';
 
 (function initSemanticObserver(root) {
-  const NS = root.TrainingCollectorV02 = root.TrainingCollectorV02 || {};
-  const Privacy = NS.Privacy;
-  const refs = new WeakMap();
-  let nextRef = 1;
+  const NS2 = root.TrainingCollectorV02 = root.TrainingCollectorV02 || {};
+  const NS4 = root.TrainingCollectorV04 = root.TrainingCollectorV04 || {};
+  const Privacy = NS2.Privacy;
+  const registry = NS4.elementRegistry || (NS4.ElementRegistry?.createElementRegistry ? NS4.ElementRegistry.createElementRegistry() : null);
+  NS4.elementRegistry = registry;
+
+  const fallbackRefs = new WeakMap();
+  let fallbackNextRef = 1;
 
   function getRef(el) {
     if (!(el instanceof Element)) return null;
-    if (!refs.has(el)) refs.set(el, `e${nextRef++}`);
-    return refs.get(el);
+    if (registry) return registry.getRef(el);
+    if (!fallbackRefs.has(el)) fallbackRefs.set(el, `e${fallbackNextRef++}`);
+    return fallbackRefs.get(el);
   }
 
   function visible(el) {
@@ -79,16 +84,17 @@
       .filter(visible).slice(0, 500);
     const active = document.activeElement && document.activeElement !== document.body && !isSensitive(document.activeElement) ? document.activeElement : null;
     return {
-      schemaVersion: '0.2.0',
-      pageInstanceId: NS.pageInstanceId,
+      schemaVersion: '0.4.0',
+      pageInstanceId: NS2.pageInstanceId,
       url: location.href,
       title: document.title,
       viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
       scroll: { x: Math.round(scrollX), y: Math.round(scrollY) },
       focusedElementRef: active instanceof Element ? getRef(active) : null,
-      interactiveElements: candidates.map(semanticElement).filter(Boolean)
+      interactiveElements: candidates.map(semanticElement).filter(Boolean),
+      registry: registry?.stats ? registry.stats() : null
     };
   }
 
-  NS.SemanticObserver = { getRef, semanticElement, snapshot, cssSelector, isSensitive };
+  NS2.SemanticObserver = { getRef, semanticElement, snapshot, cssSelector, isSensitive };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
