@@ -37,11 +37,18 @@ jobs:
           node --check recorder/background.js
           node --check recorder/content.js
           node --check recorder/popup.js
+          node --check training-collector/core/privacy.js
+          node --check training-collector/core/action_normalizer.js
+          node --check training-collector/core/episode_builder.js
+          node --check training-collector/observer/semantic_observer.js
           node --check training-collector/background.js
           node --check training-collector/content.js
           node --check training-collector/popup.js
+          node --check training-collector/tests/architecture_contract.js
       - name: Validate extension manifests
         run: |
           node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8'))"
       - name: Run strategy contract smoke test
         run: node control-center/script/checks/strategy_contract.js
+      - name: Run Collector architecture contract smoke test
+        run: node training-collector/tests/architecture_contract.js
