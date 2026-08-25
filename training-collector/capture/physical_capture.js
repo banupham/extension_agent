@@ -44,6 +44,7 @@
     const emitBatch = typeof options.emitBatch === 'function' ? options.emitBatch : () => {};
     const isSensitiveTarget = typeof options.isSensitiveTarget === 'function' ? options.isSensitiveTarget : () => false;
     const getContext = typeof options.getContext === 'function' ? options.getContext : () => ({});
+    const enrichEvent = typeof options.enrichEvent === 'function' ? options.enrichEvent : event => event;
     const queue = [];
     const listeners = [];
     let running = false;
@@ -69,6 +70,11 @@
       }, FLUSH_INTERVAL_MS);
     }
 
+    function maybeEnrich(event) {
+      if (!event || !['pointer', 'wheel', 'keyboard'].includes(event.type)) return event;
+      try { return enrichEvent(event) || event; } catch { return event; }
+    }
+
     function push(event, activity = true) {
       if (!running || !event) return;
       const ts = Number(event.tsEpochMs || Date.now());
@@ -86,7 +92,7 @@
         }
       }
       if (activity) lastActivityEpochMs = ts;
-      queue.push({ ...event, ...contextFields() });
+      queue.push({ ...maybeEnrich(event), ...contextFields() });
       if (queue.length >= FLUSH_EVENT_COUNT) flush();
       else scheduleFlush();
     }
