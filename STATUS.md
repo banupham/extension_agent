@@ -77,7 +77,9 @@ Main files:
 
 ```text
 training-collector/tools/build_action_windows.js
+training-collector/tools/analyze_action_windows.js
 training-collector/tests/action_window_contract.js
+training-collector/tests/action_window_quality_contract.js
 ```
 
 Current derived Action Window version: `0.1.3`.
@@ -120,7 +122,7 @@ targetDescriptor
 resolvedTargetDescriptor
 ```
 
-A1 now reads these real fields. Earlier synthetic aliases (`resolvedTarget`) were insufficient for native data.
+A1 reads these implementation-truth fields. Synthetic aliases are compatibility fallback only.
 
 ### Actionable-parent label enrichment
 
@@ -135,6 +137,8 @@ resolvedTargetDescriptor
 
 Derived output records `labelSource` and `labelEnriched`. Raw facts are never mutated.
 
+Native-session spot analysis showed that this recovers useful labels, but click label coverage still varies by site/session (roughly 40–67% in the recent Facebook/TikTok test sessions). Missing labels are not fabricated.
+
 ### Hover noise filtering
 
 Raw keeps all hover facts. A1 filters only derived training windows for known generic background/container targets such as `html`, `body`, `ytd-app`, `ytd-browse` when there is no stronger semantic evidence.
@@ -143,7 +147,7 @@ Preview-like hover is retained when UI mutation/outcome supports semantic intent
 
 ### Preserve behavior facts for A2
 
-Action Windows now retain safe physical facts required for behavior learning:
+Action Windows retain safe physical facts required for behavior learning:
 
 ```text
 pointer: phase / x / y / movement / buttons / pressure / timing
@@ -171,19 +175,106 @@ Only high-confidence cases are promoted:
 
 ```text
 role=switch/checkbox or dom-change.checked → toggle
-known close/dismiss labels             → dismiss
-dom-change.selectedIndex               → selectOption
-dom-submit                              → submit
-dom-focus focused=true                  → focus
+known close/dismiss labels                  → dismiss
+dom-change.selectedIndex                    → selectOption
+dom-submit                                  → submit
+dom-focus focused=true                      → focus
 ```
 
 Ambiguous actions such as Facebook Like remain generic `click` unless state evidence is strong enough.
 
 ---
 
+# A1 training eligibility — NEW INVARIANT
+
+One Action Window can be useful for Behavior learning even when it is not clean enough for Strategy learning.
+
+Do not use one global good/bad filter.
+
+```text
+Strategy dataset
+→ requires semantic action/target evidence appropriate to the action
+→ never invent missing label/role semantics
+
+Behavior dataset
+→ values physical trajectory/timing/burst evidence
+→ semantic label may be optional
+```
+
+`analyze_action_windows.js` now reports:
+
+```text
+trainingEligibility.strategy
+  eligible / rejected / rejectedReasons
+
+trainingEligibility.behavior
+  full / partial / none / reasons
+```
+
+Examples:
+
+```text
+unlabeled click + strong pointer lead-in
+→ Strategy: reject
+→ Behavior: useful
+
+scrollVertical with wheel burst
+→ Strategy action semantics self-contained
+→ Behavior: full
+
+keyboard typeText on editable target
+→ Strategy: eligible when editable target can be identified
+→ Behavior: full timing evidence, no printable content
+```
+
+CI contract: `training-collector/tests/action_window_quality_contract.js`.
+
+Latest eligibility-enabled CI at commit `c6184b45f7105cd34ea49a4b2763c0d5f0841b00`, run `32877556243`: SUCCESS.
+
+---
+
+# A1 remaining gate before A2
+
+Hover windows currently preserve dwell/outcome semantics but do not yet embed the pointer approach trajectory in `before`.
+
+Therefore current analyzer intentionally reports hover behavior as partial when only dwell is available:
+
+```text
+hover dwell/outcome present
++ pointer approach absent from Action Window
+→ behaviorEvidenceLevel = partial
+```
+
+Before A2, either enrich hover windows with bounded pointer lead-in/leave facts or make A2 explicitly join raw events by action anchor. Preferred direction: enrich A1 windows so A2 does not need a second reconstruction path.
+
+Also continue real-session quality checks for:
+
+```text
+action family counts
+resolved/enriched label coverage
+hover kept vs filtered
+click pointer lead-in
+real drag windows
+horizontal vs vertical scroll bursts
+keyboard privacy
+outcome mutation/route coverage
+frame-aware identity
+Strategy vs Behavior eligibility rates
+```
+
+Ordering invariant:
+
+```text
+tsEpochMs = primary global reconstruction time
+pageSeq/sourceSeq = local ordering
+sessionSeq = persistence/integrity only
+```
+
+---
+
 # “Tay chân” Agent — executor gap
 
-Current experimental runtime still directly executes only a small subset:
+Current experimental runtime still directly executes only:
 
 ```text
 openUrl
@@ -191,13 +282,13 @@ pressKey
 type
 ```
 
-The most important P0 gap is not another semantic verb; it is the **Observation Target Registry**:
+The most important P0 gap is the **Observation Target Registry**:
 
 ```text
 observationId + targetRef
 → tab/frame/document
 → semantic descriptor / current rect
-→ resolvable CDP node/runtime target
+→ resolvable CDP target
 ```
 
 The Brain must be able to emit `click e17`; stale refs must fail and trigger re-observation, never blind coordinate reuse.
@@ -232,35 +323,9 @@ selectText
 uploadFile
 ```
 
+Media verbs compile to generic semantic click/drag; do not add site-specific YouTube/TikTok executor methods.
+
 See `docs/AGENT_EXECUTOR_GAP_MAP.md`.
-
----
-
-# A1 next gate
-
-Run the A1 builder on native Facebook/TikTok/YouTube socket JSONL and measure:
-
-```text
-action family counts
-resolved/enriched label coverage
-hover windows kept vs filtered
-pointer facts around click
-real drag windows
-horizontal vs vertical scroll bursts
-keyboard privacy
-outcome mutation/route coverage
-frame-aware target identity
-```
-
-Then decide whether A1 needs additional derivation rules before A2.
-
-Ordering invariant:
-
-```text
-tsEpochMs = primary global reconstruction time
-pageSeq/sourceSeq = local ordering
-sessionSeq = persistence/integrity only
-```
 
 ---
 
@@ -268,10 +333,13 @@ sessionSeq = persistence/integrity only
 
 ```text
 A2 Behavior Feature Extractor
-→ pointer/keyboard/scroll/drag features
+→ pointer/keyboard/scroll/drag/hover features
 
 A3 Empirical Behavior Baseline
 → context-conditioned distributions
+
+P0 executor expansion
+→ target registry + CDP input/navigation primitives
 
 A4 One-action Agent Runtime Bridge
 → Strategy → Agent Action → Behavior → CDP → Observe After
@@ -303,8 +371,9 @@ Human login demonstrations may contribute timing/semantic form behavior but neve
 2. Scenario Mode and Agent Mode remain separate.
 3. Strategy=WHAT; Behavior=HOW; CDP Planner=exact plan; Executor=dispatch.
 4. Collector raw stays un-derived and privacy-filtered.
-5. Derived cleanup belongs in dataset tooling, never overwrite raw truth.
-6. `tsEpochMs` is global dataset time; `sessionSeq` is durability order.
-7. Human demonstrations provide distributions/context, not literal replay.
-8. CI success != native Chrome Agent validation.
-9. Update STATUS/JOURNAL after architecture or dataset-contract milestones.
+5. Derived cleanup belongs in dataset tooling; never overwrite raw truth.
+6. Strategy and Behavior dataset eligibility are separate concepts.
+7. `tsEpochMs` is global dataset time; `sessionSeq` is durability order.
+8. Human demonstrations provide distributions/context, not literal replay.
+9. CI success != native Chrome Agent validation.
+10. Update STATUS/JOURNAL after architecture or dataset-contract milestones.
