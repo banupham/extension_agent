@@ -1,4 +1,4 @@
-# Training Collector V0.2 Architecture Foundation
+# Training Collector V0.3 Raw Browser Session
 
 Extension riêng cho human demonstration capture phục vụ dataset/agent training.
 
@@ -6,7 +6,88 @@ Extension riêng cho human demonstration capture phục vụ dataset/agent train
 
 Collector là **observe-only**. Không tự click, type, navigate và không dùng `chrome.debugger` để điều khiển trang.
 
-Collector V0.2 chuẩn hóa dữ liệu theo transition:
+V0.3 có hai lớp dữ liệu độc lập:
+
+```text
+Browser Session Raw Capture   <- luôn chạy trong Chrome session
+Optional Task Episode         <- nhãn/segment semantic nằm bên trong raw session
+```
+
+Raw capture bắt đầu tự động khi extension/browser session hoạt động trên trang `http/https` và tiếp tục xuyên suốt các tab hợp lệ cho đến khi Chrome session kết thúc.
+
+## Browser-session model
+
+```text
+Chrome opens
+  -> browserSessionId
+  -> content pages HELLO
+  -> raw event batches
+  -> chunked chrome.storage.local persistence
+  -> heartbeat / lastSeenAt
+Chrome closes
+  -> extension process also stops
+Next Chrome start
+  -> previous active session is finalized as closed-inferred
+  -> endedAt uses the last persisted lastSeenAt
+  -> new browserSessionId is created
+```
+
+Chrome extension không thể chạy code sau khi toàn bộ Chrome process đã thoát. Vì vậy session end được suy ra từ `lastSeenAt` của dữ liệu đã flush trước khi browser đóng.
+
+## Raw physical data V0.3
+
+Collector lưu raw event samples, không aggregate speed/path ở bước thu thập.
+
+Các nhóm hiện tại:
+
+- pointer move/down/up/cancel;
+- browser coalesced pointer samples khi API có sẵn;
+- client/screen coordinates, movement delta, button/buttons, pressure, pointer type;
+- raw wheel delta X/Y/Z và deltaMode;
+- raw scroll position samples;
+- keyboard down/up timing và operation class;
+- printable keyboard event chỉ giữ class `printable`, không giữ ký tự/code để tránh tái tạo text;
+- window focus/blur;
+- document visibility;
+- heartbeat;
+- explicit `idle-gap` marker khi khoảng cách giữa hai physical activities >= 500 ms.
+
+Tốc độ, acceleration, path distance, pause distribution và gesture segmentation được tính sau từ raw timestamps/samples, không được bake vào raw collector.
+
+## Raw event ordering
+
+Background gắn thêm:
+
+```text
+sessionSeq
+browserSessionId (ở session metadata)
+tabId
+windowId
+frameId
+pageInstanceId
+```
+
+Dữ liệu được ghi theo chunk 250 event để tránh giữ cả browser session trong RAM.
+
+## Privacy boundary
+
+Collector không đọc/lưu:
+
+- password value;
+- cookie;
+- localStorage/sessionStorage content;
+- Authorization/token secret;
+- clipboard content;
+- raw text value của input;
+- printable character/code trong raw keyboard stream.
+
+Sensitive input/keyboard targets được bỏ qua. Raw pointer trajectory không chứa DOM text/value của element bên dưới con trỏ.
+
+Raw page context chỉ gắn `origin + pathname`; query/hash không được đưa vào physical event stream.
+
+## Semantic task episode
+
+V0.2 transition architecture vẫn được giữ cho task labels:
 
 ```text
 Task
@@ -15,105 +96,66 @@ Task
 + finalOutcome
 ```
 
-## Architecture
+Episode không bật/tắt raw physical capture. Nó chỉ đánh dấu một đoạn phục vụ demonstration/task training.
 
-```text
-DOM / Browser page
-  -> Privacy classifier
-  -> Semantic Observer + stable element refs
-  -> Human Action Normalizer
-  -> Transition START(stateBefore + action)
-  -> Transition END(stateAfter + outcome)
-  -> Episode Builder
-  -> chrome.storage.local
-```
-
-Các lớp hiện tại:
+## Files
 
 ```text
 core/privacy.js
 core/action_normalizer.js
 core/episode_builder.js
+core/raw_session_store.js
 observer/semantic_observer.js
+capture/physical_capture.js
 content.js
 background.js
+popup.html
+popup.js
+tests/architecture_contract.js
+tests/raw_session_contract.js
 ```
 
-### Stable element ref
+## Xem dữ liệu thử
 
-Trong một page instance, cùng một DOM Element giữ cùng `ref` thông qua `WeakMap`. Ref chỉ có ý nghĩa trong page instance đó; navigation/reload tạo `pageInstanceId` mới.
+Sau khi load/reload unpacked extension:
 
-### Partial transitions
+1. mở một trang `http/https` bình thường;
+2. di chuột, dừng một lúc, click, scroll, gõ vào field không nhạy cảm;
+3. mở popup Collector;
+4. `Preview Raw` để xem 80 event cuối;
+5. `Export Raw JSON` để tải toàn bộ raw data của browser session hiện tại.
 
-`TRANSITION_START` được gửi trước khi transition hoàn tất. Nếu click tạo navigation và content script biến mất trước `TRANSITION_END`, Episode vẫn giữ transition ở trạng thái `pending/partial` thay vì mất action.
-
-### Privacy boundary
-
-V0.2 không đọc cookie, local/session storage, Authorization header hay raw text value.
-
-Element được phân loại nhạy cảm trước khi tạo observation/action. Password và metadata có dấu hiệu password/passcode/OTP/token/secret/CVV/card/authorization/session id bị loại khỏi semantic observations và không tạo keyboard/input transition.
-
-Text interaction thông thường chỉ giữ metadata như operation, key class, inputType và length; không giữ ký tự/text người dùng đã nhập.
-
-## Observation V0.2
-
-Observation gồm:
-
-- `schemaVersion`;
-- `pageInstanceId`;
-- URL/title;
-- viewport/devicePixelRatio;
-- scroll position;
-- `focusedElementRef`;
-- danh sách interactive element semantic với stable ref, tag, role, label, editable/enabled/visible, selector và rect.
-
-## Action V0.2
-
-Các action human capture hiện có:
-
-- `click`;
-- `key`;
-- `text-key`;
-- `text-change` fallback cho input không gắn với keydown gần nhất;
-- `focus`;
-- `scroll`.
-
-Mỗi action dùng `targetRef` thay vì copy lại toàn bộ element.
-
-## Episode V0.2
-
-Mỗi transition có:
+File export có dạng:
 
 ```js
 {
-  transitionId,
-  status: 'pending' | 'complete',
-  startedAtMs,
-  endedAtMs,
-  stateBefore,
-  action,
-  stateAfter,
-  outcome: {
-    actionSucceeded,
-    partial
-  }
+  exportVersion: '0.3.0',
+  exportedAt: '...',
+  session: {
+    sessionId: 'browser-...',
+    startedAt: '...',
+    lastSeenAt: '...',
+    eventCount: 1234,
+    chunkCount: 5,
+    privacy: {...}
+  },
+  events: [
+    { sessionSeq: 1, type: 'pointer', phase: 'move', tsEpochMs: 0, x: 0, y: 0, ... },
+    { sessionSeq: 2, type: 'idle-gap', durationMs: 900, ... },
+    { sessionSeq: 3, type: 'wheel', deltaY: 100, ... }
+  ]
 }
 ```
 
-## Test
+## Chưa làm sau V0.3
 
-`tests/architecture_contract.js` kiểm tra privacy classification, normalized action contract và begin/finish transition contract. GitHub CI chạy test này cùng syntax/manifest checks.
+- browser-tested validation trên Chrome thật cho raw session/export;
+- retry journal nếu một RAW_BATCH gửi background thất bại;
+- streaming export cho session cực lớn;
+- storage retention/cleanup UI;
+- cross-navigation episode reconciliation;
+- shadow DOM/iframe semantic observer sâu;
+- dataset conversion/JSONL;
+- derived physical feature pipeline (speed/acceleration/path/pause distributions).
 
-## Chưa làm ở V0.2
-
-- DOM mutation-aware observation/diff;
-- cross-navigation transition reconciliation;
-- selector quality scoring;
-- shadow DOM/iframe observer;
-- richer accessibility semantics;
-- task args privacy policy;
-- dataset export/JSONL;
-- dataset quality metrics;
-- automatic goal/outcome inference.
-
-Các phần này sẽ được map và test riêng thay vì nhồi vào content script.
+Các phần derived sẽ nằm ngoài raw collector để raw source luôn có thể được xử lý lại bằng thuật toán mới.
