@@ -1,261 +1,330 @@
-# Training Collector V0.5 Compact Raw
+# Training Collector V0.7.2 — Frame-Aware Stream Diagnostics
 
-Extension observe-only cho human demonstration capture phục vụ dataset/agent training.
+Observe-only Chrome MV3 extension để thu human browser demonstrations cho dataset/agent training.
 
-## Mục tiêu V0.5
+Collector **không tự click/type/navigate** và không dùng `chrome.debugger` để điều khiển browser.
 
-V0.5 được điều chỉnh dựa trên phiên raw thực tế ~29k events của V0.4. Các vấn đề chính được xử lý:
-
-- semantic target bị lặp trên từng pointer/wheel sample;
-- DOM mutation chiếm phần lớn raw stream;
-- `visible` trước đây không phân biệt rendered với nằm trong viewport;
-- selector đơn lẻ thường quá chung;
-- task episode lặp full semantic observation;
-- JSON debug export không phù hợp cho session dài.
-
-## Kiến trúc runtime
+## Runtime hiện tại
 
 ```text
-Physical Capture -----------\
-                             -> targetRef correlation -> Raw Session
-Semantic DOM Capture -------/
-Mutation Observer -> 120ms mutation bursts
-Semantic Observer -> full page-instance snapshot anchor
-Optional Task Episode -> initial full observation + state diffs
+Physical Capture
+├─ pointer move/down/up/cancel
+├─ wheel / scroll position
+├─ keyboard timing + operation class
+├─ focus / visibility / idle / heartbeat
+└─ capture-time targetRef correlation
+
+Semantic Capture
+├─ DOM click/focus/input/change/submit
+├─ hover enter/dwell/leave raw facts
+├─ rendered / inViewport / interactable
+├─ selectorCandidates
+├─ semantic snapshots
+└─ 120 ms mutation bursts
+
+V0.7.2
+├─ all-frame raw capture
+├─ frame-context facts
+├─ frameId + documentId + pageInstanceId identity
+├─ SPA route-change snapshots
+└─ collector stream-health diagnostics
 ```
 
-Collector không tự click/type/navigate và không dùng `chrome.debugger` để điều khiển trang.
+Raw schema: `0.7.2`  
+Runtime/manifest: `0.7.2`
 
-## Compact target correlation
+## Frame-aware capture
 
-V0.4 có thể lặp cả semantic descriptor trên mỗi mouse sample. V0.5 chuyển sang:
+Content scripts chạy trong matching http/https frames với:
 
-```js
+```json
 {
-  type: 'pointer',
-  x: 100,
-  y: 200,
-  targetRef: 'e17'
+  "all_frames": true,
+  "match_about_blank": true,
+  "match_origin_as_fallback": true
 }
 ```
 
-Descriptor đầy đủ chỉ được gắn lần đầu ref đó xuất hiện trong stream tương ứng:
-
-```js
-{
-  type: 'pointer',
-  targetRef: 'e17',
-  targetDescriptor: {
-    elementRef: 'e17',
-    tag: 'button',
-    role: 'button',
-    label: 'Search',
-    selector: '#search',
-    selectorCandidates: [...],
-    rect: {...},
-    rendered: true,
-    inViewport: true,
-    interactable: true
-  }
-}
-```
-
-Những sample tiếp theo chỉ giữ `targetRef`.
-
-## Visibility / interactability
-
-Semantic element tách rõ:
+Mỗi frame có `pageInstanceId` riêng. Background bổ sung:
 
 ```text
-rendered      -> có layout và không display/visibility/opacity hidden
-inViewport    -> rect giao với viewport hiện tại
-interactable  -> rendered + inViewport + enabled + pointer-events hợp lệ
+tabId
+windowId
+frameId
+documentId
+documentLifecycle
 ```
 
-Field `visible` vẫn được giữ tạm để compatibility và hiện tương đương `rendered`.
-
-## Selector candidates
-
-Mỗi element có danh sách selector candidate có score thay vì chỉ một selector:
+Element identity phải hiểu theo composite context:
 
 ```text
-id       1.00
-data-testid 0.98
-name     0.90
-role     0.65
-tag      0.20
+tabId + frameId + pageInstanceId + elementRef
 ```
 
-`selector` hiện là candidate score cao nhất; `selectorCandidates` giữ fallback set.
+`x/y` của event trong iframe là frame-local client coordinates. `frame-context.coordinateSpace = frame-client` ghi rõ convention này.
 
-## Mutation burst
+Optional Task Episode hiện vẫn top-frame only để không trộn multi-frame state trước khi Agent Observation contract được nâng cấp. Continuous raw telemetry thì thu ở mọi matching frame.
 
-V0.4 ghi từng MutationRecord, dẫn tới mutation có thể chiếm gần toàn bộ file. V0.5 gom mutation theo burst 120 ms:
+## SPA route trace
 
-```js
-{
-  type: 'dom-mutation-burst',
-  windowMs: 120,
-  recordCount: 35,
-  addedCount: 4,
-  removedCount: 2,
-  attributes: {
-    'aria-expanded': 2,
-    hidden: 4
-  },
-  targetRefs: [...],
-  addedRefs: [...],
-  removedRefs: [...]
-}
-```
-
-Không lưu innerHTML/textContent/value.
-
-## State diff cho Task Episode
-
-Episode V0.5 dùng:
+Các trang như Google/YouTube có thể đổi route mà không reload document. V0.7.2 thêm:
 
 ```text
-initialObservation = full snapshot một lần
-transition 1 -> stateBeforeDiff / stateAfterDiff
-transition 2 -> stateBeforeDiff / stateAfterDiff
-...
+observer/route_trace.js
 ```
 
-Diff hiện tập trung vào:
+Khi `location.href` thay đổi:
 
-- focused element ref;
-- scroll x/y;
-- added/removed element refs;
-- rendered/inViewport/interactable/enabled;
-- rect thay đổi.
+```text
+route-change
+→ sanitized previous/current page
+→ semantic-snapshot snapshotReason=route-change
+```
 
-Nếu page instance thay đổi hoặc không thể diff an toàn, transition có thể fallback về full snapshot.
+Route detector dùng `popstate`, `hashchange` và polling 500 ms để bắt cả SPA `pushState/replaceState` mà content isolated world không nên giả định có thể patch an toàn.
+
+Không lưu URL query values/hash content; semantic snapshot dùng privacy-sanitized page representation.
+
+## Stream-health diagnostics
+
+Native session trước đó từng cho thấy một đoạn Google Search gần như chỉ có `physical` source. V0.7.2 thêm direct diagnostic facts:
+
+```text
+collector-stream-start
+collector-stream-health   // mỗi 10s
+collector-stream-stop
+```
+
+Health record gồm:
+
+```text
+isTopFrame
+readyState
+visibilityState
+viewport
+module availability
+cumulative sourceEventCounts
+```
+
+Mục tiêu là biết trực tiếp một frame có:
+
+```text
+physical
+semantic
+dom
+hover
+mutation
+navigation
+```
+
+đang phát dữ liệu hay không, thay vì suy đoán từ raw sau khi test.
+
+## Action semantics
+
+### Hover
+
+Raw chỉ giữ direct facts:
+
+```text
+dom-hover-enter
+dom-hover-dwell
+dom-hover-leave
+```
+
+`hover-preview` được derive offline bởi:
+
+```text
+training-collector/tools/build_action_semantics.js
+```
+
+Điều này cho phép thay thuật toán semantic segmentation mà không thu lại raw.
+
+### Click target resolution
+
+DOM click giữ đồng thời:
+
+```text
+targetRef          legacy/raw target
+rawTargetRef       DOM event.target
+resolvedTargetRef  best actionable interpretation
+targetResolution   method + confidence
+```
+
+Resolver ưu tiên:
+
+```text
+composedPath actionable
+→ elementFromPoint actionable
+→ raw actionable ancestor
+→ raw target
+```
+
+Không overwrite raw target.
 
 ## Timeline
 
-Hai thứ tự được phân biệt rõ:
-
 ```text
-tsEpochMs  = thời điểm event xảy ra/capture
-sessionSeq = thứ tự background persist event
+tsEpochMs  capture timestamp
+pageSeq    order trong pageInstance
+sourceSeq  order trong source stream
+sessionSeq durable persistence order
 ```
 
-Do nhiều source flush batch khác nhau, `sessionSeq` không được coi là chronological truth. Khi dựng trajectory offline, ưu tiên `tsEpochMs`, sau đó `tPageMs`, rồi `sessionSeq` làm tie-breaker.
+`sessionSeq` không phải chronological truth. Mutation burst nhận page/source sequence lúc burst bắt đầu, không phải lúc flush 120 ms sau.
 
-## Chunk persistence
+## Persistence / reliability
 
-V0.5 hiện vẫn dùng `chrome.storage.local` như development-stage raw store nhưng tăng chunk từ 250 lên 500 events để giảm metadata/chunk overhead.
-
-Đây **không phải storage architecture cuối cùng**. Hướng tiếp theo V0.6 là IndexedDB ChunkStore + recovery/retention + streaming export.
-
-## Export format trong giai đoạn phát triển
-
-Manual popup export chuyển sang JSONL/NDJSON:
+Raw store chính:
 
 ```text
-{"recordType":"session", ...}
-{"recordType":"event", ...}
-{"recordType":"event", ...}
-...
+RAW_BATCH + batchId
+→ ACK/retry sender
+→ background serialized append
+→ IndexedDB trainingCollectorRawV06
+   ├─ sessions
+   ├─ chunks
+   └─ batchReceipts
+```
+
+DB name V06 được giữ để tránh migration không cần thiết; schema event/session hiện là `0.7.2`.
+
+Chunk size: 1000 events.
+
+Reliability:
+
+```text
+batch receipt idempotency
+chunk checksum FNV-1a
+missing/checksum/metadata/sequence verification
+status-indexed session recovery
+```
+
+Không tự delete raw session khi integrity fail.
+
+Khi runtime schema thay đổi, active session schema cũ được đóng với `schema_upgrade_to_<version>` rồi session mới được tạo để tránh trộn schema trong cùng archive.
+
+## Temporary automatic export
+
+IndexedDB là persistence chính. Auto-download chỉ là development convenience.
+
+Flow:
+
+```text
+Chrome session A
+→ IndexedDB
+→ Chrome đóng
+→ startup sau infer/recover A closed
+→ full integrity verify
+→ offscreen CompressionStream(gzip)
+→ chrome.downloads.download
+→ chờ downloads.onChanged state=complete
+→ mark autoExport.complete
 ```
 
 File:
 
 ```text
-*.raw.jsonl
+Downloads/training-collector/training-collector-<sessionId>.raw.jsonl.gz
 ```
 
-JSONL giúp đọc theo stream và không cần parse một JSON array lớn. Gzip `.jsonl.gz` dự kiến ở V0.6 cùng streaming export.
-
-Auto-export JSON của previous session vẫn chỉ là **development/debug adapter tạm thời**, không phải phương thức lưu chính dài hạn.
+Popup có Recent Raw Sessions + autoExport status/error + Retry Auto Export.
 
 ## Analyzer
 
-Analyzer đọc cả raw JSON V0.4 cũ và raw JSONL V0.5:
+Analyzer đọc:
+
+```text
+legacy JSON
+JSONL
+JSONL.gz
+```
+
+Chạy:
 
 ```bat
-node training-collector\tools\analyze_raw.js path\to\session.raw.jsonl
+node training-collector\tools\analyze_raw.js Downloads\training-collector\session.raw.jsonl.gz
 ```
 
 Report gồm:
 
-- total events / duration;
-- event/source/tab distribution;
-- pointer sampling gaps;
-- physical -> semantic correlation coverage;
-- mutation burst count và số raw MutationRecord đại diện;
-- sessionSeq discontinuity;
-- capture timestamp backwards theo persistence order;
-- privacy red flags.
+```text
+event/source/tab distributions
+frame/document/pageInstance coverage
+per-frame source counts
+route-change + semantic snapshot counts
+stream-health + physical-only suspicion
+pointer sampling gaps
+physical↔semantic correlation
+mutation records represented
+sessionSeq continuity
+timestamp backwards
+privacy red flags
+```
 
 ## Privacy boundary
 
-Collector không đọc/lưu:
+Collector không thu/lưu:
 
-- password value;
-- cookie;
-- localStorage/sessionStorage content;
-- Authorization/token secret;
-- clipboard content;
-- raw text value của input;
-- printable character/code trong keyboard raw stream;
+- password values;
+- cookies;
+- Authorization/access/refresh tokens;
+- localStorage/sessionStorage secret contents;
+- clipboard contents;
+- payment secrets;
+- raw sensitive input values;
+- printable keyboard actual character/code;
 - URL query values/hash content;
-- raw document title.
+- raw document title theo policy hiện tại.
 
-Sensitive targets bị loại trước khi semantic data rời content script.
-
-## Test V0.5
-
-1. `git pull`.
-2. Reload unpacked `training-collector/` ở `chrome://extensions`.
-3. Đóng/mở Chrome để bắt đầu browser session mới dùng schema V0.5.
-4. Thực hiện phiên thao tác tương tự V0.4: pointer chậm/nhanh/nghỉ, hover/click, wheel/scroll, focus/input, đổi tab.
-5. Popup -> `Manual Export JSONL`.
-6. Chạy analyzer hoặc gửi `.raw.jsonl` để so sánh với V0.4.
-
-Các số nên so sánh trực tiếp:
-
-```text
-file size
-raw event count
-mutation event count
-mutation represented record count
-correlation coverage
-pointer sampling distribution
-privacy red flags
-```
+Sensitive filtering phải xảy ra trước khi data nhạy cảm rời content script whenever possible.
 
 ## Files chính
 
 ```text
 core/privacy.js
-core/action_normalizer.js
-core/state_diff.js
-core/episode_builder.js
 core/raw_session_store.js
-observer/element_registry.js
+core/indexeddb_chunk_store.js
+core/reliable_sender.js
 observer/semantic_observer.js
 observer/mutation_trace.js
+observer/hover_trace.js
+observer/route_trace.js
 correlation/physical_semantic_correlator.js
+correlation/action_target_resolver.js
 capture/physical_capture.js
 capture/dom_capture.js
 tools/analyze_raw.js
-content.js
+tools/build_action_semantics.js
 background.js
-popup.html
+content.js
 popup.js
+offscreen.js
 ```
 
-## V0.6 dự kiến
+## Validation V0.7.2
 
 ```text
-IndexedDB ChunkStore
--> streaming JSONL export
--> gzip .jsonl.gz
--> chunk checksum/recovery
--> storage retention
--> session index
+1 git pull
+2 chrome://extensions → Reload
+3 refresh/reopen target pages so new content scripts inject
+4 verify name: Training Collector V0.7.2 Frame-Aware Stream Diagnostics
+5 browse normal top pages + an embedded player/iframe
+6 include an SPA route change without full reload
+7 do not manually export for normal test
+8 close all Chrome → reopen
+9 verify previous session auto-export
+10 run analyze_raw.js on .raw.jsonl.gz
 ```
 
-Sau đó dataset pipeline mới chuyển cleaned/normalized data sang Parquet cho analytics/training. Raw archive vẫn giữ khả năng tái xử lý bằng thuật toán mới.
+Expected new evidence:
+
+```text
+frame-context from top + accessible frames
+frameId/documentId populated
+collector-stream-health per pageInstance
+semantic snapshot at document start
+route-change + route semantic snapshot on SPA changes
+DOM/hover/mutation events from interacted iframe when injection is permitted
+```
+
+CI syntax/contracts are not a substitute for native Chrome validation.
