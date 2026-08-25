@@ -1,20 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "Training Collector V0.1",
-  "version": "0.1.0",
-  "description": "Privacy-first human interaction and semantic state collector for agent training episodes.",
+  "name": "Training Collector V0.2 Architecture Foundation",
+  "version": "0.2.0",
+  "description": "Privacy-first semantic state and human action transition collector for agent training episodes.",
   "permissions": ["activeTab", "tabs", "storage"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background.js"},
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
+      "js": [
+        "core/privacy.js",
+        "core/action_normalizer.js",
+        "observer/semantic_observer.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Training Collector V0.1"
+    "default_title": "Training Collector V0.2"
   }
 }
