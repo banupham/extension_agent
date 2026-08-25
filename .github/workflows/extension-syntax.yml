@@ -34,6 +34,7 @@ jobs:
           node --check control-center/manager/strategy/agent_action_contract.js
           node --check control-center/manager/strategy/execution_behavior_contract.js
           node --check control-center/manager/behavior/empirical_policy.js
+          node --check control-center/manager/execution/cdp_plan.js
           node --check control-center/server/server.js
           node --check control-center/script/checks/run_check.js
           node --check control-center/script/checks/device_behavior.js
@@ -41,6 +42,7 @@ jobs:
           node --check control-center/script/checks/agent_action_contract.js
           node --check control-center/script/checks/empirical_behavior_policy.js
           node --check control-center/script/checks/agent_runtime_target_registry.js
+          node --check control-center/script/checks/cdp_execution_plan.js
           node --check recorder/background.js
           node --check recorder/content.js
           node --check recorder/popup.js
@@ -95,6 +97,8 @@ jobs:
         run: node control-center/script/checks/empirical_behavior_policy.js
       - name: Run Agent Runtime target registry contract test
         run: node control-center/script/checks/agent_runtime_target_registry.js
+      - name: Run CDP execution planner contract test
+        run: node control-center/script/checks/cdp_execution_plan.js
       - name: Run Phase A1 Action Window Builder contract test
         run: node training-collector/tests/action_window_contract.js
       - name: Run Phase A1 training eligibility contract test
