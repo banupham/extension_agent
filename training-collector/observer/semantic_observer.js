@@ -86,8 +86,8 @@
     return {
       schemaVersion: '0.4.0',
       pageInstanceId: NS2.pageInstanceId,
-      url: location.href,
-      title: document.title,
+      page: Privacy.sanitizeUrl(location.href),
+      titleMetrics: Privacy.safePageTitle(document.title),
       viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
       scroll: { x: Math.round(scrollX), y: Math.round(scrollY) },
       focusedElementRef: active instanceof Element ? getRef(active) : null,
