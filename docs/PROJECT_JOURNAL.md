@@ -49,7 +49,7 @@ Task → Strategy → Agent Action → Behavior → CDP Plan → Executor
 Strategy        = WHAT
 Behavior Policy = HOW naturally
 CDP Planner     = exact browser-native plan
-Executor        = dispatch
+Executor        = dispatch only
 ```
 
 Scenario Mode và Agent Mode không gộp contract.
@@ -93,7 +93,7 @@ session-end                    PASS
 
 Collector từ đây là stability/regression support. Manual gzip chỉ fallback/debug; không quay lại Downloads/offscreen làm primary pipeline.
 
-Socket lookup:
+Lookup:
 
 ```text
 training-collector/core/socket_mirror.js
@@ -105,40 +105,19 @@ training-collector/tests/v08_socket_mirror_contract.js
 
 ---
 
-# 4. Collector semantics / raw truth
+# 4. Collector raw/semantic invariants
 
-Physical:
-
-```text
-training-collector/capture/physical_capture.js
-training-collector/correlation/physical_semantic_correlator.js
-```
-
-Action targets:
-
-```text
-training-collector/capture/dom_capture.js
-training-collector/correlation/action_target_resolver.js
-training-collector/observer/semantic_observer.js
-```
-
-Raw target invariant:
+Action target facts:
 
 ```text
 rawTargetRef
 resolvedTargetRef
-```
 
-Không overwrite raw target bằng interpreted target.
-
-Actual DOM descriptor field names in native raw:
-
-```text
 targetDescriptor
 resolvedTargetDescriptor
 ```
 
-Synthetic aliases such as `resolvedTarget` are compatibility fallback only.
+Không overwrite raw target bằng interpreted target.
 
 Hover raw:
 
@@ -148,21 +127,13 @@ dom-hover-dwell
 dom-hover-leave
 ```
 
-Derived offline only:
-
-```text
-hover
-hover-dwell
-hover-preview
-```
+`hover-preview` chỉ derive offline.
 
 Frame identity:
 
 ```text
 tabId + frameId + pageInstanceId + elementRef
 ```
-
-SPA route change → semantic snapshot re-anchor.
 
 Timeline:
 
@@ -173,366 +144,312 @@ sourceSeq  = source-local order
 sessionSeq = persistence/integrity order only
 ```
 
-Never sort training trajectories primarily by `sessionSeq`.
+Không sort behavior trajectory theo `sessionSeq`.
+
+Privacy không lưu/train raw password, cookie, Authorization/token, clipboard, payment secret, local/session storage secret hoặc printable human key content.
 
 ---
 
-# 5. Privacy invariants
+# 5. A0 — Agent contract boundary COMPLETE
 
-Do not capture/store/train raw:
-
-- password/credential values;
-- cookies;
-- Authorization/access/refresh tokens;
-- local/session storage secrets;
-- clipboard contents;
-- payment secrets;
-- printable human key content;
-- raw sensitive form values.
-
-Typing Behavior learns timing/operation classes, not human typed content.
-
----
-
-# 6. Agent Phase A0 — COMPLETE
-
-Read:
+Read first:
 
 ```text
 control-center/AGENT_ACTION_CONTRACT.json
 control-center/manager/strategy/agent_action_contract.js
 control-center/manager/strategy/execution_behavior_contract.js
 docs/AGENT_ACTION_CDP_MAP.md
-docs/AGENT_EXECUTOR_GAP_MAP.md
-control-center/extension/agent-runtime-extension/background.js
 ```
 
-Deterministic `control-center/ACTION_CONTRACT.json` remains separate.
-
-Hard boundary:
+Invariant:
 
 ```text
-Strategy must not emit raw selector / coordinates / CDP method.
-Behavior must not choose task intent.
-Executor must not choose strategy.
+Strategy không emit selector / coordinates / CDP method.
+Behavior không chọn task intent.
+Executor không chọn strategy.
 ```
 
-Human demonstrations define context-conditioned distributions, not literal trajectory replay.
+CDP là chuẩn in-page execution; `chrome.tabs.*` là tab control-plane.
 
 ---
 
-# 7. Agent “tay chân” gap map
-
-Current experimental Agent Runtime directly executes only:
-
-```text
-openUrl
-pressKey
-type
-```
-
-Most important P0 missing capability is the Observation Target Registry:
-
-```text
-observationId + targetRef
-→ tab/frame/document
-→ semantic descriptor/current rect
-→ resolvable CDP target
-```
-
-Brain should say `click e17`; Executor resolves it. Stale refs must fail explicitly and trigger re-observation, never reuse stale coordinates blindly.
-
-P0 execution families before useful Agent practice:
-
-```text
-target registry
-pointer move/hover/click/doubleClick
-vertical/horizontal wheel
-focus + text/key
-navigate/back/forward/reload
-```
-
-P1:
-
-```text
-drag
-scrollIntoView
-form controls
-dismiss
-tab lifecycle
-hoverAndObserve/waitAndObserve
-```
-
-Candidate future actions, not core until evidence/task demand exists:
-
-```text
-contextClick
-pressAndHold
-openLinkInNewTab
-selectText
-uploadFile
-```
-
-Media verbs compile to generic semantic click/drag, not site-specific YouTube/TikTok executor methods.
-
----
-
-# 8. Phase A1 — COMPLETE: Action Window Builder
-
-Read first:
+# 6. A1 — Action Window COMPLETE
 
 ```text
 training-collector/tools/build_action_windows.js
 training-collector/tools/analyze_action_windows.js
-training-collector/tools/build_action_semantics.js
 training-collector/tests/action_window_contract.js
 training-collector/tests/action_window_quality_contract.js
 docs/A1_NATIVE_DATASET_VALIDATION.md
 ```
 
-Current derived contract: `actionWindowVersion 0.1.4`.
-
-Shape:
+Current `actionWindowVersion 0.1.4`.
 
 ```text
 BEFORE
-→ physical/semantic lead-in
-→ SEMANTIC ACTION
-→ AFTER / route / mutation
+→ semantic action
+→ AFTER / mutation / route
 → OUTCOME
 ```
 
-Current families:
+Families:
 
 ```text
-click
-dismiss
-toggle
-focus
-selectOption
-submit
+click / dismiss / toggle
+focus / selectOption / submit
 drag
-hover
-hoverAndObserve
-scrollVertical
-scrollHorizontal
-typeText
-pressKey
+hover / hoverAndObserve
+scrollVertical / scrollHorizontal
+typeText / pressKey
 ```
 
-## A1 label enrichment
+A1 giữ safe physical facts cho A2; hover window nhúng pointer approach/leave bounded; label enrichment đọc `resolvedTargetDescriptor` đúng với native raw; hover background noise chỉ lọc ở derived dataset.
 
-Do not change raw. Derived target label resolution:
-
-```text
-resolvedTargetDescriptor
-→ descriptor index / semantic snapshot
-→ targetDescriptor
-→ raw descendant/index fallback
-```
-
-Derived fields:
-
-```text
-labelSource
-labelEnriched
-```
-
-Missing label/role is never fabricated.
-
-## A1 hover noise
-
-Raw hover remains untouched. Derived filter removes only known generic background/container targets without stronger semantic evidence.
-
-Examples:
-
-```text
-html
-body
-ytd-app
-ytd-browse
-tp-yt-app-drawer
-```
-
-Preview-like hover with mutation/outcome evidence is retained.
-
-## A1 physical facts preserved
-
-A1 retains safe facts needed by A2:
-
-```text
-pointer:
-  phase x y movementX movementY button buttons pressure timing
-
-wheel:
-  x y deltaX deltaY deltaZ deltaMode timing
-
-keyboard:
-  phase operation keyClass non-printable code modifiers timing
-```
-
-Printable human key content remains absent.
-
-## A1 drag
-
-Derived from:
-
-```text
-pointer down
-→ continuous move samples
-→ pointer up
-```
-
-Output includes duration, distance, start/end and safe point series.
-
-## A1 hover trajectory — v0.1.4
-
-A1 embeds a bounded pointer approach and leave trajectory directly into hover windows:
-
-```text
-startTs - 1200 ms
-→ pointer approach facts
-→ hover enter/dwell/outcome/leave
-→ endTs + 500 ms pointer leave facts
-```
-
-Maximum pointer samples per side are bounded. This prevents A2 from needing a second raw-join/reconstruction implementation.
-
-Native spot validation on five recent V0.8 sessions showed pointer approach evidence on roughly 85–89% of hover-enter events. Missing approach remains a valid partial Behavior sample.
-
-## A1 high-confidence semantic promotion
-
-Only promote when evidence is strong:
-
-```text
-role=switch/checkbox or dom-change.checked → toggle
-known close/dismiss label                 → dismiss
-dom-change.selectedIndex                  → selectOption
-dom-submit                                → submit
-dom-focus focused=true                    → focus
-```
-
-Do not promote ambiguous semantic intent. Facebook Like can stay generic click unless reliable state evidence supports more.
-
-## A1 Strategy vs Behavior eligibility
-
-One global good/bad filter is forbidden.
-
-```text
-Strategy dataset
-→ needs action/target semantics appropriate to family
-
-Behavior dataset
-→ physical/timing evidence can still be useful when label is missing
-```
-
-Native click label coverage remains site-dependent (~40–67% in the recent sessions), while semantic label-or-role coverage is often higher. Missing semantics are not fabricated.
-
-## A1 native data gate
-
-See `docs/A1_NATIVE_DATASET_VALIDATION.md`.
-
-Five real sessions include Google/YouTube, Facebook login/post-login, horizontal carousel scrolling, TikTok/video/short-drama, modal dismiss, multi-tab/multi-frame and transport/session lifecycle.
-
-Important limitation: real drag demonstrations are sparse. Support extraction, but do not fit a confident drag distribution in A3 from current sample size.
-
-CI for hover trajectory/A1.4: run `32878588181` on commit `5641b67a11c4b52dec9907ec320c3003ba1a1570` passed.
+Strategy eligibility và Behavior eligibility là hai khái niệm khác nhau.
 
 ---
 
-# 9. Phase A2 — IN PROGRESS: Behavior Feature Extractor
+# 7. A2 — Behavior Features COMPLETE
+
+```text
+training-collector/tools/extract_behavior_features.js
+training-collector/tools/analyze_behavior_features.js
+docs/A2_NATIVE_FEATURE_VALIDATION.md
+```
+
+Current `behaviorFeatureVersion 0.2.0`.
+
+Feature groups:
+
+```text
+pointer:
+  duration / displacement / path length
+  speed / acceleration
+  straightness / turn / correction
+
+click:
+  acquisition pause
+  down→up hold
+  endpoint error vs target geometry
+
+hover:
+  approach / dwell / leave / outcome
+
+scroll:
+  vertical/horizontal burst separately
+  delta / timing / correction ratio
+
+keyboard:
+  hold / inter-key / pause / operation class
+  no printable human content
+```
+
+Native gate: click/hover/scroll/keyboard đủ để bắt đầu empirical baseline; drag vẫn sparse.
+
+---
+
+# 8. A3 — Empirical Behavior Baseline READY
+
+```text
+training-collector/tools/build_behavior_baseline.js
+control-center/manager/behavior/empirical_policy.js
+control-center/script/checks/empirical_behavior_policy.js
+```
+
+Baseline `0.1.0` lưu aggregate quantiles only:
+
+```text
+p10 / p25 / p50 / p75 / p90
+```
+
+Không lưu/replay literal human trajectory.
+
+Families:
+
+```text
+pointer-click
+pointer-hover
+scroll-vertical
+scroll-horizontal
+keyboard-text
+keyboard-key
+pointer-drag sparse fallback
+```
+
+`focus-acquisition` dùng `pointer-click` baseline cho phần HOW; semantic action vẫn là `focus`.
+
+Real baseline JSON là generated local artifact từ native raw sessions, không hard-code vào source.
+
+---
+
+# 9. Agent Runtime V0.2 — P0 tay chân READY
 
 Read first:
 
 ```text
-training-collector/tools/extract_behavior_features.js
-training-collector/tests/behavior_feature_contract.js
-training-collector/tools/build_action_windows.js
+control-center/extension/agent-runtime-extension/manifest.json
+control-center/extension/agent-runtime-extension/target_registry.js
+control-center/extension/agent-runtime-extension/cdp_plan_dispatcher.js
+control-center/extension/agent-runtime-extension/broker_client.js
+control-center/extension/agent-runtime-extension/background.js
 ```
 
-Current feature contract: `behaviorFeatureVersion 0.1.0`.
-
-A2 input is A1 Action Windows; A2 must not independently reconstruct the raw session unless a future contract explicitly requires a missing fact.
-
-Current derived features:
-
-### Pointer click
+Observation registry:
 
 ```text
-approach sample count
-start/end
-movement duration
-displacement
-path length
-straightness
-mean/median/P90/max speed
-mean absolute acceleration
-acquisition pause before click
+observationId + targetRef
+→ tab/frame
+→ semantic descriptor
+→ observed rect
+→ internal-only selector if available
 ```
 
-### Hover
+Public observation không expose selector.
+
+Stale rules:
 
 ```text
-approach path summary
-leave path summary
-dwell
-preview-like outcome
-mutation count
+new observation
+navigation/loading
+TTL expiry (currently 4 s)
+debugger detach
+→ old refs invalid
 ```
 
-### Drag
+Stale ref phải fail và re-observe, không blind reuse coordinates.
+
+Direct Agent Runtime broker:
 
 ```text
-point count
-path geometry/timing
-duration
-displacement
-target + destination geometry
+meta.product = agent-runtime
+agentStatus
+agentObserve
+agentExecutePlan
 ```
 
-### Scroll
+Agent Mode không proxy qua Stealth/Scenario extension.
+
+`EXECUTE_PLAN` allowlist:
 
 ```text
-axis family
-event count / burst duration
-total delta X/Y
-absolute primary-axis delta
-median/P90 event delta
-inter-event gaps
-direction changes
+Input.dispatchMouseEvent
+Input.dispatchKeyEvent
+Input.insertText
+Page.navigate
+Page.reload
+Page.getNavigationHistory
+Page.navigateToHistoryEntry
 ```
 
-### Keyboard
-
-```text
-event duration/gaps
-keyDown count
-operation class counts
-repeat count
-```
-
-No printable human content.
-
-### Target context
-
-```text
-role
-tag
-width
-height
-area
-aspect ratio
-```
-
-A2 outputs explicit quality flags such as semantic-target presence and physical-evidence presence.
-
-Latest A2-enabled CI: run `32878914977`, commit `0c450c8d1e7ff59d259eb65f26a3adff5e938df2`, SUCCESS.
-
-Next gate: run feature extraction across native sessions and inspect distributions/outliers/missingness before designing A3 empirical distributions.
+Không có arbitrary CDP tunnel từ Brain.
 
 ---
 
-# 10. Agent safety boundary
+# 10. CDP Execution Planner — v0.1.1
+
+```text
+control-center/manager/execution/cdp_plan.js
+control-center/script/checks/cdp_execution_plan.js
+```
+
+Pointer click:
+
+```text
+sample target point inside rect
+→ bounded curved approach
+→ optional micro-correction
+→ dwell
+→ press
+→ empirical hold
+→ release
+```
+
+Double click được chuẩn hóa thành hai cycle:
+
+```text
+press/release clickCount=1
+→ bounded inter-click gap
+→ press/release clickCount=2
+```
+
+Không dùng một single press/release `clickCount=2` nữa.
+
+Focus compile theo pointer acquisition + click, dùng pointer-click empirical baseline.
+
+Scroll vertical/horizontal là multi-event wheel burst riêng từng axis.
+
+Typing hiện dùng per-character `Input.insertText` với empirical timing. Native test phải kiểm tra site listener fidelity trước khi quyết định chuyển sang keyDown/keyUp synthesis.
+
+Known runtime gaps:
+
+```text
+keyCombo modifiers incomplete
+moving-target geometry revalidation chưa robust
+drag/slider sparse
+multi-frame Agent observation chưa có
+```
+
+---
+
+# 11. A4 — One-action Agent bridge READY FOR NATIVE TEST
+
+Manager path:
+
+```text
+control-center/manager/agent/broker_runtime_client.js
+control-center/manager/agent/one_action_bridge.js
+control-center/script/agent_one_action.js
+```
+
+Correct decision order:
+
+```text
+OBSERVE
+→ Brain decide(observation)
+→ exactly ONE Agent Action
+→ map action
+→ sample behavior
+→ build CDP plan
+→ execute plan bound to observationId
+→ OBSERVE AFTER
+```
+
+`blocked`/terminal decision executes nothing.
+
+Native harness examples:
+
+```bat
+node control-center/script/agent_one_action.js --observe
+node control-center/script/agent_one_action.js --type click --label "Example label"
+node control-center/script/agent_one_action.js --type doubleClick --label "Example label"
+node control-center/script/agent_one_action.js --type hover --label "Example label"
+node control-center/script/agent_one_action.js --type focus --label "Search"
+node control-center/script/agent_one_action.js --type typeText --text "agent test"
+node control-center/script/agent_one_action.js --type scrollVertical --direction 1
+```
+
+Optional:
+
+```text
+--baseline <generated baseline.json>
+--tab <tabId>
+--agent <runtime-agentId>
+--full
+```
+
+Latest full gate after focus + two-cycle doubleClick:
+
+```text
+run:    32910975163
+commit: 7667e66404b6aef7405b180a11707b0987975a5f
+result: SUCCESS
+```
+
+CI success != native Chrome validation.
+
+---
+
+# 12. Safety boundary
 
 CAPTCHA/human verification:
 
@@ -542,12 +459,13 @@ observe
 → reasonCode=human_verification_required
 → no automatic solve/bypass
 → no blind retry loop
-→ legitimate alternate route only if independently serves task
 ```
+
+Human login demonstrations có thể đóng góp timing/semantic form behavior nhưng không credential content.
 
 ---
 
-# 11. Architectural decisions
+# 13. Architectural decisions
 
 ## D001 — Scenario Mode and Agent Mode stay separate
 ## D002 — Recorder and Training Collector are different products
@@ -559,14 +477,14 @@ observe
 ## D008 — Manual/download export is fallback only
 ## D009 — Batch receipts make RAW_BATCH retries idempotent
 ## D010 — Natural Execution is a separate layer
-## D011 — Hover can be a semantic action with outcome
+## D011 — Hover can be semantic action with outcome
 ## D012 — Raw and resolved action targets coexist
-## D013 — pageSeq/sourceSeq support reconstruction; sessionSeq is persistence order
+## D013 — sessionSeq is persistence order, not chronology
 ## D014 — hover-preview is derived offline
-## D015 — CAPTCHA is an Agent boundary condition
+## D015 — CAPTCHA is Agent boundary condition
 ## D016 — Frame identity is composite
-## D017 — All-frame raw does not imply multi-frame Agent Episode
-## D018 — SPA route changes need semantic re-anchor
+## D017 — All-frame raw does not imply multi-frame Agent episode/runtime
+## D018 — SPA route change needs semantic re-anchor
 ## D019 — Stream silence must be observable
 ## D020 — Socket mirror is post-persist transport
 ## D021 — Socket resume uses server durable sequence
@@ -578,43 +496,65 @@ observe
 ## D027 — CDP is Agent in-page execution standard
 ## D028 — Agent execution is Action → Behavior → CDP Plan → Executor
 ## D029 — Human demonstrations define distributions/context, not literal replay
-## D030 — Derived dataset cleanup must not mutate raw Collector truth
-## D031 — A1 must preserve safe physical facts needed by A2
-## D032 — Native raw descriptor names are contract facts; tests must cover `resolvedTargetDescriptor`
-## D033 — Stale targetRef must trigger re-observation, not blind coordinate reuse
-## D034 — Hover Behavior windows embed bounded pointer approach/leave facts
-A2 should consume A1 rather than implement a second raw reconstruction path.
-## D035 — Strategy eligibility and Behavior eligibility are separate
-Do not discard physical demonstrations just because semantic labels are incomplete.
-## D036 — A2 is a deterministic derived feature layer
-A2 computes geometry/timing/statistics from A1; it does not train or sample behavior.
-## D037 — Sparse action families stay explicitly sparse
-Do not manufacture confidence for drag or another family merely because the extractor supports it.
+## D030 — Derived cleanup never mutates raw Collector truth
+## D031 — A1 preserves safe physical facts required by A2
+## D032 — Native descriptor field names are contract facts
+## D033 — Stale targetRef triggers re-observation
+## D034 — Hover windows embed bounded pointer approach/leave
+## D035 — Strategy and Behavior eligibility are separate
+## D036 — A2 is deterministic derived feature layer
+## D037 — Sparse action families remain explicitly sparse
+## D038 — Brain sees semantics, not internal selectors
+## D039 — Agent target refs are observation-bound, not global IDs
+## D040 — Agent Runtime connects directly to broker; no Scenario proxy
+## D041 — External CDP plans are allowlisted
+## D042 — Brain decides only after OBSERVE and one action per loop
+## D043 — Focus reuses pointer-click HOW distribution, not a separate invented distribution
+## D044 — DoubleClick requires two native press/release cycles
 
 ---
 
-# 12. CI map
+# 14. Next native gate
 
-Workflow:
-
-```text
-.github/workflows/extension-syntax.yml
-```
-
-Agent/data checks:
+Validate one action at a time before autonomous loops:
 
 ```text
-control-center/script/checks/strategy_contract.js
-control-center/script/checks/agent_action_contract.js
-training-collector/tests/action_window_contract.js
-training-collector/tests/action_window_quality_contract.js
-training-collector/tests/behavior_feature_contract.js
+OBSERVE target semantics
+click + re-observe
+doubleClick safe target
+hover only
+vertical scroll
+horizontal carousel scroll
+focus then type non-sensitive text
+back / forward
+stale ref rejection
 ```
 
-Collector storage/frame/socket regression checks remain enabled. CI success != native Chrome Agent validation.
+Measure:
+
+```text
+4 s TTL adequacy
+moving target between observe/execute
+two-cycle doubleClick behavior
+Input.insertText listener fidelity
+pointer path naturalness
+```
+
+Remaining P1 after native P0 gate:
+
+```text
+drag / slider / seek
+scrollIntoView
+selectOption / setChecked / submit / dismiss
+tab lifecycle
+hoverAndObserve / waitAndObserve outcome policy
+multi-frame Agent target registry
+robust moving-target revalidation
+modifier-aware keyCombo
+```
 
 ---
 
-# 13. Maintenance rule
+# 15. Maintenance rule
 
 Update journal when module responsibility, contract/protocol, difficult invariant, version/migration, test gate or architecture boundary changes. Do not log every commit.
