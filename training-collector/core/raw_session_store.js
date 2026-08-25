@@ -3,7 +3,7 @@
 (function initRawSessionStore(root) {
   const NS = root.TrainingCollectorV03 = root.TrainingCollectorV03 || {};
 
-  const VERSION = '0.7.0';
+  const VERSION = '0.7.2';
   const SESSION_KEY_PREFIX = 'tcRawSessionV03:';
   const CHUNK_KEY_PREFIX = 'tcRawChunkV03:';
   const INDEX_KEY = 'tcRawSessionIndexV03';
@@ -44,6 +44,9 @@
         mutation: '120ms-structural-mutation-bursts',
         correlation: 'targetRef-at-capture-time-with-first-seen-descriptor',
         actionTargetResolution: 'rawTargetRef-plus-resolvedTargetRef-with-method-confidence',
+        frames: 'all-frame-content-capture-with-background-frameId-documentId-pageInstanceId-identity',
+        navigation: 'sanitized-spa-route-change-plus-route-semantic-snapshot',
+        streamHealth: 'collector-stream-start-health-stop-with-cumulative-source-event-counts',
         timeline: 'tsEpochMs-capture-time-pageSeq-page-order-sourceSeq-source-order-sessionSeq-persistence-order',
         persistence: 'indexeddb-chunk-store-with-batch-ack',
         export: 'chunked-jsonl-gzip-debug-adapter'
