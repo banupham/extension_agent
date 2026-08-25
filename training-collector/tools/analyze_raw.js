@@ -21,6 +21,7 @@ function analyze(data) {
   let physicalEligible = 0;
   let domEvents = 0;
   let mutationEvents = 0;
+  let mutationRecords = 0;
   let sensitiveRedFlags = 0;
   let seqProblems = 0;
   let timestampBackwards = 0;
@@ -71,20 +72,22 @@ function analyze(data) {
 
     if (type === 'pointer' || type === 'wheel' || type === 'keyboard') {
       physicalEligible += 1;
-      if (event.semanticTarget?.elementRef) semanticCorrelated += 1;
+      if (event.targetRef || event.semanticTarget?.elementRef) semanticCorrelated += 1;
     }
     if (type.startsWith('dom-')) domEvents += 1;
-    if (type === 'dom-mutation') mutationEvents += 1;
+    if (type === 'dom-mutation' || type === 'dom-mutation-burst') {
+      mutationEvents += 1;
+      mutationRecords += type === 'dom-mutation-burst' ? Number(event.recordCount || 0) : 1;
+    }
     scanForbidden(event);
   }
 
   const cleanPointerGaps = pointerGaps.filter(x => Number.isFinite(x) && x >= 0).sort((a, b) => a - b);
-  const durationMs = events.length > 1
-    ? Math.max(0, Number(events[events.length - 1]?.tsEpochMs || 0) - Number(events[0]?.tsEpochMs || 0))
-    : 0;
+  const timestamps = events.map(x => Number(x?.tsEpochMs)).filter(Number.isFinite);
+  const durationMs = timestamps.length > 1 ? Math.max(0, Math.max(...timestamps) - Math.min(...timestamps)) : 0;
 
   return {
-    exportVersion: data?.exportVersion || null,
+    exportVersion: data?.exportVersion || data?.session?.schemaVersion || null,
     sessionId: data?.session?.sessionId || null,
     totalEvents: events.length,
     durationMs,
@@ -105,7 +108,7 @@ function analyze(data) {
       correlatedEvents: semanticCorrelated,
       coverage: physicalEligible ? semanticCorrelated / physicalEligible : null
     },
-    dom: { events: domEvents, mutations: mutationEvents },
+    dom: { events: domEvents, mutationEvents, mutationRecords },
     integrity: {
       sequenceProblems: seqProblems,
       timestampBackwards,
@@ -114,18 +117,34 @@ function analyze(data) {
   };
 }
 
+function parseInput(text) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return { events: [] };
+  if (trimmed.startsWith('{') && trimmed.includes('\n')) {
+    try { return JSON.parse(trimmed); } catch {}
+  }
+  const records = trimmed.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+  const sessionRecord = records.find(x => x.recordType === 'session') || {};
+  return {
+    exportVersion: sessionRecord.exportVersion || sessionRecord.session?.schemaVersion || null,
+    exportedAt: sessionRecord.exportedAt || null,
+    session: sessionRecord.session || null,
+    events: records.filter(x => x.recordType === 'event').map(({ recordType, ...event }) => event)
+  };
+}
+
 function main(argv) {
   const file = argv[2];
   if (!file) {
-    console.error('Usage: node training-collector/tools/analyze_raw.js <export.raw.json>');
+    console.error('Usage: node training-collector/tools/analyze_raw.js <export.raw.json|export.raw.jsonl>');
     process.exitCode = 2;
     return;
   }
   const full = path.resolve(file);
-  const data = JSON.parse(fs.readFileSync(full, 'utf8'));
+  const data = parseInput(fs.readFileSync(full, 'utf8'));
   const report = analyze(data);
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }
 
 if (require.main === module) main(process.argv);
-module.exports = { analyze };
+module.exports = { analyze, parseInput };
