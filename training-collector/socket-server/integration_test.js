@@ -61,22 +61,39 @@ async function stopServer(server) {
   ]);
 }
 
-function connect() {
+function connectOnce() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(ENDPOINT);
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
     const timer = setTimeout(() => {
       try { ws.terminate(); } catch {}
-      reject(new Error('client_connect_timeout'));
-    }, 5000);
-    ws.once('open', () => {
-      clearTimeout(timer);
-      resolve(ws);
-    });
+      finish(reject, new Error('client_connect_attempt_timeout'));
+    }, 1000);
+    ws.once('open', () => finish(resolve, ws));
     ws.once('error', error => {
-      clearTimeout(timer);
-      reject(error);
+      try { ws.terminate(); } catch {}
+      finish(reject, error);
     });
   });
+}
+
+async function connect(timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try { return await connectOnce(); }
+    catch (error) {
+      lastError = error;
+      await delay(75);
+    }
+  }
+  throw lastError || new Error('client_connect_timeout');
 }
 
 function send(ws, payload) {
