@@ -12,39 +12,196 @@ Trước khi sửa code: đọc `STATUS.md` → `docs/PROJECT_JOURNAL.md` → fe
 
 ---
 
-# Training Collector — CURRENT: V0.7.2 Frame-Aware Stream Diagnostics
+# Training Collector — CURRENT: V0.8 Socket Mirror
 
 Manifest:
 
 ```text
-Training Collector V0.7.2 Frame-Aware Stream Diagnostics
+Training Collector V0.8 Socket Mirror
 ```
 
-Runtime version: `0.7.2`  
+Runtime version: `0.8.0`  
 Raw schema: `0.7.2`
 
 Collector vẫn observe-only.
 
-## Vì sao có V0.7.2
+## Vì sao chuyển sang V0.8
 
-Hai native-session regressions dẫn tới milestone này:
+Native Chrome testing cho thấy automatic Downloads/offscreen adapter không đủ đáng tin làm đường lấy raw data dài phiên. Một closed session trong popup báo:
 
 ```text
-1. CAPTCHA / embedded UI
-   top-frame nhìn thấy iframe container
-   nhưng chưa quan sát đầy đủ interaction/state bên trong frame.
-
-2. Google Search + embedded YouTube
-   video phát ngay trong Google Search, không navigation sang youtube.com/watch;
-   một đoạn raw gần như chỉ có physical source;
-   semantic/DOM/hover/mutation completeness không thể chẩn đoán trực tiếp.
+autoExport=failed
+error=Cannot read properties of undefined (reading 'download')
 ```
 
-Mục tiêu V0.7.2 là observation completeness + diagnostics, không phải xử lý/vượt CAPTCHA.
+Quyết định mới:
 
-## V0.7.2 — frame-aware raw capture
+```text
+IndexedDB = browser-side safety buffer
+localhost WebSocket = continuous development ingest/archive
+manual JSONL.gz = fallback/debug only
+```
 
-Manifest content script:
+Không đầu tư thêm vào offscreen auto-download. `offscreen.html/js`, `downloads`, `offscreen`, `alarms` đã rời active runtime.
+
+## V0.8 socket transport
+
+Extension background mở:
+
+```text
+ws://127.0.0.1:8765/training-collector
+```
+
+Flow:
+
+```text
+content raw batch
+→ background normalize + sessionSeq
+→ IndexedDB append / receipt dedupe
+→ socket mirror only AFTER persist
+→ local socket server
+→ append-only <sessionId>.raw.jsonl
+```
+
+Protocol:
+
+```text
+client-hello
+session-open
+session-ack { resumeFromSeq }
+event-batch
+batch-ack { lastSeq }
+resync { resumeFromSeq } when gap detected
+session-close
+heartbeat
+```
+
+Critical invariant:
+
+```text
+persist first
+→ mirror second
+```
+
+Socket failure cannot replace/delete IndexedDB raw data.
+
+## Replay / recovery
+
+When server is unavailable or restarts:
+
+```text
+WebSocket reconnect
+→ session-open
+→ server scans existing JSONL/meta
+→ returns resumeFromSeq
+→ extension reads missing events chunk-by-chunk from IndexedDB
+→ sends only sessionSeq > resumeFromSeq
+```
+
+Server ignores duplicate sequences and rejects gaps with `resync`.
+
+Closed/dangling sessions from a previous Chrome process are also registered with socket mirror on next startup, replayed if incomplete, then `session-close` is sent.
+
+This means old IndexedDB sessions can still be recovered even if no browser download was produced.
+
+## Local socket server
+
+Files:
+
+```text
+training-collector/socket-server/server.js
+training-collector/socket-server/package.json
+training-collector/socket-server/START_SOCKET_SERVER.bat
+training-collector/socket-server/README.md
+```
+
+Start:
+
+```bat
+cd training-collector\socket-server
+START_SOCKET_SERVER.bat
+```
+
+Default output:
+
+```text
+training-collector/socket-data/
+  <sessionId>.raw.jsonl
+  <sessionId>.meta.json
+```
+
+Server binds `127.0.0.1` by default. `socket-data/` and `node_modules/` are Git-ignored.
+
+## Browser session end semantics
+
+While connected, extension sends heartbeat every 20 s. Server treats WebSocket disconnect as provisional and waits 45 s by default.
+
+```text
+disconnect
+→ 45 s grace
+→ no reconnect
+→ append session-end
+→ meta.status = closed
+```
+
+If same session reconnects before/after a provisional close, server can resume using `resumeFromSeq` rather than starting a second raw archive.
+
+## Existing V0.7.2 capture retained
+
+Raw schema remains `0.7.2` because capture semantics did not change.
+
+Still retained:
+
+```text
+all-frame raw capture
+frameId/documentId/documentLifecycle/pageInstanceId identity
+SPA route-change + semantic re-anchor
+collector-stream-health diagnostics
+rawTargetRef + resolvedTargetRef
+dom-hover-enter/dwell/leave
+pageSeq/sourceSeq/sessionSeq
+mutation bursts
+IndexedDB checksum/receipt reliability
+```
+
+Optional Task Episodes remain top-frame only.
+
+## Manual export
+
+Popup still contains:
+
+```text
+Manual Export Fallback
+```
+
+It reads IndexedDB chunks and creates `.raw.jsonl.gz` in the popup context. It is no longer part of the normal collection workflow.
+
+## Popup diagnostics
+
+V0.8 popup shows:
+
+```text
+Socket state
+endpoint
+connectedAt
+last server message
+last socket error
+per-session ackedThrough / eventCount / sentThrough / queued
+current IndexedDB session
+recent sessions
+```
+
+Normal healthy state should approach:
+
+```text
+State: connected
+ack ~= eventCount
+queued = 0
+```
+
+## Frame / SPA / action semantics
+
+V0.7.2 frame-aware capture and diagnostics remain active:
 
 ```text
 all_frames = true
@@ -52,241 +209,104 @@ match_about_blank = true
 match_origin_as_fallback = true
 ```
 
-Mỗi frame có `pageInstanceId` riêng. Background bổ sung vào persisted event:
+Action semantics remain:
 
 ```text
-tabId
-windowId
-frameId
-documentId
-documentLifecycle
+raw target + resolved target
+hover lifecycle raw facts
+hover-preview derived offline
 ```
 
-Element identity phải hiểu theo:
+Analyzer reads JSON/JSONL/JSONL.gz and reports frame/source/stream-health diagnostics.
 
-```text
-tabId + frameId + pageInstanceId + elementRef
-```
+## Privacy boundary
 
-Frame-local coordinate convention được ghi bằng:
+Socket transport does not expand capture scope. Server receives only the already-filtered raw telemetry emitted by Collector.
 
-```text
-frame-context.coordinateSpace = frame-client
-```
+Still prohibited:
 
-Continuous raw capture chạy ở matching frames. Optional Task Episode hiện vẫn top-frame only để không trộn multi-frame semantic state trước khi Agent Observation contract được nâng cấp.
-
-## V0.7.2 — SPA route observation
-
-File mới:
-
-```text
-training-collector/observer/route_trace.js
-```
-
-SPA route detector dùng:
-
-```text
-popstate
-hashchange
-500 ms location polling
-```
-
-Khi route đổi:
-
-```text
-route-change
-→ sanitized previous/current page
-→ semantic-snapshot snapshotReason=route-change
-```
-
-Điều này giải quyết việc semantic snapshot trước đây chỉ được ghi lúc content script start trong khi Google/YouTube có thể đổi route mà không reload document.
-
-## V0.7.2 — stream health
-
-Raw thêm direct diagnostic records:
-
-```text
-collector-stream-start
-collector-stream-health    // mỗi 10 giây
-collector-stream-stop
-```
-
-Mỗi health record chứa:
-
-```text
-isTopFrame
-readyState
-visibilityState
-viewport
-modules: physical/dom/mutation/hover/navigation
-sourceEventCounts cumulative
-```
-
-Mục tiêu: nếu session xuất hiện tình trạng physical-only, analyzer có thể chỉ ra frame/pageInstance nào thiếu semantic side thay vì phải suy đoán thủ công.
-
-## Analyzer V0.7.2
-
-`training-collector/tools/analyze_raw.js` giờ đọc trực tiếp:
-
-```text
-JSON
-JSONL
-JSONL.gz
-```
-
-Report thêm:
-
-```text
-unique tab/frame
-documentId count
-pageInstance count
-per-frame source distribution
-frame-context count
-route-change count
-semantic snapshot count
-stream-health summaries
-missing initial semantic suspicion
-physical-only suspicion
-```
-
-## Action semantics giữ nguyên
-
-```text
-raw hover:
-  dom-hover-enter
-  dom-hover-dwell
-  dom-hover-leave
-
-DOM target:
-  rawTargetRef
-  resolvedTargetRef
-  targetResolution.method/confidence
-
-timeline:
-  tsEpochMs
-  pageSeq
-  sourceSeq
-  sessionSeq
-```
-
-`hover-preview` vẫn derive offline bởi:
-
-```text
-training-collector/tools/build_action_semantics.js
-```
-
-Raw fact không bị overwrite bằng derived interpretation.
-
-## Persistence / recovery
-
-Raw store chính vẫn là IndexedDB:
-
-```text
-RAW_BATCH + batchId
-→ ACK/retry sender
-→ background serialized append
-→ IndexedDB trainingCollectorRawV06
-   ├─ sessions
-   ├─ chunks
-   └─ batchReceipts
-```
-
-Chunk size: 1000.
-
-V0.7.1 auto-export recovery vẫn giữ:
-
-```text
-status-indexed dangling/closed session recovery
-full integrity verification
-offscreen gzip
-wait downloads.onChanged state=complete
-recent-session popup diagnostics
-manual Retry Auto Export
-```
-
-Auto-export chỉ là temporary development convenience; IndexedDB là persistence chính.
-
-V0.7.2 thêm schema-upgrade isolation:
-
-```text
-active session schema cũ
-→ close reason schema_upgrade_to_0.7.2
-→ auto-export/recovery như closed session
-→ tạo clean 0.7.2 session
-```
-
-Không trộn raw schema cũ/mới trong một active archive.
+- password values;
+- cookies;
+- Authorization/access/refresh tokens;
+- local/session storage secret contents;
+- clipboard contents;
+- payment secrets;
+- raw sensitive input values;
+- printable keyboard actual character/code;
+- URL query values/hash contents.
 
 ---
 
 # Agent boundary — CAPTCHA / human verification
 
-Policy giữ nguyên:
+Policy unchanged:
 
 ```text
 observe CAPTCHA / human verification
 → Decision.status = blocked
 → reasonCode = human_verification_required
-→ không cố tự giải/vượt
-→ không retry vô hạn
+→ do not solve/bypass automatically
+→ do not retry blindly
 → re-evaluate goal
-→ route/trang khác hợp lệ nếu phục vụ task
-→ nếu không có thì stop blocked
+→ use another legitimate route/page only if it serves the task
+→ otherwise stop blocked
 ```
 
-Chi tiết: `docs/AGENT_BOUNDARY_CONDITIONS.md`.
+Details: `docs/AGENT_BOUNDARY_CONDITIONS.md`.
 
 ---
 
-# Browser validation tiếp theo
+# Browser validation next
 
-V0.7.2 cần native Chrome validation; CI không thay thế browser test.
+V0.8 now needs native Chrome + local-server validation.
 
 ```text
 1 git pull
-2 chrome://extensions → Reload
-3 refresh/reopen target pages để content scripts mới inject
-4 xác nhận tên V0.7.2 Frame-Aware Stream Diagnostics
-5 test một top page bình thường
-6 test Google Search / YouTube SPA route
-7 test embedded video/player hoặc iframe bình thường
-8 nếu CAPTCHA xuất hiện: chỉ quan sát boundary, không cần giải
-9 không Manual Export trong normal test
-10 đóng toàn bộ Chrome → mở lại
-11 kiểm tra auto-export
-12 gửi .raw.jsonl.gz để analyze
+2 start training-collector\socket-server\START_SOCKET_SERVER.bat
+3 chrome://extensions → Reload
+4 confirm Training Collector V0.8 Socket Mirror
+5 refresh/reopen tabs
+6 browse normally for 1–3 minutes
+7 popup → Socket Mirror should become connected
+8 inspect training-collector\socket-data\<sessionId>.raw.jsonl while Chrome is running
+9 verify file grows without Manual Export
+10 close all Chrome
+11 wait ~45 s
+12 inspect <sessionId>.meta.json status=closed and session-end record
+13 reopen Chrome
+14 verify new browser session starts and any prior IndexedDB backlog is replayed
 ```
 
-Kỳ vọng mới:
+Especially useful validation:
 
 ```text
-frame-context cho top + accessible frames
-frameId/documentId populated
-collector-stream-health per pageInstance
-semantic snapshot document-start
-route-change + route semantic snapshot khi SPA đổi route
-DOM/hover/mutation từ iframe interaction nếu Chrome cho content-script injection
+server starts AFTER Chrome/session already has events
+→ expected: resume/replay from IndexedDB
+
+server stops temporarily then restarts
+→ expected: reconnect + resume without duplicate/gap
+
+Chrome closes
+→ expected: server finalizes after grace
 ```
 
-Phân tích tiếp theo phải tập trung:
+CI success does not equal browser validation.
+
+## Next after socket validation
+
+If socket mirror is stable:
 
 ```text
-all-frame event volume / noise
-per-frame source completeness
-physical-only suspicion = 0
-route snapshot correctness
-embedded media interaction visibility
-iframe local coordinate correctness
-auto-export recovery
-privacy
+analyze native V0.8 socket JSONL
+→ verify frame/SPA/hover/action-target quality
+→ semantic actionable-parent label improvement if still needed
+→ hover background-noise filtering
+→ Behavior Dataset Preparation
 ```
-
-Sau native validation mới quyết định có cần frame filtering/parent-frame mapping/semantic label improvements trước Behavior Dataset Preparation.
 
 ---
 
-# Agent architecture boundaries
+# Agent architecture boundary
 
 ```text
 TASK
@@ -307,17 +327,15 @@ Behavior Model = HOW naturally
 Executor       = translate execution plan into CDP
 ```
 
-Natural behavior không dựa vào random delay/jitter; phải derive/learn từ human demonstrations.
-
 ---
 
 # Development rules
 
-1. GitHub là source of truth.
-2. Cập nhật STATUS/JOURNAL sau milestone hoặc bug/invariant khó.
-3. CI success không đồng nghĩa Chrome manual verified.
-4. Debug/auto-export adapter phải ghi rõ temporary.
-5. Không commit raw user session vào repo.
-6. Không thu password/cookie/token/Authorization/clipboard/payment secrets/raw sensitive values.
-7. Recorder, Collector, deterministic Scenario Mode và Agent Runtime giữ boundary rõ ràng.
-8. Frame-aware raw capture không đồng nghĩa Agent Episode/Strategy đã multi-frame; hiện Episode vẫn top-frame only.
+1. GitHub is source of truth.
+2. Update STATUS/JOURNAL after major milestone or non-obvious bug/invariant.
+3. CI success != native Chrome tested.
+4. IndexedDB remains the safety source for socket replay; do not turn socket send into pre-persist fire-and-forget.
+5. Manual/download export is fallback only.
+6. Do not commit user raw sessions or `socket-data/` to GitHub.
+7. Recorder, Collector, deterministic Scenario Mode and Agent Runtime keep separate boundaries.
+8. Raw capture stays privacy-filtered at source.
