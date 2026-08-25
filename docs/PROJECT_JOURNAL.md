@@ -13,7 +13,7 @@ source trên main
 → implementation truth
 ```
 
-Nếu journal và source mâu thuẫn, fetch source hiện tại trên `main`, sửa code theo source, rồi cập nhật lại journal.
+Nếu journal và source mâu thuẫn, fetch source hiện tại trên `main`, sửa theo source, rồi cập nhật journal.
 
 ---
 
@@ -86,7 +86,7 @@ training-collector/observer/element_registry.js
 training-collector/content.js
 ```
 
-V0.7 target contract:
+Target contract:
 
 ```text
 targetRef          legacy/raw event target
@@ -110,7 +110,7 @@ training-collector/tools/build_action_semantics.js
 training-collector/tests/v07_action_semantics_contract.js
 ```
 
-Raw V0.7 ghi direct facts:
+Raw ghi direct facts:
 
 ```text
 dom-hover-enter
@@ -148,7 +148,7 @@ training-collector/tools/analyze_raw.js
 training-collector/tools/build_action_semantics.js
 ```
 
-Current raw policy: `dom-mutation-burst ~120 ms`. Không dump innerHTML/textContent/raw values. Mutation relevance là derived/dataset concern.
+Current policy: `dom-mutation-burst ~120 ms`. Không dump innerHTML/textContent/raw values. Mutation relevance là derived/dataset concern.
 
 ## Timeline ordering
 
@@ -174,7 +174,131 @@ sessionSeq background persistence order
 
 ---
 
-# 4. Raw persistence / reliability lookup
+# 4. Frame-aware / SPA / stream diagnostics lookup — V0.7.2
+
+Đọc trước:
+
+```text
+training-collector/manifest.json
+training-collector/content.js
+training-collector/observer/route_trace.js
+training-collector/background.js
+training-collector/core/raw_session_store.js
+training-collector/tools/analyze_raw.js
+training-collector/tests/v072_frame_stream_contract.js
+```
+
+## Frame capture contract
+
+Manifest:
+
+```text
+all_frames = true
+match_about_blank = true
+match_origin_as_fallback = true
+```
+
+Mỗi matching frame chạy Collector raw riêng và có `pageInstanceId` riêng. Background persistence bổ sung:
+
+```text
+tabId
+windowId
+frameId
+documentId
+documentLifecycle
+```
+
+Composite element identity:
+
+```text
+tabId + frameId + pageInstanceId + elementRef
+```
+
+Không coi `e17` globally unique qua frame/page/tab.
+
+Coordinates trong iframe là client coordinates của frame đó. `frame-context.coordinateSpace = frame-client` là convention hiện tại.
+
+Continuous raw telemetry = all-frame. Optional Task Episode = top-frame only cho tới khi Agent Observation/Decision contract có explicit multi-frame model.
+
+Không vô tình mở episode transitions ở subframe chỉ vì raw Collector all-frame.
+
+## SPA route trace
+
+File:
+
+```text
+training-collector/observer/route_trace.js
+```
+
+Reason: semantic snapshot cũ chỉ phát khi content start; Google/YouTube SPA có thể thay route mà không reload.
+
+Detection:
+
+```text
+popstate
+hashchange
+location.href poll 500 ms
+```
+
+Output:
+
+```text
+route-change
+semantic-snapshot snapshotReason=route-change
+```
+
+Chỉ lưu sanitized page representation; không lưu query values/hash content.
+
+## Stream health
+
+Direct raw diagnostics:
+
+```text
+collector-stream-start
+collector-stream-health
+collector-stream-stop
+```
+
+Health interval: 10 s.
+
+Payload gồm:
+
+```text
+isTopFrame
+readyState
+visibilityState
+viewport
+module availability
+cumulative sourceEventCounts
+```
+
+Analyzer dùng health để phát hiện conservative suspicion:
+
+```text
+missingInitialSemantic
+physicalOnlySuspicion
+```
+
+Không suy `dom=0` đơn lẻ thành bug vì một frame có thể không có DOM interaction. `physicalOnlySuspicion` chỉ là diagnostic flag, không phải ground truth.
+
+## Schema upgrade isolation
+
+Raw schema hiện `0.7.2`.
+
+Nếu current active session có schema khác:
+
+```text
+close old session
+endReason = schema_upgrade_to_0.7.2
+→ auto-export/recovery old session
+→ create clean 0.7.2 session
+```
+
+Không trộn version raw trong cùng active session.
+
+---
+
+# 5. Raw persistence / reliability lookup
 
 Đọc:
 
@@ -191,14 +315,13 @@ training-collector/tests/v06_storage_contract.js
 Current:
 
 ```text
-runtime: 0.7.1
-raw schema: 0.7.0
+runtime/raw schema: 0.7.2
 IndexedDB DB: trainingCollectorRawV06
 chunk size: 1000
 stores: sessions / chunks / batchReceipts
 ```
 
-DB name V06 được giữ để không tạo migration storage không cần thiết.
+DB name V06 giữ để tránh migration storage không cần thiết.
 
 Retry invariant:
 
@@ -221,11 +344,9 @@ sequence gap between chunks
 
 Không tự xóa raw data khi integrity fail.
 
-## V0.7.1 auto-export recovery
+## Auto-export recovery
 
-Regression thực tế: Chrome session có data được đóng, lần mở Chrome sau không thấy file auto-export; session tiếp theo phải Manual Export để lấy dữ liệu.
-
-Files cần đọc khi sửa:
+Files:
 
 ```text
 training-collector/core/indexeddb_chunk_store.js
@@ -233,33 +354,20 @@ training-collector/background.js
 training-collector/offscreen.js
 training-collector/popup.js
 training-collector/popup.html
-training-collector/tests/v06_storage_contract.js
 ```
 
-V0.7.1 changes:
+Flow:
 
 ```text
-status-indexed session query
-→ không phụ thuộc scan 24 sessions gần nhất
-
-startup recovery
-→ active dangling sessions inferred closed
-→ stale verifying/preparing/downloading reset to pending
-
-closed session scan
-→ tìm closed/closed-inferred sessions còn pending/failed
-
-export
+status-indexed recovery
+→ dangling active inferred closed
+→ stale verifying/preparing/downloading reset pending
+→ closed session scan
 → full integrity verify
 → offscreen gzip
 → chrome.downloads.download
-→ wait chrome.downloads.onChanged state=complete
-→ chỉ sau đó mark autoExport.status=complete
-
-popup
-→ recent session diagnostics
-→ autoExport.status / attempts / error / downloadId
-→ Retry Auto Export cho closed session
+→ wait downloads.onChanged state=complete
+→ mark autoExport.complete
 ```
 
 Invariant:
@@ -269,26 +377,49 @@ IndexedDB = persistence chính
 JSONL.gz download = temporary development convenience only
 ```
 
-Không đánh dấu complete chỉ vì đã nhận `downloadId`.
+Không đánh dấu complete chỉ vì có `downloadId`.
 
 ---
 
-# 5. Analyzer / derived dataset lookup
+# 6. Analyzer / derived dataset lookup
+
+Raw diagnostics:
 
 ```text
 training-collector/tools/analyze_raw.js
 training-collector/tests/raw_analysis_contract.js
+```
+
+Analyzer hiện đọc:
+
+```text
+legacy JSON
+JSONL
+JSONL.gz
+```
+
+V0.7.2 report thêm:
+
+```text
+frame/document/pageInstance coverage
+per-frame source distribution
+route-change/snapshot count
+stream-health summaries
+physical-only suspicion
+```
+
+Action semantics:
+
+```text
 training-collector/tools/build_action_semantics.js
 training-collector/tests/v07_action_semantics_contract.js
 ```
-
-Derived action semantics hiện dùng hover lifecycle + mutation + click evidence + page/timestamp ordering.
 
 Derived output là heuristic, không phải raw truth.
 
 ---
 
-# 6. Agent lookup
+# 7. Agent lookup
 
 Strategy:
 
@@ -322,28 +453,22 @@ Không dùng random delay/jitter làm nền tảng.
 
 ## CAPTCHA / human-verification boundary
 
-CAPTCHA có thể xuất hiện tự nhiên trong quá trình test hoặc browsing. Agent không coi đây là một execution error cần retry mù quáng.
-
-Policy:
-
 ```text
-observe CAPTCHA / human verification
+observe challenge
 → Decision.status = blocked
 → reasonCode = human_verification_required
-→ không cố tự giải/vượt challenge
+→ không cố tự giải/vượt
 → không click/reload lặp vô hạn
 → re-evaluate task
-→ nếu có route/trang khác hợp lệ phục vụ goal: replan
-→ nếu không: dừng task blocked
+→ route/trang khác hợp lệ nếu phục vụ goal
+→ nếu không: stop blocked
 ```
 
-Chuyển sang trang/route khác phải phục vụ task hợp lệ, không phải nhằm bypass challenge.
-
-Nếu challenge nằm trong iframe, frame-aware Collector/Observer cần quan sát đúng target/state; mục tiêu là observation completeness, không phải tự động giải CAPTCHA.
+Frame-aware Collector nhằm quan sát challenge/UI frame đầy đủ hơn, không nhằm tự động giải CAPTCHA.
 
 ---
 
-# 7. Recorder / deterministic scenario lookup
+# 8. Recorder / deterministic scenario lookup
 
 ```text
 recorder/content.js
@@ -367,7 +492,7 @@ Không phá deterministic Scenario Mode khi phát triển Agent/Collector.
 
 ---
 
-# 8. Privacy invariants
+# 9. Privacy invariants
 
 Không thu/lưu:
 
@@ -382,9 +507,11 @@ Không thu/lưu:
 - URL query values/hash content;
 - raw document title theo policy hiện tại.
 
+Frame-aware capture không làm giảm privacy boundary; filtering vẫn phải xảy ra trong từng content frame trước khi raw rời frame.
+
 ---
 
-# 9. CI map
+# 10. CI map
 
 Workflow:
 
@@ -400,13 +527,22 @@ training-collector/tests/raw_session_contract.js
 training-collector/tests/raw_analysis_contract.js
 training-collector/tests/v06_storage_contract.js
 training-collector/tests/v07_action_semantics_contract.js
+training-collector/tests/v072_frame_stream_contract.js
+```
+
+V0.7.2 syntax coverage:
+
+```text
+observer/route_trace.js
+content/background frame changes
+analyze_raw.js gzip/frame diagnostics
 ```
 
 CI success != Chrome integration tested.
 
 ---
 
-# 10. Architectural decisions
+# 11. Architectural decisions
 
 ## D001 — Scenario Mode và Agent Mode tách biệt
 Bảo vệ deterministic execution hiện có.
@@ -424,7 +560,7 @@ Agent cần target/state/outcome, không chỉ trajectory.
 Tránh target drift do DOM/focus thay đổi.
 
 ## D006 — Mutation dùng burst
-Quyết định sau V0.4 cho thấy mutation noise áp đảo stream.
+V0.4 cho thấy mutation noise áp đảo stream.
 
 ## D007 — IndexedDB là raw persistence chính
 Download không được trở thành persistence architecture.
@@ -451,68 +587,116 @@ SessionSeq là persistence order.
 Raw giữ lifecycle/state facts.
 
 ## D015 — Auto-export complete chỉ sau download complete
-`chrome.downloads.download()` trả ID chưa đủ. V0.7.1 chờ download state `complete`; interrupted/timeout → failed + recovery.
+`chrome.downloads.download()` trả ID chưa đủ.
 
 ## D016 — CAPTCHA là Agent boundary condition
-Challenge/human verification → blocked/replan hợp lệ; không tự động giải/vượt challenge.
+Challenge → blocked/replan hợp lệ; không tự động giải/vượt.
+
+## D017 — Frame identity là composite
+`elementRef` chỉ meaningful trong `tabId + frameId + pageInstanceId` context.
+
+## D018 — All-frame raw không đồng nghĩa multi-frame Agent Episode
+Collector raw mở rộng trước; Episode/Strategy giữ top-frame cho tới khi multi-frame Observation contract được thiết kế explicit.
+
+## D019 — SPA route cần semantic re-anchor
+Route đổi không reload phải tạo `route-change + semantic-snapshot` để dataset biết state semantic mới.
+
+## D020 — Stream silence phải observable
+Collector tự phát health facts để phân biệt “không có interaction” với “capture module không phát dữ liệu”.
 
 ---
 
-# 11. Engineering diary
+# 12. Engineering diary
 
 ## 2026-08-25 — Journal created
-Persistent code lookup memory được thêm để dự án dài hạn không phải khảo sát lại toàn repo.
+Persistent code lookup memory được thêm cho dự án dài hạn.
 
 ## 2026-08-25 — V0.6.1 temporary auto-export
 Offscreen gzip exporter + startup detection cho closed IndexedDB sessions.
 
 ## 2026-08-25 — V0.7 Action Semantics
-Thêm Action Target Resolver, hover lifecycle facts, pageSeq/sourceSeq và offline hover-preview derivation.
+Action Target Resolver, hover lifecycle facts, pageSeq/sourceSeq, offline hover-preview.
 
-## 2026-08-25 — Native V0.7 CAPTCHA/iframe + auto-export recovery case
-Thực tế test:
+## 2026-08-25 — CAPTCHA/iframe + export recovery regression
+Native test cho thấy top-frame chỉ nhìn iframe container và auto-export từng không tạo file sau restart. Dẫn tới Agent CAPTCHA boundary + V0.7.1 recovery.
+
+## 2026-08-25 — V0.7.1 export recovery
+Status-indexed recovery, wait-for-download-complete, popup diagnostics, retry export.
+
+## 2026-08-25 — YouTube Playables native session
+Observed:
 
 ```text
-Chrome mở
-→ Google human verification xuất hiện
-→ pointer/click vào CAPTCHA frame
-→ challenge mở
-→ Chrome đóng
-→ lần mở Chrome sau không thấy auto-export file
-→ session kế tiếp Manual Export để lấy raw phân tích
+YouTube /gaming → /playables SPA flow
+resolved action target tốt hơn raw text/img wrapper
+semantic labels của actionable parent đôi khi rỗng
 ```
 
-Kết luận:
+Label propagation/minimization còn backlog; không sửa vội vì có privacy tradeoff.
 
-- iframe/frame-aware capture là gap observation cần xử lý sau recovery;
-- auto-export cần recovery/diagnostics trước;
-- CAPTCHA là normal boundary condition, không phải thứ Agent phải cố vượt.
+## 2026-08-25 — Google Search embedded YouTube regression
+Observed:
 
-## 2026-08-25 — V0.7.1 export recovery implemented
+```text
+Google Search
+→ play YouTube video embedded trong result page
+→ không navigation sang youtube.com/watch
+→ iframe player visible
+→ gray player overlay/state xuất hiện trong một thời điểm
+```
+
+Raw top-frame nhìn được iframe/container nhưng chưa đủ player internal state. Một đoạn session gần như chỉ có physical source, làm lộ thiếu stream diagnostics.
+
+## 2026-08-25 — V0.7.2 frame-aware stream diagnostics implemented
 
 Added:
 
 ```text
-IndexedDB status-indexed session recovery
-startup stale-state recovery
-closed session retry scan
-wait-for-download-complete
-recent-session popup diagnostics
-manual retry auto-export
+manifest all_frames/match_about_blank/match_origin_as_fallback
+frame-context raw fact
+background frameId/documentId/documentLifecycle
+observer/route_trace.js
+route-change + route semantic snapshot
+collector-stream-start/health/stop
+schema upgrade isolation
+analyzer JSONL.gz support
+frame/document/page/source health report
+tests/v072_frame_stream_contract.js
+README updated from stale V0.5 to V0.7.2
 ```
 
 Next gate:
 
 ```text
-manual Chrome test V0.7.1 close/reopen auto-export
-→ verify prior closed session appears/downloads
-→ then implement frame-aware capture
-→ then repeat YouTube hover/action tests
+native Chrome V0.7.2
+→ embedded iframe/player interaction
+→ SPA route change
+→ verify per-frame stream health
+→ verify auto-export
+→ analyze .raw.jsonl.gz
+→ decide frame filtering / parent-frame mapping / semantic label work
 ```
 
 ---
 
-# 12. Journal maintenance rules
+# 13. Known backlog after V0.7.2
+
+```text
+semantic label propagation for actionable parent/card while preserving privacy
+hover background/container noise filtering in derived layer
+parentFrameId mapping if nested-frame reconstruction needs it
+all-frame volume/noise measurement before adding frame eligibility filters
+reliable sender orphan journal recovery across pageInstance reload
+maxPending eviction policy
+selector stability/ephemeral token scoring
+mutation relevance extraction in dataset layer
+```
+
+Không giải các backlog này chỉ theo suy đoán; ưu tiên native V0.7.2 evidence.
+
+---
+
+# 14. Journal maintenance rules
 
 Update journal khi module responsibility, contract, dependency, difficult bug/invariant, temporary mechanism, architecture decision hoặc migration/version thay đổi.
 
