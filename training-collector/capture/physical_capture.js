@@ -14,9 +14,7 @@
 
   function epochForEvent(event) {
     const stamp = Number(event?.timeStamp);
-    if (Number.isFinite(stamp) && Number.isFinite(performance.timeOrigin)) {
-      return round3(performance.timeOrigin + stamp);
-    }
+    if (Number.isFinite(stamp) && Number.isFinite(performance.timeOrigin)) return round3(performance.timeOrigin + stamp);
     return Date.now();
   }
 
@@ -45,6 +43,7 @@
     const isSensitiveTarget = typeof options.isSensitiveTarget === 'function' ? options.isSensitiveTarget : () => false;
     const getContext = typeof options.getContext === 'function' ? options.getContext : () => ({});
     const enrichEvent = typeof options.enrichEvent === 'function' ? options.enrichEvent : event => event;
+    const decorateEvent = typeof options.decorateEvent === 'function' ? options.decorateEvent : event => event;
     const queue = [];
     const listeners = [];
     let running = false;
@@ -64,15 +63,16 @@
 
     function scheduleFlush() {
       if (flushTimer || !running) return;
-      flushTimer = setTimeout(() => {
-        flushTimer = null;
-        flush();
-      }, FLUSH_INTERVAL_MS);
+      flushTimer = setTimeout(() => { flushTimer = null; flush(); }, FLUSH_INTERVAL_MS);
     }
 
     function maybeEnrich(event) {
       if (!event || !['pointer', 'wheel', 'keyboard'].includes(event.type)) return event;
       try { return enrichEvent(event) || event; } catch { return event; }
+    }
+
+    function decorate(event) {
+      try { return decorateEvent(event, 'physical') || event; } catch { return event; }
     }
 
     function push(event, activity = true) {
@@ -81,28 +81,21 @@
       if (activity && lastActivityEpochMs != null) {
         const gap = ts - lastActivityEpochMs;
         if (gap >= IDLE_GAP_MS) {
-          queue.push({
-            type: 'idle-gap',
-            tsEpochMs: round3(ts),
-            startedAtEpochMs: round3(lastActivityEpochMs),
-            endedAtEpochMs: round3(ts),
-            durationMs: round3(gap),
-            ...contextFields()
-          });
+          queue.push(decorate({
+            type: 'idle-gap', tsEpochMs: round3(ts), startedAtEpochMs: round3(lastActivityEpochMs),
+            endedAtEpochMs: round3(ts), durationMs: round3(gap), ...contextFields()
+          }));
         }
       }
       if (activity) lastActivityEpochMs = ts;
-      queue.push({ ...maybeEnrich(event), ...contextFields() });
+      queue.push(decorate({ ...maybeEnrich(event), ...contextFields() }));
       if (queue.length >= FLUSH_EVENT_COUNT) flush();
       else scheduleFlush();
     }
 
     function flush() {
       if (!queue.length) return;
-      if (flushTimer) {
-        clearTimeout(flushTimer);
-        flushTimer = null;
-      }
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
       const batch = queue.splice(0, queue.length);
       try { emitBatch(batch); } catch {}
     }
@@ -122,24 +115,12 @@
       }
       for (const sample of samples) {
         push({
-          type: 'pointer',
-          phase,
-          tsEpochMs: epochForEvent(sample),
-          tPageMs: pageTimeForEvent(sample),
-          pointerType: String(sample.pointerType || 'mouse'),
-          pointerId: Number(sample.pointerId || 0),
-          isPrimary: sample.isPrimary !== false,
-          x: round3(sample.clientX),
-          y: round3(sample.clientY),
-          screenX: round3(sample.screenX),
-          screenY: round3(sample.screenY),
-          movementX: round3(sample.movementX),
-          movementY: round3(sample.movementY),
-          button: Number(sample.button ?? -1),
-          buttons: Number(sample.buttons || 0),
-          pressure: round3(sample.pressure),
-          width: round3(sample.width),
-          height: round3(sample.height)
+          type: 'pointer', phase, tsEpochMs: epochForEvent(sample), tPageMs: pageTimeForEvent(sample),
+          pointerType: String(sample.pointerType || 'mouse'), pointerId: Number(sample.pointerId || 0),
+          isPrimary: sample.isPrimary !== false, x: round3(sample.clientX), y: round3(sample.clientY),
+          screenX: round3(sample.screenX), screenY: round3(sample.screenY), movementX: round3(sample.movementX),
+          movementY: round3(sample.movementY), button: Number(sample.button ?? -1), buttons: Number(sample.buttons || 0),
+          pressure: round3(sample.pressure), width: round3(sample.width), height: round3(sample.height)
         });
       }
     }
@@ -148,21 +129,10 @@
       if (isSensitiveTarget(event.target)) return;
       const operation = keyOperation(event);
       push({
-        type: 'keyboard',
-        phase,
-        tsEpochMs: epochForEvent(event),
-        tPageMs: pageTimeForEvent(event),
-        operation,
+        type: 'keyboard', phase, tsEpochMs: epochForEvent(event), tPageMs: pageTimeForEvent(event), operation,
         keyClass: operation === 'printable' ? 'printable' : String(event.key || 'non-printable'),
-        code: safeKeyCode(event, operation),
-        location: Number(event.location || 0),
-        repeat: !!event.repeat,
-        modifiers: {
-          alt: !!event.altKey,
-          ctrl: !!event.ctrlKey,
-          meta: !!event.metaKey,
-          shift: !!event.shiftKey
-        }
+        code: safeKeyCode(event, operation), location: Number(event.location || 0), repeat: !!event.repeat,
+        modifiers: { alt: !!event.altKey, ctrl: !!event.ctrlKey, meta: !!event.metaKey, shift: !!event.shiftKey }
       });
     }
 
@@ -174,23 +144,14 @@
       on(window, 'pointerup', event => pointerSamples(event, 'up'), true);
       on(window, 'pointercancel', event => pointerSamples(event, 'cancel'), true);
       on(window, 'wheel', event => push({
-        type: 'wheel',
-        tsEpochMs: epochForEvent(event),
-        tPageMs: pageTimeForEvent(event),
-        x: round3(event.clientX),
-        y: round3(event.clientY),
-        deltaX: round3(event.deltaX),
-        deltaY: round3(event.deltaY),
-        deltaZ: round3(event.deltaZ),
-        deltaMode: Number(event.deltaMode || 0),
+        type: 'wheel', tsEpochMs: epochForEvent(event), tPageMs: pageTimeForEvent(event),
+        x: round3(event.clientX), y: round3(event.clientY), deltaX: round3(event.deltaX), deltaY: round3(event.deltaY),
+        deltaZ: round3(event.deltaZ), deltaMode: Number(event.deltaMode || 0),
         modifiers: { alt: !!event.altKey, ctrl: !!event.ctrlKey, meta: !!event.metaKey, shift: !!event.shiftKey }
       }), { capture: true, passive: true });
       on(window, 'scroll', event => push({
-        type: 'scroll-position',
-        tsEpochMs: epochForEvent(event),
-        tPageMs: pageTimeForEvent(event),
-        x: round3(scrollX),
-        y: round3(scrollY)
+        type: 'scroll-position', tsEpochMs: epochForEvent(event), tPageMs: pageTimeForEvent(event),
+        x: round3(scrollX), y: round3(scrollY)
       }), { capture: true, passive: true });
       on(window, 'keydown', event => keyboardSample(event, 'down'), true);
       on(window, 'keyup', event => keyboardSample(event, 'up'), true);
@@ -203,12 +164,7 @@
       on(window, 'pagehide', () => flush(), true);
 
       heartbeatTimer = setInterval(() => {
-        push({
-          type: 'heartbeat',
-          tsEpochMs: Date.now(),
-          tPageMs: round3(performance.now()),
-          lastActivityEpochMs
-        }, false);
+        push({ type: 'heartbeat', tsEpochMs: Date.now(), tPageMs: round3(performance.now()), lastActivityEpochMs }, false);
         flush();
       }, HEARTBEAT_MS);
 
@@ -221,9 +177,7 @@
       push({ type: 'document-stopped', tsEpochMs: Date.now(), tPageMs: round3(performance.now()) }, false);
       flush();
       running = false;
-      for (const remove of listeners.splice(0)) {
-        try { remove(); } catch {}
-      }
+      for (const remove of listeners.splice(0)) { try { remove(); } catch {} }
       if (flushTimer) clearTimeout(flushTimer);
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       flushTimer = null;
