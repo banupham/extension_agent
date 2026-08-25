@@ -2,7 +2,7 @@
 
 const { validateExecutionBehavior } = require('../strategy/execution_behavior_contract');
 
-const POLICY_VERSION = '0.1.0';
+const POLICY_VERSION = '0.1.1';
 
 function targetSizeBucket(target) {
   const width = Number(target?.rect?.width ?? target?.widthPx);
@@ -30,8 +30,13 @@ function sampleQuantiles(metric, rng = Math.random) {
   return knots[lo] + (knots[hi] - knots[lo]) * t;
 }
 
+function baselineFamilyFor(behaviorFamily) {
+  if (behaviorFamily === 'focus-acquisition') return 'pointer-click';
+  return behaviorFamily;
+}
+
 function chooseProfile(baseline, behaviorFamily, target) {
-  const family = baseline?.families?.[behaviorFamily];
+  const family = baseline?.families?.[baselineFamilyFor(behaviorFamily)];
   if (!family) return null;
   const bucket = targetSizeBucket(target);
   return family.contexts?.[`targetSize:${bucket}`] || family.global || null;
@@ -42,11 +47,30 @@ function finiteOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function pointerClickBehavior(profile) {
+  return {
+    profile: profile ? 'empirical' : 'fallback',
+    targetAcquisition: 'adaptive',
+    dwellBeforeDownMs: finiteOrNull(sampleQuantiles(profile?.acquisitionPauseMs, arguments[1] || Math.random)),
+    holdMs: finiteOrNull(sampleQuantiles(profile?.holdMs, arguments[1] || Math.random)),
+    trajectorySeed: null,
+    constraints: {
+      approachDurationMs: finiteOrNull(sampleQuantiles(profile?.approachDurationMs, arguments[1] || Math.random)),
+      straightness: finiteOrNull(sampleQuantiles(profile?.straightness, arguments[1] || Math.random)),
+      meanSpeedPxS: finiteOrNull(sampleQuantiles(profile?.meanSpeedPxS, arguments[1] || Math.random)),
+      meanAbsTurnDeg: finiteOrNull(sampleQuantiles(profile?.meanAbsTurnDeg, arguments[1] || Math.random)),
+      correctionCount45Deg: finiteOrNull(sampleQuantiles(profile?.correctionCount45Deg, arguments[1] || Math.random)),
+      endToCenterNormalized: finiteOrNull(sampleQuantiles(profile?.endToCenterNormalized, arguments[1] || Math.random))
+    }
+  };
+}
+
 function sampledBehavior({ baseline, mappedAction, target = null, rng = Math.random }) {
   if (!mappedAction?.type) throw new Error('mappedAction required');
   const family = mappedAction.behaviorFamily || 'generic';
+  const baselineFamily = baselineFamilyFor(family);
   const profile = chooseProfile(baseline, family, target);
-  const sparse = !!baseline?.families?.[family]?.sparse;
+  const sparse = !!baseline?.families?.[baselineFamily]?.sparse;
 
   const out = {
     actionId: mappedAction.actionId || null,
@@ -57,28 +81,15 @@ function sampledBehavior({ baseline, mappedAction, target = null, rng = Math.ran
     metadata: {
       policyVersion: POLICY_VERSION,
       behaviorFamily: family,
+      baselineFamily,
       baselineVersion: baseline?.behaviorBaselineVersion || null,
       sparseFamily: sparse,
       literalTrajectoryReplay: false
     }
   };
 
-  if (family === 'pointer-click') {
-    out.pointer = {
-      profile: profile ? 'empirical' : 'fallback',
-      targetAcquisition: 'adaptive',
-      dwellBeforeDownMs: finiteOrNull(sampleQuantiles(profile?.acquisitionPauseMs, rng)),
-      holdMs: finiteOrNull(sampleQuantiles(profile?.holdMs, rng)),
-      trajectorySeed: null,
-      constraints: {
-        approachDurationMs: finiteOrNull(sampleQuantiles(profile?.approachDurationMs, rng)),
-        straightness: finiteOrNull(sampleQuantiles(profile?.straightness, rng)),
-        meanSpeedPxS: finiteOrNull(sampleQuantiles(profile?.meanSpeedPxS, rng)),
-        meanAbsTurnDeg: finiteOrNull(sampleQuantiles(profile?.meanAbsTurnDeg, rng)),
-        correctionCount45Deg: finiteOrNull(sampleQuantiles(profile?.correctionCount45Deg, rng)),
-        endToCenterNormalized: finiteOrNull(sampleQuantiles(profile?.endToCenterNormalized, rng))
-      }
-    };
+  if (family === 'pointer-click' || family === 'focus-acquisition') {
+    out.pointer = pointerClickBehavior(profile, rng);
   } else if (family === 'pointer-hover') {
     out.pointer = {
       profile: profile ? 'empirical' : 'fallback',
@@ -147,6 +158,7 @@ function sampledBehavior({ baseline, mappedAction, target = null, rng = Math.ran
 module.exports = {
   POLICY_VERSION,
   targetSizeBucket,
+  baselineFamilyFor,
   sampleQuantiles,
   chooseProfile,
   sampledBehavior
