@@ -10,12 +10,38 @@
     "inspection": ["getElementPosition", "getActiveTab", "getElementText", "getPageInfo", "listTabs", "getCapabilities"],
     "lifecycle": ["detach"]
   },
-  "recorderVersion": "3.9.0",
-  "timingModel": "rich-gesture-v2",
+  "recorderVersion": "4.0.0",
+  "timingModel": "detailed-input-mouse-v3",
+  "textReplayPolicy": {
+    "default": "keyboard-operations when reconstructable",
+    "fallback": "replaceText only for paste/drop/composition/replacement/undo-redo or otherwise uncertain edits",
+    "operationKinds": ["type", "pressKey", "keyCombo"],
+    "counts": ["backspaceCount", "deleteCount", "enterCount", "tabCount", "typedCharCount", "keyComboCount", "operationCount"]
+  },
   "recordingMetadata": {
-    "timing": ["seq", "t", "recordedAtEpoch", "gapFromPreviousMs", "timing.recordedGapMs", "timing.kind"],
-    "pointer": ["pointerGesture", "point", "fallback", "recorded.target"],
-    "text": ["editTrace"],
+    "timing": ["seq", "t", "tEnd", "recordedAtEpoch", "gapFromPreviousMs", "timing.recordedGapMs", "timing.kind"],
+    "pointer": [
+      "pointerGesture",
+      "mousePath.samples",
+      "mousePath.metrics.durationMs",
+      "mousePath.metrics.pathDistancePx",
+      "mousePath.metrics.averageSpeedPxPerSec",
+      "mousePath.metrics.peakSpeedPxPerSec",
+      "point",
+      "fallback",
+      "recorded.target"
+    ],
+    "text": [
+      "initialValue",
+      "finalValue",
+      "reconstruction.mode",
+      "reconstruction.uncertainReasons",
+      "editTrace.operations",
+      "editTrace.changes",
+      "editTrace.summary.backspaceCount",
+      "editTrace.summary.deleteCount",
+      "editTrace.summary.typedCharCount"
+    ],
     "scroll": [
       "scrollTrace.startedAtMs",
       "scrollTrace.endedAtMs",
