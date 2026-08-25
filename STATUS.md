@@ -2,164 +2,104 @@
 
 ## Source of truth
 
-GitHub `banupham/extension_agent` là source chính của dự án. Sau milestone implementation/architecture quan trọng phải cập nhật file này để lần sau có thể tiếp tục ngay.
-
-Local workflow:
+GitHub `banupham/extension_agent` là source chính của dự án.
 
 ```bat
 git pull
 ```
 
-## Product boundaries
-
-```text
-RECORDER
-Human → deterministic Scenario
-
-TRAINING COLLECTOR
-Human → raw physical + semantic browser session
-
-AGENT
-Task → Strategy → Action Contract → Behavior Policy → CDP Executor
-```
-
-Deterministic Scenario Mode không bị thay bởi Agent Mode.
+Trước khi sửa code: đọc `STATUS.md` → `docs/PROJECT_JOURNAL.md` → fetch source hiện tại trên `main`.
 
 ---
 
-# Training Collector — CURRENT: V0.7 Action Semantics
+# Training Collector — CURRENT: V0.7.1 Action Semantics + Export Recovery
 
-Manifest name:
+Manifest:
 
 ```text
-Training Collector V0.7 Action Semantics
+Training Collector V0.7.1 Action Semantics + Export Recovery
 ```
 
-Runtime version: `0.7.0`  
+Runtime version: `0.7.1`  
 Raw schema: `0.7.0`
 
-Collector observe-only. Không tự click/type/navigate và không dùng `chrome.debugger` để điều khiển trang.
+Collector vẫn observe-only.
 
-## Capture model
-
-```text
-Physical Capture
-├─ pointer trajectory/down/up
-├─ wheel + scroll positions
-├─ keyboard timing + operation class
-├─ focus / visibility / heartbeat / idle
-└─ targetRef correlation at capture time
-
-Semantic DOM
-├─ stable page-scoped element refs
-├─ click/focus/input/change/submit
-├─ hover enter/dwell/leave raw semantic facts
-├─ rendered / inViewport / interactable
-├─ selectorCandidates + score
-└─ semantic snapshot / episode state diff
-
-Mutation
-└─ 120 ms dom-mutation-burst
-```
-
-Raw physical data không bake velocity/acceleration/path distributions. Higher-level behavior/action semantics được derive offline.
-
-## V0.7 — hover semantics
-
-Dữ liệu thực tế V0.6.1 trên YouTube cho thấy hover có thể là action có outcome:
+## V0.7 Action Semantics đang giữ
 
 ```text
-pointer enters video thumbnail
-→ dwell
-→ animated preview starts
-→ mute/audio control appears
-→ no navigation
+raw hover facts:
+  dom-hover-enter
+  dom-hover-dwell
+  dom-hover-leave
+
+DOM target:
+  rawTargetRef
+  resolvedTargetRef
+  targetResolution.method/confidence
+
+timeline:
+  tsEpochMs
+  pageSeq
+  sourceSeq
+  sessionSeq
 ```
 
-V0.7 không ghi thẳng `hover-preview` vào raw. Raw chỉ bổ sung các fact trực tiếp:
-
-```text
-dom-hover-enter
-dom-hover-dwell
-dom-hover-leave
-```
-
-Higher-level classification được derive bởi:
+`hover-preview` vẫn derive offline bởi:
 
 ```text
 training-collector/tools/build_action_semantics.js
 ```
 
-Flow:
+Raw facts không bị overwrite bằng derived interpretation.
+
+## V0.7.1 — auto-export recovery
+
+Regression thực tế vừa phát hiện:
 
 ```text
-hover facts
-+ mutation bursts
-+ click evidence
-+ page/capture ordering
-↓
-hover / hover-dwell / hover-preview derived action
+Chrome session có raw data
+→ Chrome đóng
+→ lần mở Chrome sau không thấy auto-export file
+→ session tiếp theo phải Manual Export
 ```
 
-Điều này giữ nguyên nguyên tắc raw physical/semantic facts không bị thay bằng feature suy diễn.
-
-## V0.7 — Action Target Resolver
-
-File mới:
+V0.7.1 sửa theo hướng:
 
 ```text
-training-collector/correlation/action_target_resolver.js
+IndexedDB status-indexed recovery
+→ scan active dangling sessions không phụ thuộc 24 session gần nhất
+→ infer closed
+→ stale verifying/preparing/downloading reset pending
+→ scan closed/closed-inferred còn pending/failed
+→ full integrity verify
+→ offscreen gzip
+→ chrome.downloads.download
+→ chờ chrome.downloads.onChanged state=complete
+→ chỉ sau đó mark autoExport.status=complete
 ```
 
-DOM click giờ giữ đồng thời:
+Popup mới có:
 
 ```text
-targetRef          = legacy/raw event target ref
-rawTargetRef       = raw DOM event.target ref
-resolvedTargetRef  = best actionable semantic target
-targetResolution   = method + confidence
+Recent Raw Sessions / Auto Export
+sessionId
+status
+eventCount/chunkCount
+autoExport.status
+autoExport.attempts
+autoExport.error
+downloadId/downloadState
+Retry Auto Export
 ```
 
-Resolver ưu tiên:
+Auto-export vẫn chỉ là **temporary development convenience**. IndexedDB là persistence chính.
+
+## Current persistence
 
 ```text
-composedPath actionable
-→ elementFromPoint actionable
-→ raw target actionable ancestor
-→ raw target
-```
-
-Không overwrite raw target. Mục tiêu là sửa các case UI động nơi `event.target` rơi vào wrapper/container lớn nhưng intent thực tế nằm ở button/card/control con.
-
-## V0.7 — timeline ordering
-
-Mỗi event capture mới có thêm:
-
-```text
-pageSeq   = thứ tự capture trong pageInstance hiện tại
-sourceSeq = thứ tự trong source stream
-sessionSeq = persistence order ở background
-```
-
-Interpretation:
-
-```text
-tsEpochMs = capture timestamp truth
-pageSeq   = page-local capture ordering / tie-breaker
-sourceSeq = source-local ordering
-sessionSeq = durable persistence ordering
-```
-
-Mutation burst được cấp `pageSeq/sourceSeq` ngay khi burst bắt đầu, không chờ flush 120 ms.
-
-## Persistence / reliability inherited from V0.6
-
-Raw event store chính vẫn là IndexedDB:
-
-```text
-content scripts
-→ RAW_BATCH + batchId
-→ ACK/retry journal
+RAW_BATCH + batchId
+→ ACK/retry sender
 → background serialized append
 → IndexedDB trainingCollectorRawV06
    ├─ sessions
@@ -167,147 +107,108 @@ content scripts
    └─ batchReceipts
 ```
 
-Chunk size: 1000 events.
+Raw schema 0.7.0 nhưng DB name V06 giữ lại để tránh migration không cần thiết.
 
-Reliability vẫn gồm:
+Chunk size: 1000.
 
-- batch receipt idempotency;
-- retry khi ACK mất;
-- chunk checksum FNV-1a;
-- missing/checksum/sequence integrity verification;
-- không tự delete raw session khi integrity fail.
-
-IndexedDB DB name vẫn giữ `trainingCollectorRawV06` để tránh migration storage không cần thiết; raw schema trong session/event mới là `0.7.0`.
-
-## Temporary auto-export
-
-V0.7 tiếp tục giữ temporary development auto-export:
+Integrity:
 
 ```text
-Chrome session A
-→ IndexedDB
-→ Chrome đóng
-→ lần mở Chrome tiếp theo
-→ infer A closed
-→ full integrity verify
-→ offscreen gzip JSONL
-→ Downloads/training-collector/*.raw.jsonl.gz
+checksum
+missing chunk
+event count metadata
+first/last sessionSeq
+cross-chunk sequence gap
 ```
 
-Đây chỉ là development convenience, không phải storage architecture dài hạn.
+Không tự delete raw khi integrity fail.
 
-Export header ưu tiên `session.schemaVersion`, nên native V0.7 export được đánh dấu `0.7.0` dù background compatibility API vẫn thuộc V0.6 storage layer.
+---
 
-## Privacy boundary
+# New observed gap — iframe/frame-aware capture
 
-Không thu/lưu:
+Session thực tế gặp Google human verification cho thấy Collector top-frame nhìn thấy iframe nhưng chưa quan sát đầy đủ element/state bên trong frame.
 
-- password values;
-- cookies;
-- Authorization/access tokens;
-- localStorage/sessionStorage secret contents;
-- clipboard contents;
-- payment secrets;
-- raw sensitive input values;
-- printable keyboard actual character/code;
-- URL query values/hash content;
-- raw document title theo policy hiện tại.
-
-## V0.7 tests / CI
-
-New contract:
+Sau khi V0.7.1 auto-export được Chrome-test ổn, bước Collector tiếp theo là frame-aware capture:
 
 ```text
-training-collector/tests/v07_action_semantics_contract.js
+all_frames / frame-aware content execution
+→ tabId + frameId + pageInstanceId + elementRef identity
+→ semantic/physical event trong frame
+→ cross-frame action/state reconstruction
 ```
 
-Synthetic regression test gồm:
+Mục tiêu là observation completeness cho UI iframe nói chung; không phải tự động giải CAPTCHA.
+
+---
+
+# Agent boundary — CAPTCHA / human verification
+
+CAPTCHA có thể xuất hiện bình thường trong test/browsing. Agent phải nhận ra đây là boundary condition.
+
+Policy:
 
 ```text
-hover-enter
-→ hover-dwell
-→ mutation burst / control added
-→ hover-leave
-→ derived hover-preview
+observe challenge
+→ Decision.status = blocked
+→ reasonCode = human_verification_required
+→ không cố tự giải/vượt challenge
+→ không retry click/reload vô hạn
+→ re-evaluate task
+→ nếu có route/trang khác hợp lệ phục vụ goal: replan
+→ nếu không: stop blocked
 ```
 
-v06 storage contract vẫn chạy để đảm bảo V0.7 không phá IndexedDB/ACK/checksum/auto-export.
-
-CI workflow phải check thêm:
+Chi tiết:
 
 ```text
-observer/hover_trace.js
-correlation/action_target_resolver.js
-tools/build_action_semantics.js
-tests/v07_action_semantics_contract.js
+docs/AGENT_BOUNDARY_CONDITIONS.md
 ```
 
-CI không thay manual Chrome validation.
+Việc chuyển trang/route khác phải phục vụ task hợp lệ, không nhằm bypass challenge.
 
-## Browser validation tiếp theo
+---
 
-Ưu tiên native V0.7 data thật trước khi xây Behavior Model.
+# Browser validation tiếp theo
+
+Ưu tiên kiểm tra **auto-export recovery**, chưa cần test hover đầy đủ ngay.
 
 ```text
 1 git pull
 2 chrome://extensions → Reload
-3 xác nhận Training Collector V0.7 Action Semantics
-4 đóng/mở Chrome để tạo clean raw schema 0.7.0 session
-5 test đặc biệt:
-   - hover thumbnail đủ lâu để preview động
-   - hover rồi rời đi không click
-   - hover rồi click control loa/mute
-   - click Skip Ad
-   - click link/card bình thường
-   - scroll/type/multiple tabs như trước
-6 không cần manual export
-7 đóng Chrome → mở lại
-8 gửi .raw.jsonl.gz auto-export
+3 xác nhận tên V0.7.1 Action Semantics + Export Recovery
+4 đóng/mở Chrome để có clean session
+5 thao tác đơn giản 1–2 phút
+6 KHÔNG Manual Export
+7 đóng toàn bộ Chrome
+8 mở Chrome lại
+9 kiểm tra Downloads/training-collector/
+10 mở popup → Recent Raw Sessions / Auto Export
 ```
 
-Phân tích V0.7 phải kiểm tra:
+Kỳ vọng session trước:
 
 ```text
-hover enter/dwell/leave pairing
-hover-preview derivation quality
-rawTargetRef vs resolvedTargetRef
-resolution confidence/method distribution
-pageSeq/sourceSeq continuity
-timestamp inversions
-pointer sampling
-mutation relevance/noise
-sessionSeq/chunk integrity
-gzip size/privacy
+status = closed-inferred
+autoExport.status = complete
+downloadState = complete
+attempts >= 1
 ```
 
-## Next after V0.7 validation
+Nếu không có file, popup phải cho thấy `autoExport.status/error` và có `Retry Auto Export`.
 
-Nếu V0.7 action semantics ổn:
+Chỉ sau khi test này ổn mới tiếp tục:
 
 ```text
-Action Window Builder
-→ target acquisition trajectories
-→ click / hover / typing / scroll windows
-→ mutation/state outcome relevance
-→ Behavior Feature Extractor
-→ Execution Behavior Dataset
+frame-aware capture
+→ repeat iframe regression
+→ repeat YouTube hover-preview / click-control tests
+→ Behavior Dataset Preparation
 ```
-
-Sau đó mới xây empirical/learned Natural Execution Policy cho Agent.
 
 ---
 
-# Agent architecture
-
-Agent phải đồng thời:
-
-```text
-1 hiểu đúng vấn đề/mục tiêu
-2 chọn đúng hành động
-3 thực hiện hành động tự nhiên
-```
-
-Architecture:
+# Agent architecture boundaries
 
 ```text
 TASK
@@ -322,25 +223,22 @@ TASK
 → REPLAN
 ```
 
-Responsibilities:
-
 ```text
 Strategy       = WHAT to do
-Behavior Model = HOW to do it naturally
+Behavior Model = HOW naturally
 Executor       = translate execution plan into CDP
 ```
 
-Natural behavior không dựa vào random delay/jitter. Nó phải derive/learn từ human demonstrations và condition theo target/context/action.
+Natural behavior không dựa vào random delay/jitter; phải derive/learn từ human demonstrations.
 
 ---
 
 # Development rules
 
 1. GitHub là source of truth.
-2. Đọc `STATUS.md` → `docs/PROJECT_JOURNAL.md` → source hiện tại trước khi sửa.
-3. Cập nhật STATUS/JOURNAL sau milestone lớn hoặc bug/invariant khó.
-4. Debug/auto-export adapters phải ghi rõ temporary.
-5. Không tuyên bố browser-tested nếu chỉ có CI.
-6. Recorder, Collector, Scenario Mode và Agent Runtime giữ boundary rõ ràng.
-7. Không commit raw user session vào repo; regression fixture phải synthetic/minimal.
-8. Trước Behavior Model, ưu tiên xác nhận Action Semantics bằng native V0.7 data thật.
+2. Cập nhật STATUS/JOURNAL sau milestone hoặc bug/invariant khó.
+3. CI success không đồng nghĩa Chrome manual verified.
+4. Debug/auto-export adapter phải ghi rõ temporary.
+5. Không commit raw user session vào repo.
+6. Không thu password/cookie/token/Authorization/clipboard/payment secrets/raw sensitive values.
+7. Recorder, Collector, deterministic Scenario Mode và Agent Runtime giữ boundary rõ ràng.
