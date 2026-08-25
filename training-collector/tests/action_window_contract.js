@@ -40,23 +40,28 @@ const raw = {
     { type: 'keyboard', phase: 'up', tsEpochMs: 3070, sessionSeq: 31, pageSeq: 9, sourceSeq: 2, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'search', operation: 'printable', keyClass: 'printable', key: null, code: null },
     { type: 'keyboard', phase: 'down', tsEpochMs: 3140, sessionSeq: 32, pageSeq: 10, sourceSeq: 3, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'search', operation: 'enter', keyClass: 'Enter', key: null, code: 'Enter' },
 
+    { type: 'pointer', phase: 'move', tsEpochMs: 3800, sessionSeq: 38, pageSeq: 10.1, sourceSeq: 13, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'thumb', pointerId: 1, x: 250, y: 120, movementX: 20, movementY: -5, buttons: 0 },
+    { type: 'pointer', phase: 'move', tsEpochMs: 3950, sessionSeq: 39, pageSeq: 10.2, sourceSeq: 14, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'thumb', pointerId: 1, x: 305, y: 120, movementX: 55, movementY: 0, buttons: 0 },
     { type: 'dom-hover-enter', tsEpochMs: 4000, sessionSeq: 40, pageSeq: 11, sourceSeq: 1, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'thumb' },
     { type: 'dom-hover-dwell', tsEpochMs: 4400, sessionSeq: 41, pageSeq: 12, sourceSeq: 2, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'thumb', dwellMs: 400 },
     { type: 'dom-mutation-burst', tsEpochMs: 4450, sessionSeq: 42, pageSeq: 13, sourceSeq: 3, pageInstanceId: 'p1', tabId: 1, frameId: 0, recordCount: 4, targetRefs: ['thumb'], addedRefs: ['previewControl'], attributes: {} },
     { type: 'dom-hover-leave', tsEpochMs: 4800, sessionSeq: 43, pageSeq: 14, sourceSeq: 4, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'thumb', dwellMs: 800 },
+    { type: 'pointer', phase: 'move', tsEpochMs: 4900, sessionSeq: 44, pageSeq: 14.1, sourceSeq: 15, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'other', pointerId: 1, x: 560, y: 220, movementX: 30, movementY: 20, buttons: 0 },
     { type: 'dom-hover-enter', tsEpochMs: 5000, sessionSeq: 50, pageSeq: 15, sourceSeq: 5, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'bodyBg' },
     { type: 'dom-hover-leave', tsEpochMs: 5050, sessionSeq: 51, pageSeq: 16, sourceSeq: 6, pageInstanceId: 'p1', tabId: 1, frameId: 0, targetRef: 'bodyBg', dwellMs: 50 }
   ]
 };
 
 const result = Windows.buildActionWindows(raw);
-assert.strictEqual(result.actionWindowVersion, '0.1.3');
+assert.strictEqual(result.actionWindowVersion, '0.1.4');
 assert.strictEqual(result.sourceSessionId, 'browser-action-window-test');
 assert.strictEqual(result.ordering.primary, 'tsEpochMs');
 assert.strictEqual(result.ordering.durabilityOnly, 'sessionSeq');
 assert.strictEqual(result.privacy.printableHumanKeyContentStored, false);
 assert.strictEqual(result.derivation.rawFactsMutated, false);
 assert.strictEqual(result.derivation.filteredHoverNoiseCount, 1);
+assert.strictEqual(result.derivation.hoverPointerApproach.withApproachCount >= 1, true);
+assert.strictEqual(result.derivation.hoverPointerApproach.withLeaveTrajectoryCount >= 1, true);
 
 const click = result.windows.find(x => x.actionType === 'click' && x.target.targetRef === 'eButton');
 assert(click);
@@ -119,6 +124,10 @@ const hover = result.windows.find(x => x.actionType === 'hoverAndObserve');
 assert(hover);
 assert.strictEqual(hover.outcome.previewLikeStateChange, true);
 assert.strictEqual(hover.target.label, 'Video đề xuất');
+assert.ok(hover.before.length >= 2);
+assert.strictEqual(hover.before.at(-1).x, 305);
+assert.ok(hover.after.length >= 1);
+assert.strictEqual(hover.after[0].x, 560);
 assert.ok(!result.windows.some(x => x.target?.targetRef === 'bodyBg'));
 
 const quality = Analyzer.summarizeActionWindows(result);
@@ -128,6 +137,7 @@ assert.ok(quality.targetQuality.labelCoverage > 0.5);
 assert.ok(quality.targetQuality.enriched >= 1);
 assert.ok(quality.behaviorEvidence.dragCount >= 1);
 assert.ok(quality.behaviorEvidence.horizontalScrollCount >= 1);
+assert.ok(quality.trainingEligibility.behavior.full >= 1);
 assert.strictEqual(quality.privacy.printableLeakSuspected, 0);
 assert.strictEqual(quality.privacy.printableContentContractOk, true);
 
