@@ -12,7 +12,7 @@ Trước khi sửa code: `STATUS.md` → `docs/PROJECT_JOURNAL.md` → source/te
 
 ---
 
-# CURRENT FOCUS — AGENT / Phase A3
+# CURRENT FOCUS — AGENT / A3 + P0 runtime bridge
 
 Collector V0.8 transport/capture gate đã đạt và chỉ còn stability/regression support.
 
@@ -26,8 +26,6 @@ login privacy boundary        PASS
 browser close finalize        PASS
 ```
 
-Không tiếp tục tối ưu Collector transport nếu không có regression mới.
-
 ---
 
 # Agent execution boundary
@@ -39,7 +37,7 @@ TASK
 → AGENT ACTION CONTRACT        = WHAT
 → EXECUTION BEHAVIOR CONTRACT = HOW naturally
 → CDP EXECUTION PLAN           = exact browser-native plan
-→ AGENT RUNTIME EXTENSION      = dispatch
+→ AGENT RUNTIME EXTENSION      = dispatch only
 → CHROME
 → OBSERVE AFTER
 → GOAL CHECK / REPLAN
@@ -48,44 +46,39 @@ TASK
 Hard invariant:
 
 ```text
-Strategy does NOT emit raw selector / coordinate / CDP packet.
-Behavior does NOT decide task intent.
-Executor does NOT decide strategy.
+Strategy does NOT emit selector / coordinate / CDP packet.
+Behavior does NOT choose task intent.
+Executor does NOT choose strategy.
 ```
 
 CDP is the standard in-page execution layer. `chrome.tabs.*` remains tab lifecycle control-plane.
 
 ---
 
-# Phase A0 — COMPLETE
-
-Key files:
+# A0 — COMPLETE
 
 ```text
 control-center/AGENT_ACTION_CONTRACT.json
 control-center/manager/strategy/agent_action_contract.js
 control-center/manager/strategy/execution_behavior_contract.js
 docs/AGENT_ACTION_CDP_MAP.md
-docs/AGENT_EXECUTOR_GAP_MAP.md
 ```
 
-Deterministic `control-center/ACTION_CONTRACT.json` remains separate.
+Scenario Mode contract remains separate.
 
 ---
 
-# Phase A1 — COMPLETE: Action Window Builder
+# A1 — COMPLETE
 
-Current Action Window version: `0.1.4`.
+Action Window `0.1.4`.
 
 ```text
 training-collector/tools/build_action_windows.js
 training-collector/tools/analyze_action_windows.js
-training-collector/tests/action_window_contract.js
-training-collector/tests/action_window_quality_contract.js
 docs/A1_NATIVE_DATASET_VALIDATION.md
 ```
 
-Families:
+Families currently derived:
 
 ```text
 click / dismiss / toggle
@@ -96,145 +89,45 @@ scrollVertical / scrollHorizontal
 typeText / pressKey
 ```
 
-Important invariants:
-
-```text
-raw remains unchanged
-resolvedTargetDescriptor is implementation truth
-missing semantic label is never invented
-hover background noise filtered only in derived dataset
-hover windows embed bounded pointer approach + leave
-safe physical facts preserved for A2
-Strategy eligibility != Behavior eligibility
-tsEpochMs is global reconstruction time
-sessionSeq is durability order only
-```
-
-Native A1 gate used five real V0.8 sessions covering Google/YouTube, Facebook login/post-login, TikTok/video/short-drama, horizontal carousel, hover, modal dismiss, multi-tab/multi-frame.
+Important: raw truth is never rewritten; Strategy eligibility and Behavior eligibility are separate; `tsEpochMs` is chronology and `sessionSeq` is durability only.
 
 ---
 
-# Phase A2 — COMPLETE: Behavior Feature Extractor
+# A2 — COMPLETE
 
-Main files:
+Behavior Feature `0.2.0`.
 
 ```text
 training-collector/tools/extract_behavior_features.js
 training-collector/tools/analyze_behavior_features.js
-training-collector/tests/behavior_feature_contract.js
-training-collector/tests/behavior_feature_analysis_contract.js
 docs/A2_NATIVE_FEATURE_VALIDATION.md
 ```
 
-Behavior Feature version: `0.2.0`.
+A2 derives pointer path/speed/acceleration/turn/corrections, click hold/acquisition, hover approach+dwell+leave, vertical/horizontal wheel burst features, keyboard hold/inter-key timing and target geometry.
 
-Derived pointer features:
-
-```text
-sample count / duration
-start/end / displacement / path length
-straightness
-mean/median/P90/max speed
-mean absolute acceleration
-mean/P90 turn angle
-correction count >=45deg
-```
-
-Click adds:
-
-```text
-acquisition pause
-pointer down→up hold
-down→DOM-action / DOM-action→up timing
-endpoint distance to target center
-normalized endpoint distance by target diagonal
-```
-
-Hover adds:
-
-```text
-approach path
-leave path
-dwell
-preview-like outcome
-mutation count
-```
-
-Scroll adds:
-
-```text
-burst duration/event count
-signed + absolute delta
-median/P90 event delta
-inter-event gaps
-direction changes
-correction ratio
-```
-
-Keyboard adds:
-
-```text
-down/up timing
-operation classes
-key hold distribution
-down→down inter-key rhythm
-long pause count
-repeat count
-```
-
-Printable human key content remains absent.
-
-Target context:
-
-```text
-role/tag
-x/y/width/height
-center
-area/aspect ratio
-```
-
-A2 analyzer reports robust distributions, coverage and warnings across one or multiple sessions.
-
-Native spot gate across five sessions:
-
-```text
-DOM clicks checked:              105
-click pointer lead-in:           104
-click down→up pair:               94 (~89.5%)
-hover-enter:                    1449
-vertical scroll bursts:          348
-horizontal scroll bursts:         27
-keyboard hold pairs:             227
-derived drag candidates:           1
-```
-
-Important observations:
-
-```text
-click hold median ~223 ms; long tail exists
-hover dwell median ~363 ms
-vertical/horizontal scroll have different burst distributions
-keyboard gap/hold distributions contain large idle/outlier tails
-drag is too sparse for confident fitting
-```
-
-These are dataset observations, NOT runtime constants.
-
-Latest full A2 CI:
-
-```text
-commit: 19a1865669f6ad3267e7e160f06560443648e4aa
-run:    32880751537
-result: SUCCESS
-```
+Native gate across five recent sessions showed useful click/hover/scroll/keyboard coverage. Drag remains sparse and must use fallback rather than a confident learned distribution.
 
 ---
 
-# Phase A3 — IN PROGRESS: Empirical Behavior Baseline
+# A3 — IN PROGRESS: Empirical Behavior Baseline
 
-Goal: create context-conditioned behavior sampling from A2 features without a complex learned model.
+Main files:
 
-Initial families:
+```text
+training-collector/tools/build_behavior_baseline.js
+control-center/manager/behavior/empirical_policy.js
+control-center/script/checks/empirical_behavior_policy.js
+```
+
+Baseline version `0.1.0` uses aggregated robust quantiles only:
+
+```text
+p10 / p25 / p50 / p75 / p90
+```
+
+No literal human trajectory is stored or replayed.
+
+Initial behavior families:
 
 ```text
 pointer-click
@@ -243,68 +136,189 @@ scroll-vertical
 scroll-horizontal
 keyboard-text
 keyboard-key
+pointer-drag (sparse fallback)
 ```
 
-Drag remains supported only by conservative fallback until more real demonstrations exist.
-
-A3 rules:
-
-```text
-use robust empirical quantiles / bounded sampling
-condition by action family + target geometry/context where supported
-separate active typing gaps from idle pauses
-clip/reject extreme outliers before sampling
-never replay a human trajectory verbatim
-never use random jitter/delay everywhere
-natural behavior must not reduce action correctness
-```
-
-Expected output is an Execution Behavior Contract that can later be compiled into an exact CDP plan.
+Context buckets currently include target size when enough samples exist. Runtime sampling stays bounded between empirical quantiles, which naturally clips extreme raw tails rather than sampling them directly.
 
 ---
 
-# “Tay chân” Agent — executor gap
-
-Experimental Agent Runtime still directly executes only:
+# CDP Execution Planner — NEW
 
 ```text
-openUrl
-pressKey
-type
+control-center/manager/execution/cdp_plan.js
+control-center/script/checks/cdp_execution_plan.js
 ```
 
-P0 missing capability remains **Observation Target Registry**:
+CDP Plan version `0.1.0` converts mapped Agent Action + Execution Behavior + current target geometry into exact steps.
+
+Implemented planner families:
+
+```text
+pointer-click
+  adaptive target point
+  bounded curved approach path
+  dwell
+  mousePressed
+  empirical hold
+  mouseReleased
+
+pointer-hover
+  approach path
+  optional dwell
+
+scroll vertical/horizontal
+  multi-event wheel burst
+  separate axis
+  bounded empirical duration/delta
+
+keyboard text/key
+  task text emitted per character with empirical timing
+  no human captured printable content is used
+
+navigate/reload
+```
+
+Natural execution is generated from aggregate constraints; it is not random jitter everywhere and not trajectory replay.
+
+---
+
+# P0 Agent Runtime — V0.2 Target Registry + allowlisted plan dispatch
+
+Main files:
+
+```text
+control-center/extension/agent-runtime-extension/manifest.json
+control-center/extension/agent-runtime-extension/target_registry.js
+control-center/extension/agent-runtime-extension/cdp_plan_dispatcher.js
+control-center/extension/agent-runtime-extension/background.js
+control-center/script/checks/agent_runtime_target_registry.js
+control-center/script/checks/cdp_plan_dispatcher.js
+```
+
+Runtime extension version `0.2.0`.
+
+## Observation Target Registry
+
+Every observation gets a short-lived `observationId`.
 
 ```text
 observationId + targetRef
-→ tab/frame/document
-→ semantic descriptor/current rect
-→ resolvable CDP target
+→ tab + frame
+→ semantic descriptor
+→ current observation rect
+→ internal-only selector when available
 ```
 
-Brain should emit `click e17`; stale refs must fail and trigger re-observation, never blind coordinate reuse.
+Public observation does NOT expose internal selector. Brain sees semantic `targetRef` + role/label/rect only.
 
-P0 executor expansion after A3 baseline contract stabilizes:
+Target refs are observation-bound:
 
 ```text
-target registry
-pointer move/hover/click/doubleClick
-vertical/horizontal wheel
-focus + text/key
-navigate/back/forward/reload
+new observation
+navigation/loading
+TTL expiry
+runtime detach
+→ old targetRef becomes stale
 ```
+
+Stale target must fail and trigger re-observation; never blindly reuse old coordinates.
+
+Current TTL: 4 seconds. This is intentionally short for the one-action-per-observation Agent loop and can be tuned after native tests.
+
+## Direct CDP primitives now available
+
+```text
+navigate / reload / back / forward
+pressKey / typeText
+moveTo / hover
+click / doubleClick
+focus
+scrollVertical / scrollHorizontal
+```
+
+Legacy normalized execution remains temporarily for debugging.
+
+## EXECUTE_PLAN
+
+Runtime now accepts exact CDP plans from the manager, but only through a strict allowlist:
+
+```text
+Input.dispatchMouseEvent
+Input.dispatchKeyEvent
+Input.insertText
+Page.navigate
+Page.reload
+Page.getNavigationHistory
+Page.navigateToHistoryEntry
+```
+
+`Runtime.evaluate` and arbitrary CDP methods are NOT accepted through `EXECUTE_PLAN`.
+
+For target-bound plans, a valid current `observationId + targetRef` is required before dispatch. After plan execution the observation is invalidated, enforcing re-observation.
+
+---
+
+# Latest CI gate
+
+Target registry gate:
+
+```text
+run: 32881807557
+result: SUCCESS
+```
+
+Latest CDP planner/dispatcher run contains passing Agent/A1/A2/A3/planner/registry/dispatcher steps; use the latest workflow run on `main` as implementation gate before native testing.
+
+CI success is not native Chrome validation.
+
+---
+
+# NEXT — A4 preparation / Manager one-action bridge
+
+Implement one callable pipeline:
+
+```text
+OBSERVE
+→ observationId + semantic target list
+→ Strategy emits ONE Agent Action
+→ mapAgentAction
+→ empirical_policy.sampledBehavior
+→ cdp_plan.buildCdpPlan
+→ Runtime EXECUTE_PLAN(observationId)
+→ OBSERVE AFTER
+```
+
+First native actions should be deliberately small and observable:
+
+```text
+click semantic button/link
+hover semantic target
+vertical scroll
+horizontal scroll
+focus + type text
+back/forward
+```
+
+Do not start autonomous multi-step tasks until this one-action bridge proves stale-target handling and outcome re-observation.
+
+---
+
+# Remaining runtime gaps after P0
 
 P1:
 
 ```text
-drag
+drag / slider / seek
 scrollIntoView
-selectOption/setChecked/toggle/submit/dismiss
-tab lifecycle
-hoverAndObserve/waitAndObserve
+selectOption / setChecked / form submit
+semantic dismiss helper
+tab lifecycle through Agent bridge
+hoverAndObserve / waitAndObserve outcome policy
+multi-frame target registry beyond current top-frame runtime observation
 ```
 
-Candidate future actions, not core yet:
+Potential future actions, only when task/evidence requires them:
 
 ```text
 contextClick
@@ -315,25 +329,6 @@ uploadFile
 ```
 
 Media verbs compile to generic semantic click/drag; no site-specific YouTube/TikTok executor methods.
-
----
-
-# Roadmap
-
-```text
-A3 Empirical Behavior Baseline
-→ robust/context-conditioned distributions
-
-P0 executor expansion
-→ target registry + CDP input/navigation primitives
-
-A4 One-action Agent Runtime Bridge
-→ Strategy → Agent Action → Behavior → CDP → Observe After
-
-A5 Goal Checker + Replan
-```
-
-Do not train complex models before A3 offline sampling metrics are stable.
 
 ---
 
@@ -357,10 +352,10 @@ Human login demonstrations may contribute timing/semantic form behavior but neve
 2. Scenario Mode and Agent Mode remain separate.
 3. Strategy=WHAT; Behavior=HOW; CDP Planner=exact plan; Executor=dispatch.
 4. Collector raw stays un-derived and privacy-filtered.
-5. Derived cleanup belongs in dataset tooling; never overwrite raw truth.
-6. Strategy and Behavior dataset eligibility are separate concepts.
-7. `tsEpochMs` is global dataset time; `sessionSeq` is durability order.
-8. Human demonstrations provide distributions/context, not literal replay.
-9. Sparse families must remain explicitly sparse; do not manufacture confidence.
+5. Strategy/Behavior dataset eligibility remain separate.
+6. Human demonstrations provide distributions/context, not literal replay.
+7. Sparse families remain explicitly sparse.
+8. Target refs are observation-bound and stale refs trigger re-observation.
+9. `EXECUTE_PLAN` is allowlisted; no arbitrary CDP method tunnel.
 10. CI success != native Chrome Agent validation.
 11. Update STATUS/JOURNAL after architecture or dataset-contract milestones.
