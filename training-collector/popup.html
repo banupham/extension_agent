@@ -2,22 +2,34 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Training Collector V0.1</title>
+  <title>Training Collector V0.3</title>
   <style>
-    body{font:13px system-ui,sans-serif;margin:14px;width:320px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px} .row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.7}.status{margin-top:8px;white-space:pre-wrap}
+    body{font:13px system-ui,sans-serif;margin:14px;width:390px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}
   </style>
 </head>
 <body>
-  <strong>Training Collector V0.1</strong>
-  <div class="muted">Privacy-first episode skeleton</div>
-  <input id="task" placeholder="Task instruction, e.g. Search Google for OpenAI">
-  <button id="start">Start Episode</button>
+  <strong>Training Collector V0.3 Raw Browser Session</strong>
+  <div class="muted">Raw physical capture runs continuously for this Chrome session. Sensitive values are not recorded.</div>
+
+  <div id="rawStatus" class="status">Loading raw session...</div>
   <div class="row">
-    <button id="success">Mark Success</button>
-    <button id="failed">Mark Failed</button>
+    <button id="previewRaw">Preview Raw</button>
+    <button id="exportRaw">Export Raw JSON</button>
   </div>
-  <button id="stop">Stop</button>
-  <div id="status" class="status"></div>
+  <pre id="preview" hidden></pre>
+
+  <div class="section">
+    <strong>Optional Task Episode</strong>
+    <div class="muted">Episodes label/segment the continuous raw session; they do not start or stop raw physical capture.</div>
+    <input id="task" placeholder="Task instruction, e.g. Search Google for OpenAI">
+    <button id="start">Start Episode</button>
+    <div class="row">
+      <button id="success">Mark Success</button>
+      <button id="failed">Mark Failed</button>
+    </div>
+    <button id="stop">Stop Episode</button>
+    <div id="status" class="status"></div>
+  </div>
   <script src="popup.js"></script>
 </body>
 </html>
