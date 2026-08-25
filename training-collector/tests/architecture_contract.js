@@ -9,6 +9,15 @@ assert.equal(Privacy.classifyElementMeta({ type: 'password' }).sensitive, true);
 assert.equal(Privacy.classifyElementMeta({ name: 'otp_code' }).sensitive, true);
 assert.equal(Privacy.classifyElementMeta({ ariaLabel: 'Search' }).sensitive, false);
 
+const safeUrl = Privacy.sanitizeUrl('https://example.com/search?q=private-value&token=secret#fragment');
+assert.equal(safeUrl.origin, 'https://example.com');
+assert.equal(safeUrl.pathname, '/search');
+assert.deepEqual(safeUrl.queryKeys, ['q', 'token']);
+assert.equal(safeUrl.hasHash, true);
+assert.equal(JSON.stringify(safeUrl).includes('private-value'), false);
+assert.equal(JSON.stringify(safeUrl).includes('secret'), false);
+assert.deepEqual(Privacy.safePageTitle('Private account name'), { length: 20, empty: false });
+
 const action = ActionNormalizer.normalize({
   kind: 'text-key',
   targetRef: 'e12',
@@ -25,7 +34,7 @@ assert.equal(action.targetRef, 'e12');
 const episode = EpisodeBuilder.createEpisode({
   task: { instruction: 'Search for OpenAI', type: 'web_search', args: { query: 'OpenAI' } },
   tabId: 7,
-  initialObservation: { schemaVersion: '0.2.0' },
+  initialObservation: { schemaVersion: '0.4.0' },
   now: '2026-08-25T00:00:00.000Z'
 });
 assert.equal(episode.schemaVersion, '0.2.0');
@@ -52,4 +61,4 @@ assert.equal(matched, true);
 assert.equal(episode.transitions[0].status, 'complete');
 assert.equal(episode.transitions[0].outcome.partial, false);
 
-console.log('Training Collector V0.2 architecture contract: OK');
+console.log('Training Collector V0.4 architecture contract: OK');
