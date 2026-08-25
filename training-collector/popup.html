@@ -2,19 +2,20 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Training Collector V0.4</title>
+  <title>Training Collector V0.4.1</title>
   <style>
-    body{font:13px system-ui,sans-serif;margin:14px;width:390px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}
+    body{font:13px system-ui,sans-serif;margin:14px;width:410px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}.notice{padding:8px;background:#f4f6f8;margin:8px 0;line-height:1.35}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}
   </style>
 </head>
 <body>
-  <strong>Training Collector V0.4 DOM Core + Correlation</strong>
-  <div class="muted">Continuous raw physical + privacy-safe semantic DOM capture for this Chrome session.</div>
+  <strong>Training Collector V0.4.1 Auto Export</strong>
+  <div class="muted">Continuous raw physical + privacy-safe semantic DOM capture for the Chrome browser session.</div>
+  <div class="notice">Completed sessions are exported automatically on the next Chrome start to <b>Downloads/training-collector/</b>. Manual export below is only for inspecting the current running session.</div>
 
   <div id="rawStatus" class="status">Loading raw session...</div>
   <div class="row">
-    <button id="previewRaw">Preview Raw</button>
-    <button id="exportRaw">Export Raw JSON</button>
+    <button id="previewRaw">Preview Current</button>
+    <button id="exportRaw">Manual Export Current</button>
   </div>
   <pre id="preview" hidden></pre>
 
