@@ -15,8 +15,8 @@ const popup = read('popup.js');
 const offscreen = read('offscreen.js');
 const manifest = JSON.parse(read('manifest.json'));
 
-assert.equal(manifest.version, '0.6.1');
-assert.ok(manifest.name.includes('V0.6.1'));
+assert.equal(manifest.version, '0.7.0');
+assert.ok(manifest.name.includes('V0.7'));
 assert.ok(manifest.permissions.includes('offscreen'));
 assert.ok(manifest.permissions.includes('alarms'));
 assert.ok(manifest.content_scripts[0].js.includes('core/reliable_sender.js'));
@@ -59,4 +59,4 @@ assert.ok(offscreen.includes('chrome.downloads.download'));
 assert.ok(offscreen.includes('training-collector/'));
 assert.ok(offscreen.includes('autoExport: true'));
 
-console.log('Training Collector V0.6.1 storage reliability + temporary auto export contract OK');
+console.log('Training Collector inherited V0.6 storage reliability + temporary auto export contract OK under V0.7');
