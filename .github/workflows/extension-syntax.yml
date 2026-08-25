@@ -60,6 +60,7 @@ jobs:
           node --check training-collector/tools/analyze_raw.js
           node --check training-collector/tools/build_action_semantics.js
           node --check training-collector/tools/build_action_windows.js
+          node --check training-collector/tools/analyze_action_windows.js
           node --check training-collector/socket-server/server.js
           node --check training-collector/socket-server/integration_test.js
           node --check training-collector/background.js
