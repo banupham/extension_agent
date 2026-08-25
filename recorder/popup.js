@@ -48,7 +48,9 @@ function recordedMeta(ev, gapMs) {
     pageUrl: ev.pageUrl || null,
     target: compactTarget(ev),
     pointerGesture: ev.pointerGesture || null,
+    mousePath: ev.mousePath || null,
     editTrace: ev.editTrace || null,
+    reconstruction: ev.reconstruction || null,
     scrollTrace: ev.scrollTrace || null,
     keyboard: ['key', 'keyCombo'].includes(ev.type) ? {
       key: ev.key || null,
@@ -66,28 +68,86 @@ function timingMeta(gapMs) {
     randomizable: true
   };
 }
-function pushTimed(interactions, action, ev, anchor) {
-  const gapMs = exactGap(ev, anchor);
-  if (gapMs >= IDLE_WAIT_THRESHOLD_MS) {
+function addGap(interactions, action, gapMs, recorded) {
+  const gap = Math.max(0, Math.round(n(gapMs, 0)));
+  if (gap >= IDLE_WAIT_THRESHOLD_MS) {
     interactions.push({
       action: 'wait',
-      ms: gapMs,
+      ms: gap,
       delay: 0,
-      timing: { recordedGapMs: gapMs, kind: 'idle', randomizable: true },
-      recorded: {
-        kind: 'idle-gap',
-        beforeSeq: ev.seq ?? null,
-        beforeEventType: ev.type || null,
-        fromSeq: anchor?.seq ?? null
-      }
+      timing: { recordedGapMs: gap, kind: 'idle', randomizable: true },
+      recorded: { kind: 'idle-gap', ...(recorded || {}) }
     });
     action.delay = 0;
   } else {
-    action.delay = gapMs;
+    action.delay = gap;
   }
-  action.timing = timingMeta(gapMs);
-  action.recorded = recordedMeta(ev, gapMs);
+  action.timing = timingMeta(gap);
   interactions.push(action);
+}
+function pushTimed(interactions, action, ev, anchor) {
+  const gapMs = exactGap(ev, anchor);
+  addGap(interactions, action, gapMs, {
+    beforeSeq: ev.seq ?? null,
+    beforeEventType: ev.type || null,
+    fromSeq: anchor?.seq ?? null
+  });
+  action.recorded = recordedMeta(ev, gapMs);
+}
+function opAction(op) {
+  if (op.kind === 'type') return { action: 'type', text: String(op.text ?? '') };
+  if (op.kind === 'pressKey') return { action: 'pressKey', key: String(op.key || '') };
+  if (op.kind === 'keyCombo') return { action: 'keyCombo', keys: Array.isArray(op.keys) ? op.keys : [] };
+  return null;
+}
+function pushTextEdit(interactions, ev, anchor) {
+  const selector = ev.selector || (Array.isArray(ev.selectors) ? ev.selectors[0] : null);
+  const trace = ev.editTrace || {};
+  const ops = Array.isArray(trace.operations) ? trace.operations : [];
+  const reconstructable = ev.reconstruction?.reconstructable === true && ops.length > 0;
+
+  if (!reconstructable) {
+    pushTimed(interactions, {
+      action: 'replaceText',
+      selector,
+      text: String(ev.finalValue ?? '')
+    }, ev, anchor);
+    interactions[interactions.length - 1].recorded.textReplayMode = 'replaceText-fallback';
+    return { t: eventEnd(ev), seq: ev.seq };
+  }
+
+  let opAnchor = anchor;
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    const action = opAction(op);
+    if (!action) continue;
+    const virtual = {
+      t: n(op.t, n(ev.t, 0)),
+      tEnd: n(op.t, n(ev.t, 0)),
+      seq: ev.seq,
+      type: `text-op:${op.kind}`
+    };
+    const gapMs = exactGap(virtual, opAnchor);
+    addGap(interactions, action, gapMs, {
+      kind: 'text-operation-gap',
+      parentSeq: ev.seq ?? null,
+      operationIndex: i,
+      operationKind: op.kind
+    });
+    action.recorded = {
+      parentSeq: ev.seq ?? null,
+      eventType: 'textEditRecorded',
+      textReplayMode: 'keyboard-operations',
+      operationIndex: i,
+      operation: op,
+      target: compactTarget(ev),
+      editSummary: trace.summary || null,
+      initialValue: ev.initialValue ?? trace.initialValue ?? null,
+      finalValue: ev.finalValue ?? trace.finalValue ?? null
+    };
+    opAnchor = virtual;
+  }
+  return { t: eventEnd(ev), tEnd: eventEnd(ev), seq: ev.seq };
 }
 
 function toInteractions(recording) {
@@ -123,12 +183,19 @@ function toInteractions(recording) {
         fallback: {
           clientX: n(ev.clientX, 0), clientY: n(ev.clientY, 0),
           viewportWidth: n(ev.viewport?.width, 0), viewportHeight: n(ev.viewport?.height, 0)
-        }
+        },
+        mouseGesture: ev.mousePath?.metrics || null
       }, ev, timingAnchor);
       timingAnchor = ev;
       continue;
     }
 
+    if (ev.type === 'textEditRecorded') {
+      timingAnchor = pushTextEdit(interactions, ev, timingAnchor);
+      continue;
+    }
+
+    // Legacy recordings remain import/export compatible.
     if (ev.type === 'replaceText') {
       pushTimed(interactions, {
         action: 'replaceText',
@@ -191,8 +258,8 @@ function scenarioSource(recording) {
   const interactions = toInteractions(recording);
   const name = slug(recording?.title || 'recorded-scenario');
   const recordingMeta = {
-    recorderVersion: recording?.recorderVersion || '3.9.0',
-    timingModel: recording?.timingModel || 'rich-gesture-v2',
+    recorderVersion: recording?.recorderVersion || '4.0.0',
+    timingModel: recording?.timingModel || 'detailed-input-mouse-v3',
     capturedAt: recording?.capturedAt || null,
     stoppedAt: recording?.stoppedAt || null,
     durationMs: n(recording?.durationMs, 0),
@@ -299,7 +366,7 @@ $('start').addEventListener('click', async () => {
     const r = await bg('start', { tabId: tab.id });
     if (!r?.ok) throw new Error(r?.error || 'Không thể bắt đầu');
     lastRecording = null;
-    status('Đang ghi V3.9 • waits, click, edit trace và gesture metrics đều được giữ.', 'recording');
+    status('Đang ghi V4.0 • detailed keys, Backspace/Delete, mouse path, waits và gesture metrics.', 'recording');
   } catch (e) { status(`Lỗi: ${e.message}`, 'error'); }
 });
 $('stop').addEventListener('click', async () => {
@@ -324,9 +391,10 @@ $('exportJs').addEventListener('click', async () => {
     const filename = `${slug(lastRecording.title)}.scenario.js`;
     const saved = await downloadJs(filename, source);
     const waits = interactions.filter(x => x.action === 'wait').length;
+    const backspaces = interactions.filter(x => x.action === 'pressKey' && x.key === 'Backspace').length;
     const gestures = interactions.filter(x => x.action === 'scrollTo' && x.gesture).length;
     const where = saved?.method === 'directory' && saved.directoryName ? ` • ${saved.directoryName}` : '';
-    status(`Đã tạo ${filename} • ${interactions.length} actions • ${waits} waits • ${gestures} gestures${where}`, 'stopped');
+    status(`Đã tạo ${filename} • ${interactions.length} actions • ${backspaces} Backspace • ${waits} waits • ${gestures} scroll gestures${where}`, 'stopped');
   } catch (e) { status(`Lỗi: ${e.message}`, 'error'); }
 });
 
@@ -335,7 +403,7 @@ $('exportJs').addEventListener('click', async () => {
     const tab = await getActiveTab();
     currentTabId = tab.id;
     const r = await bg('status', { tabId: tab.id });
-    status(r?.active ? `Đang ghi • ${r.count || 0} sự kiện • Gesture Metrics V3.9` : 'Sẵn sàng. Start để ghi Gesture Metrics V3.9.', r?.active ? 'recording' : 'stopped');
+    status(r?.active ? `Đang ghi • ${r.count || 0} sự kiện • Detailed Input V4.0` : 'Sẵn sàng. Start để ghi Detailed Input + Mouse Path V4.0.', r?.active ? 'recording' : 'stopped');
     const lr = await bg('lastRecording');
     lastRecording = lr?.recording || null;
   } catch (e) { status(`Lỗi: ${e.message}`, 'error'); }
