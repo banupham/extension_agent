@@ -32,8 +32,8 @@ async function startSession(tab) {
 function buildRecording(s) {
   const stoppedAtEpoch = Number(s.stoppedAtEpoch || Date.now());
   return {
-    recorderVersion: '3.8.0',
-    timingModel: 'rich-exact-v1',
+    recorderVersion: '3.9.0',
+    timingModel: 'rich-gesture-v2',
     url: s.startedUrl,
     title: s.title || s.currentTitle || 'Recorded workflow',
     capturedAt: new Date(s.startedAtEpoch).toISOString(),
