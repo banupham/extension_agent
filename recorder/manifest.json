@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Browser Action Recorder V3.9 Gesture Metrics",
-  "version": "3.9.0",
-  "description": "Deterministic recorder with exact waits, rich interaction traces, and detailed scroll gesture distance/speed/wheel metrics for later variant generation.",
+  "name": "Browser Action Recorder V4.0 Detailed Input + Mouse Path",
+  "version": "4.0.0",
+  "description": "Deterministic recorder with exact waits, detailed keyboard edit operations, mouse path traces, and scroll gesture metrics for later variant generation.",
   "permissions": [
     "storage",
     "downloads",
@@ -15,7 +15,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Browser Action Recorder V3.9"
+    "default_title": "Browser Action Recorder V4.0"
   },
   "background": {
     "service_worker": "background.js"
