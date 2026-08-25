@@ -7,10 +7,12 @@
     startedAtEpoch: 0,
     scrollTimer: null,
     scrollSamples: [],
+    wheelSamples: [],
     scrollStartedAt: null,
     pendingInputs: new Map(),
     pointerDown: new Map(),
-    lastPointerGesture: null
+    lastPointerGesture: null,
+    lastPointerActivity: null
   };
 
   function relativeNow() {
@@ -108,7 +110,11 @@
     const info = elementInfo(el);
     return info.selector || info.selectors?.[0] || null;
   }
-  function trimTrace(arr, max = 120) { return arr.length > max ? arr.slice(arr.length - max) : arr; }
+  function trimTrace(arr, max = 160) { return arr.length > max ? arr.slice(arr.length - max) : arr; }
+  function round(n, digits = 2) {
+    const p = 10 ** digits;
+    return Math.round(Number(n || 0) * p) / p;
+  }
   function queueFieldValue(el, inputType = null) {
     const key = fieldKey(el);
     if (!key) return;
@@ -130,7 +136,7 @@
       existing.inputType = inputType;
       existing.updatedAt = now;
       existing.changes.push(change);
-      existing.changes = trimTrace(existing.changes);
+      existing.changes = trimTrace(existing.changes, 120);
     } else {
       S.pendingInputs.set(key, {
         element: el,
@@ -174,20 +180,88 @@
     chrome.runtime.sendMessage({ scope: 'BAR_V3', cmd: 'event', event: { t: relativeNow(), type, pageUrl: location.href, ...data } }).catch(() => {});
   }
 
+  function scrollMetrics(samples, wheelSamples, startedAtMs, endedAtMs) {
+    const first = samples[0] || { x: Math.round(window.scrollX), y: Math.round(window.scrollY), t: startedAtMs };
+    const last = samples[samples.length - 1] || first;
+    let distancePx = 0;
+    let peakSpeedPxPerSec = 0;
+    const speedSamples = [];
+    for (let i = 1; i < samples.length; i++) {
+      const a = samples[i - 1];
+      const b = samples[i];
+      const dx = Number(b.x || 0) - Number(a.x || 0);
+      const dy = Number(b.y || 0) - Number(a.y || 0);
+      const d = Math.hypot(dx, dy);
+      const dtMs = Math.max(1, Number(b.t || 0) - Number(a.t || 0));
+      const speed = d / (dtMs / 1000);
+      distancePx += d;
+      peakSpeedPxPerSec = Math.max(peakSpeedPxPerSec, speed);
+      speedSamples.push({ t: b.t, speedPxPerSec: round(speed, 1), distancePx: round(d, 2), dtMs });
+    }
+    const durationMs = Math.max(0, endedAtMs - startedAtMs);
+    const displacementX = Number(last.x || 0) - Number(first.x || 0);
+    const displacementY = Number(last.y || 0) - Number(first.y || 0);
+    const straightDistancePx = Math.hypot(displacementX, displacementY);
+    const averageSpeedPxPerSec = durationMs > 0 ? distancePx / (durationMs / 1000) : 0;
+    let direction = 'none';
+    if (Math.abs(displacementY) >= Math.abs(displacementX) && Math.abs(displacementY) > 0) direction = displacementY > 0 ? 'down' : 'up';
+    else if (Math.abs(displacementX) > 0) direction = displacementX > 0 ? 'right' : 'left';
+
+    const recentPointer = S.lastPointerActivity && Math.abs(startedAtMs - S.lastPointerActivity.t) <= 900 ? S.lastPointerActivity : null;
+    let sourceHint = 'unknown';
+    if (recentPointer?.pointerType === 'touch') sourceHint = 'touch';
+    else if (wheelSamples.length) {
+      const modes = [...new Set(wheelSamples.map(x => x.deltaMode))];
+      sourceHint = modes.every(x => x === 0) ? 'wheel-pixel' : (modes.every(x => x === 1) ? 'wheel-line' : (modes.every(x => x === 2) ? 'wheel-page' : 'wheel-mixed'));
+    } else if (recentPointer?.pointerType === 'mouse') sourceHint = 'pointer-scroll-or-scrollbar';
+
+    const wheelTotalX = wheelSamples.reduce((s, x) => s + Number(x.deltaX || 0), 0);
+    const wheelTotalY = wheelSamples.reduce((s, x) => s + Number(x.deltaY || 0), 0);
+
+    return {
+      durationMs,
+      start: { x: first.x, y: first.y },
+      end: { x: last.x, y: last.y },
+      displacementX: round(displacementX, 2),
+      displacementY: round(displacementY, 2),
+      straightDistancePx: round(straightDistancePx, 2),
+      pathDistancePx: round(distancePx, 2),
+      averageSpeedPxPerSec: round(averageSpeedPxPerSec, 1),
+      peakSpeedPxPerSec: round(peakSpeedPxPerSec, 1),
+      direction,
+      sourceHint,
+      sampleCount: samples.length,
+      wheelSampleCount: wheelSamples.length,
+      wheelTotalDeltaX: round(wheelTotalX, 2),
+      wheelTotalDeltaY: round(wheelTotalY, 2),
+      speedSamples: trimTrace(speedSamples, 120)
+    };
+  }
+
   document.addEventListener('pointerdown', e => {
     if (!S.active) return;
+    const t = relativeNow();
     S.pointerDown.set(e.pointerId, {
-      t: relativeNow(), clientX: e.clientX, clientY: e.clientY,
+      t, clientX: e.clientX, clientY: e.clientY,
       button: e.button, pointerType: e.pointerType || 'mouse', pressure: Number(e.pressure || 0)
     });
+    S.lastPointerActivity = { t, pointerType: e.pointerType || 'mouse', phase: 'down', x: e.clientX, y: e.clientY };
     const active = document.activeElement;
     if (active && active !== e.target && (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active.isContentEditable)) flushField(active);
+  }, true);
+
+  document.addEventListener('pointermove', e => {
+    if (!S.active) return;
+    if (e.pointerType === 'touch' || S.pointerDown.has(e.pointerId)) {
+      S.lastPointerActivity = { t: relativeNow(), pointerType: e.pointerType || 'mouse', phase: 'move', x: e.clientX, y: e.clientY };
+    }
   }, true);
 
   document.addEventListener('pointerup', e => {
     if (!S.active) return;
     const down = S.pointerDown.get(e.pointerId);
     const upT = relativeNow();
+    S.lastPointerActivity = { t: upT, pointerType: e.pointerType || down?.pointerType || 'mouse', phase: 'up', x: e.clientX, y: e.clientY };
     if (down) {
       S.lastPointerGesture = {
         startedAtMs: down.t,
@@ -283,6 +357,26 @@
     sendEvent('key', keyMeta);
   }, true);
 
+  window.addEventListener('wheel', e => {
+    if (!S.active) return;
+    const t = relativeNow();
+    S.wheelSamples.push({
+      t,
+      deltaX: round(e.deltaX, 3),
+      deltaY: round(e.deltaY, 3),
+      deltaZ: round(e.deltaZ, 3),
+      deltaMode: e.deltaMode,
+      clientX: Math.round(e.clientX),
+      clientY: Math.round(e.clientY),
+      ctrlKey: !!e.ctrlKey,
+      shiftKey: !!e.shiftKey,
+      altKey: !!e.altKey,
+      metaKey: !!e.metaKey
+    });
+    S.wheelSamples = trimTrace(S.wheelSamples, 160);
+    if (S.scrollStartedAt == null) S.scrollStartedAt = t;
+  }, { passive: true, capture: true });
+
   window.addEventListener('scroll', () => {
     if (!S.active) return;
     const t = relativeNow();
@@ -293,14 +387,24 @@
     clearTimeout(S.scrollTimer);
     S.scrollTimer = setTimeout(() => {
       const samples = S.scrollSamples.slice();
+      const wheelSamples = S.wheelSamples.slice();
       const startedAtMs = S.scrollStartedAt ?? t;
       const endedAtMs = samples.at(-1)?.t ?? relativeNow();
+      const metrics = scrollMetrics(samples, wheelSamples, startedAtMs, endedAtMs);
       sendEvent('scroll', {
         x: Math.round(window.scrollX),
         y: Math.round(window.scrollY),
-        scrollTrace: { startedAtMs, endedAtMs, durationMs: Math.max(0, endedAtMs - startedAtMs), samples }
+        scrollTrace: {
+          startedAtMs,
+          endedAtMs,
+          durationMs: metrics.durationMs,
+          samples,
+          wheelSamples,
+          metrics
+        }
       });
       S.scrollSamples = [];
+      S.wheelSamples = [];
       S.scrollStartedAt = null;
     }, 420);
   }, { passive: true, capture: true });
@@ -315,9 +419,11 @@
     if (!S.active) {
       S.pendingInputs.clear();
       S.scrollSamples = [];
+      S.wheelSamples = [];
       S.scrollStartedAt = null;
       S.pointerDown.clear();
       S.lastPointerGesture = null;
+      S.lastPointerActivity = null;
     }
   });
 
