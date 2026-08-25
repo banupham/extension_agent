@@ -24,9 +24,15 @@ jobs:
           node --check control-center/extension/stealth-extension/background.js
           node --check control-center/manager/control_center.js
           node --check control-center/manager/public/app.js
+          node --check control-center/manager/strategy/index.js
+          node --check control-center/manager/strategy/contracts.js
+          node --check control-center/manager/strategy/baseline_strategy.js
           node --check control-center/server/server.js
           node --check control-center/script/checks/run_check.js
           node --check control-center/script/checks/device_behavior.js
+          node --check control-center/script/checks/strategy_contract.js
           node --check recorder/background.js
           node --check recorder/content.js
           node --check recorder/popup.js
+      - name: Run strategy contract smoke test
+        run: node control-center/script/checks/strategy_contract.js
