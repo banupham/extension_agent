@@ -113,6 +113,7 @@ training-collector/socket-server/server.js
 training-collector/socket-server/package.json
 training-collector/socket-server/START_SOCKET_SERVER.bat
 training-collector/socket-server/README.md
+training-collector/socket-server/integration_test.js
 ```
 
 Start:
@@ -131,6 +132,37 @@ training-collector/socket-data/
 ```
 
 Server binds `127.0.0.1` by default. `socket-data/` and `node_modules/` are Git-ignored.
+
+## V0.8 server integration CI
+
+CI now performs a real localhost WebSocket integration test, not only source-text contracts:
+
+```text
+spawn socket server
+→ session-open / session-ack
+→ append seq 1..2
+→ resend duplicate 1..2; appended=0
+→ send gap seq 4; expect resync from 2
+→ append seq 3
+→ session-close
+→ assert JSONL/meta contain exactly seq 1..3
+→ restart server on same archive
+→ session-open returns resumeFromSeq=3
+→ append seq 4
+→ close and verify durable lastSeq=4
+```
+
+A startup test race was found because the client could connect a few milliseconds before the listening socket finished binding. Integration client now retries briefly during server startup.
+
+Latest integration-enabled CI:
+
+```text
+commit: 278df8c53c22923c0a4e1a2c74367589d3be0386
+run:    32863776613
+result: SUCCESS
+```
+
+This validates server protocol/durability behavior in Node CI. It still does not replace native Chrome MV3 WebSocket validation.
 
 ## Browser session end semantics
 
