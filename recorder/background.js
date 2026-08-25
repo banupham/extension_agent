@@ -32,8 +32,8 @@ async function startSession(tab) {
 function buildRecording(s) {
   const stoppedAtEpoch = Number(s.stoppedAtEpoch || Date.now());
   return {
-    recorderVersion: '3.9.0',
-    timingModel: 'rich-gesture-v2',
+    recorderVersion: '4.0.0',
+    timingModel: 'detailed-input-mouse-v3',
     url: s.startedUrl,
     title: s.title || s.currentTitle || 'Recorded workflow',
     capturedAt: new Date(s.startedAtEpoch).toISOString(),
@@ -73,10 +73,18 @@ async function appendEvent(tabId, event) {
   };
   s.nextSeq = item.seq + 1;
   s.events.push(item);
-  s.lastEventT = item.t;
+  s.lastEventT = Number(item.tEnd ?? item.t);
   if (s.events.length > 10000) s.events.splice(0, s.events.length - 10000);
   await saveSessions();
   return true;
+}
+
+function eventContainsEnter(event) {
+  if (!event) return false;
+  if (event.type === 'key' && event.key === 'Enter') return true;
+  if (event.type !== 'textEditRecorded') return false;
+  const ops = event.editTrace?.operations;
+  return Array.isArray(ops) && ops.some(op => op?.kind === 'pressKey' && op?.key === 'Enter');
 }
 
 chrome.runtime.onInstalled.addListener(async () => { await chrome.storage.session.set({ [SESSION_KEY]: {} }); });
@@ -136,9 +144,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     s.currentTitle = tab.title || s.currentTitle;
     const nowT = Date.now() - s.startedAtEpoch;
     const last = s.events[s.events.length - 1];
-    const recentTrigger = last && Number.isFinite(last.t) && nowT - last.t >= 0 && nowT - last.t <= 2500;
+    const lastEnd = last ? Number(last.tEnd ?? last.t ?? 0) : 0;
+    const recentTrigger = last && Number.isFinite(lastEnd) && nowT - lastEnd >= 0 && nowT - lastEnd <= 2500;
     const likelyClickNavigation = recentTrigger && ['click', 'clickRecorded'].includes(last.type);
-    const likelyKeyNavigation = recentTrigger && last.type === 'key' && last.key === 'Enter';
+    const likelyKeyNavigation = recentTrigger && eventContainsEnter(last);
     await appendEvent(tabId, {
       t: nowT,
       type: 'navigation',
