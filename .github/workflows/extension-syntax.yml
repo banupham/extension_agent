@@ -54,6 +54,7 @@ jobs:
           node --check training-collector/background.js
           node --check training-collector/content.js
           node --check training-collector/popup.js
+          node --check training-collector/offscreen.js
           node --check training-collector/tests/architecture_contract.js
           node --check training-collector/tests/raw_session_contract.js
           node --check training-collector/tests/raw_analysis_contract.js
