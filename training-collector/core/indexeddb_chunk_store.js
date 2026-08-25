@@ -3,9 +3,10 @@
 (function initIndexedDbChunkStore(root) {
   const NS = root.TrainingCollectorV06 = root.TrainingCollectorV06 || {};
   const DB_NAME = 'trainingCollectorRawV06';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const SESSION_STORE = 'sessions';
   const CHUNK_STORE = 'chunks';
+  const RECEIPT_STORE = 'batchReceipts';
 
   function req(request) {
     return new Promise((resolve, reject) => {
@@ -35,6 +36,10 @@
         const chunks = db.createObjectStore(CHUNK_STORE, { keyPath: ['sessionId', 'chunkIndex'] });
         chunks.createIndex('sessionId', 'sessionId', { unique: false });
       }
+      if (!db.objectStoreNames.contains(RECEIPT_STORE)) {
+        const receipts = db.createObjectStore(RECEIPT_STORE, { keyPath: ['sessionId', 'batchId'] });
+        receipts.createIndex('sessionId', 'sessionId', { unique: false });
+      }
     };
     return req(request);
   }
@@ -58,22 +63,33 @@
       return req(tx.objectStore(SESSION_STORE).get(sessionId));
     }
 
-    async function listSessions(limit = 20) {
+    async function listSessions(limit = 24) {
       const database = await db();
       const tx = database.transaction([SESSION_STORE], 'readonly');
       const rows = await req(tx.objectStore(SESSION_STORE).getAll());
       return rows.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || ''))).slice(0, limit);
     }
 
-    async function append(session, events) {
+    async function append(session, events, batchId = null) {
       if (!session?.sessionId) throw new Error('missing_session');
-      if (!Array.isArray(events) || !events.length) return session;
+      if (!Array.isArray(events) || !events.length) return { session, duplicate: false };
       const database = await db();
-      const tx = database.transaction([SESSION_STORE, CHUNK_STORE], 'readwrite');
+      const stores = batchId ? [SESSION_STORE, CHUNK_STORE, RECEIPT_STORE] : [SESSION_STORE, CHUNK_STORE];
+      const tx = database.transaction(stores, 'readwrite');
       const chunks = tx.objectStore(CHUNK_STORE);
+      const receipts = batchId ? tx.objectStore(RECEIPT_STORE) : null;
+
+      if (batchId) {
+        const prior = await req(receipts.get([session.sessionId, batchId]));
+        if (prior) {
+          tx.abort();
+          try { await txDone(tx); } catch {}
+          return { session: await getSession(session.sessionId) || session, duplicate: true, receipt: prior };
+        }
+      }
+
       let chunkIndex = Math.max(0, Number(session.chunkCount || 0) - 1);
       let current = [];
-
       if (Number(session.chunkCount || 0) > 0 && Number(session.lastChunkSize || 0) < chunkSize) {
         const existing = await req(chunks.get([session.sessionId, chunkIndex]));
         current = Array.isArray(existing?.events) ? existing.events.slice() : [];
@@ -95,8 +111,9 @@
       session.chunkCount = current.length ? chunkIndex + 1 : chunkIndex;
       session.lastChunkSize = current.length || chunkSize;
       tx.objectStore(SESSION_STORE).put(session);
+      if (batchId) receipts.put({ sessionId: session.sessionId, batchId, eventCount: events.length, lastSeq: events[events.length - 1]?.sessionSeq || null, persistedAt: new Date().toISOString() });
       await txDone(tx);
-      return session;
+      return { session, duplicate: false };
     }
 
     async function getChunk(sessionId, chunkIndex) {
@@ -108,9 +125,7 @@
 
     async function getTail(session, limit = 100) {
       const out = [];
-      for (let i = Math.max(0, Number(session.chunkCount || 0) - 3); i < Number(session.chunkCount || 0); i += 1) {
-        out.push(...await getChunk(session.sessionId, i));
-      }
+      for (let i = Math.max(0, Number(session.chunkCount || 0) - 3); i < Number(session.chunkCount || 0); i += 1) out.push(...await getChunk(session.sessionId, i));
       return out.slice(-Math.max(1, limit));
     }
 
