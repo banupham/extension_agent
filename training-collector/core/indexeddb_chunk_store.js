@@ -66,6 +66,10 @@
     return req(request);
   }
 
+  function sortSessions(rows) {
+    return rows.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || '')));
+  }
+
   function createChunkStore(options = {}) {
     const chunkSize = Math.max(100, Number(options.chunkSize || 1000));
     let dbPromise = null;
@@ -89,7 +93,15 @@
       const database = await db();
       const tx = database.transaction([SESSION_STORE], 'readonly');
       const rows = await req(tx.objectStore(SESSION_STORE).getAll());
-      return rows.sort((a, b) => String(b.startedAt || '').localeCompare(String(a.startedAt || ''))).slice(0, limit);
+      return sortSessions(rows).slice(0, Math.max(1, Number(limit || 24)));
+    }
+
+    async function listSessionsByStatus(status, limit = 500) {
+      const database = await db();
+      const tx = database.transaction([SESSION_STORE], 'readonly');
+      const index = tx.objectStore(SESSION_STORE).index('status');
+      const rows = await req(index.getAll(IDBKeyRange.only(String(status))));
+      return sortSessions(rows).slice(0, Math.max(1, Number(limit || 500)));
     }
 
     async function append(session, events, batchId = null) {
@@ -186,7 +198,7 @@
       return out.slice(-Math.max(1, limit));
     }
 
-    return { putSession, getSession, listSessions, append, getChunk, getChunkRecord, getTail, verifySession, checksumEvents, chunkSize };
+    return { putSession, getSession, listSessions, listSessionsByStatus, append, getChunk, getChunkRecord, getTail, verifySession, checksumEvents, chunkSize };
   }
 
   NS.IndexedDbChunkStore = { createChunkStore, DB_NAME, DB_VERSION, checksumEvents };
