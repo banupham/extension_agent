@@ -1,4 +1,4 @@
-' strict';
+'use strict';
 
 if (!window.__TRAINING_COLLECTOR_V02__) {
   window.__TRAINING_COLLECTOR_V02__ = true;
