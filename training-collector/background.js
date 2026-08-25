@@ -3,6 +3,9 @@
 importScripts('core/episode_builder.js', 'core/raw_session_store.js', 'core/indexeddb_chunk_store.js');
 
 const EPISODE_STATE_KEY = 'trainingCollectorStateV03';
+const AUTO_EXPORT_ALARM = 'training-collector-v06-auto-export';
+const AUTO_EXPORT_SCOPE = 'TRAINING_COLLECTOR_OFFSCREEN_V06';
+const AUTO_EXPORT_MAX_ATTEMPTS = 3;
 const EpisodeBuilder = globalThis.TrainingCollectorV02.EpisodeBuilder;
 const RawStore = globalThis.TrainingCollectorV03.RawSessionStore;
 const ChunkStore = globalThis.TrainingCollectorV06.IndexedDbChunkStore.createChunkStore({ chunkSize: RawStore.CHUNK_SIZE });
@@ -11,6 +14,9 @@ let browserSessionInitPromise = null;
 let rawAppendChain = Promise.resolve();
 
 function nowIso() { return new Date().toISOString(); }
+function scheduleAutoExportRetry(delayMinutes = 0.5) {
+  try { chrome.alarms.create(AUTO_EXPORT_ALARM, { delayInMinutes: Math.max(0.5, Number(delayMinutes || 0.5)) }); } catch {}
+}
 
 async function loadEpisodeState() {
   const data = await chrome.storage.local.get(EPISODE_STATE_KEY);
@@ -25,6 +31,7 @@ async function requestSnapshot(tabId) {
 
 async function closeDanglingSessions() {
   const sessions = await ChunkStore.listSessions(RawStore.MAX_SESSION_INDEX);
+  const closed = [];
   for (const session of sessions) {
     if (session.status !== 'active') continue;
     const integrity = await ChunkStore.verifySession(session, { tailCount: 3 }).catch(error => ({ ok: false, problems: [{ code: 'verification_error', error: String(error?.message || error) }] }));
@@ -32,17 +39,114 @@ async function closeDanglingSessions() {
     session.endedAt = session.lastSeenAt || session.startedAt || nowIso();
     session.endReason = 'previous_browser_session_no_longer_active';
     session.integrity = { ...integrity, verifiedAt: nowIso(), scope: 'tail' };
+    session.autoExport = session.autoExport || { status: 'pending', attempts: 0 };
     await ChunkStore.putSession(session);
+    closed.push(session);
+  }
+  return closed;
+}
+
+async function hasOffscreenDocument() {
+  if (typeof chrome.runtime.getContexts !== 'function') return false;
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [chrome.runtime.getURL('offscreen.html')]
+  });
+  return contexts.length > 0;
+}
+
+async function ensureOffscreenDocument() {
+  if (!chrome.offscreen?.createDocument) throw new Error('offscreen_api_unavailable');
+  if (await hasOffscreenDocument()) return;
+  try {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['BLOBS'],
+      justification: 'Temporary development auto-export of closed raw sessions as gzip JSONL.'
+    });
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (!/single offscreen|already exists/i.test(message)) throw error;
   }
 }
 
+async function autoExportSession(sessionId) {
+  let session = await ChunkStore.getSession(sessionId);
+  if (!session || session.status === 'active') return { skipped: true, reason: 'session_not_closed' };
+  if (Number(session.eventCount || 0) <= 0) {
+    session.autoExport = { ...(session.autoExport || {}), status: 'skipped-empty', attempts: Number(session.autoExport?.attempts || 0), updatedAt: nowIso() };
+    await ChunkStore.putSession(session);
+    return { skipped: true, reason: 'empty_session' };
+  }
+  if (session.autoExport?.status === 'complete') return { skipped: true, reason: 'already_exported' };
+  const attempts = Number(session.autoExport?.attempts || 0);
+  if (attempts >= AUTO_EXPORT_MAX_ATTEMPTS) return { skipped: true, reason: 'attempt_limit' };
+
+  session.autoExport = { ...(session.autoExport || {}), status: 'verifying', attempts: attempts + 1, attemptedAt: nowIso(), error: null };
+  await ChunkStore.putSession(session);
+
+  try {
+    const integrity = await ChunkStore.verifySession(session, { full: true, tailCount: 3 });
+    session.integrity = { ...integrity, verifiedAt: nowIso(), scope: 'full' };
+    session.autoExport = { ...session.autoExport, status: 'preparing-download', integrityOk: !!integrity.ok };
+    await ChunkStore.putSession(session);
+
+    await ensureOffscreenDocument();
+    const result = await chrome.runtime.sendMessage({ scope: AUTO_EXPORT_SCOPE, type: 'AUTO_EXPORT_SESSION', sessionId: session.sessionId });
+    if (!result?.ok) throw new Error(result?.error || 'offscreen_auto_export_failed');
+
+    session = await ChunkStore.getSession(session.sessionId) || session;
+    session.autoExport = {
+      ...(session.autoExport || {}),
+      status: 'complete',
+      completedAt: nowIso(),
+      downloadId: result.downloadId ?? null,
+      byteLength: Number(result.byteLength || 0),
+      eventCount: Number(result.eventCount || session.eventCount || 0),
+      error: null,
+      temporaryDevelopmentAdapter: true
+    };
+    await ChunkStore.putSession(session);
+    return { ok: true, sessionId: session.sessionId, downloadId: result.downloadId ?? null };
+  } catch (error) {
+    session = await ChunkStore.getSession(session.sessionId) || session;
+    session.autoExport = {
+      ...(session.autoExport || {}),
+      status: 'failed',
+      failedAt: nowIso(),
+      error: String(error?.message || error),
+      temporaryDevelopmentAdapter: true
+    };
+    await ChunkStore.putSession(session);
+    if (Number(session.autoExport.attempts || 0) < AUTO_EXPORT_MAX_ATTEMPTS) scheduleAutoExportRetry(0.5);
+    return { ok: false, sessionId: session.sessionId, error: session.autoExport.error };
+  }
+}
+
+async function autoExportClosedSessions(extraSessions = []) {
+  const candidates = new Map();
+  for (const session of extraSessions || []) if (session?.sessionId) candidates.set(session.sessionId, session);
+  for (const session of await ChunkStore.listSessions(RawStore.MAX_SESSION_INDEX)) {
+    if (session?.sessionId && session.status !== 'active') candidates.set(session.sessionId, session);
+  }
+  const results = [];
+  for (const session of candidates.values()) {
+    const status = session.autoExport?.status;
+    if (status === 'complete' || status === 'skipped-empty') continue;
+    if (Number(session.autoExport?.attempts || 0) >= AUTO_EXPORT_MAX_ATTEMPTS) continue;
+    results.push(await autoExportSession(session.sessionId));
+  }
+  return results;
+}
+
 async function createBrowserSession() {
-  await closeDanglingSessions();
+  const closed = await closeDanglingSessions();
   const startedAt = nowIso();
   const session = RawStore.createSession(RawStore.makeSessionId(), startedAt);
   session.integrity = { ok: true, verifiedAt: null, scope: 'not-yet-verified' };
   await ChunkStore.putSession(session);
   await chrome.storage.session.set({ [RawStore.CURRENT_SESSION_KEY]: session.sessionId });
+  autoExportClosedSessions(closed).catch(() => scheduleAutoExportRetry(0.5));
   return session;
 }
 
@@ -175,9 +279,19 @@ async function transitionEnd(sender, transition) {
   const matched = EpisodeBuilder.finishTransition(state.episode, transition || {}); await saveEpisodeState(state); return { ok: true, matched };
 }
 
-chrome.runtime.onStartup.addListener(() => { ensureBrowserSession().catch(() => {}); });
-chrome.runtime.onInstalled.addListener(() => { ensureBrowserSession().catch(() => {}); });
-ensureBrowserSession().catch(() => {});
+function bootstrap() {
+  ensureBrowserSession()
+    .then(() => autoExportClosedSessions())
+    .catch(() => scheduleAutoExportRetry(0.5));
+}
+
+chrome.runtime.onStartup.addListener(bootstrap);
+chrome.runtime.onInstalled.addListener(bootstrap);
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm?.name !== AUTO_EXPORT_ALARM) return;
+  autoExportClosedSessions().catch(() => scheduleAutoExportRetry(1));
+});
+bootstrap();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.scope !== 'TRAINING_COLLECTOR_V03') return false;
