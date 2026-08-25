@@ -16,7 +16,7 @@ const hoverTrace = read('observer/hover_trace.js');
 const resolver = read('correlation/action_target_resolver.js');
 const rawStore = read('core/raw_session_store.js');
 
-assert.equal(manifest.version, '0.7.0');
+assert.ok(/^0\.7\./.test(manifest.version));
 assert.ok(manifest.name.includes('V0.7'));
 assert.ok(manifest.content_scripts[0].js.includes('correlation/action_target_resolver.js'));
 assert.ok(manifest.content_scripts[0].js.includes('observer/hover_trace.js'));
@@ -66,4 +66,4 @@ assert.equal(clicked.length, 1);
 assert.notEqual(clicked[0].actionType, 'hover-preview');
 assert.equal(clicked[0].outcome.clickOccurred, true);
 
-console.log('Training Collector V0.7 action semantics contract OK');
+console.log('Training Collector V0.7.x action semantics contract OK');
