@@ -25,6 +25,24 @@
     return { length: s.length, empty: s.length === 0 };
   }
 
-  NS.Privacy = { classifyElementMeta, redactText, safeTextMetrics };
+  function sanitizeUrl(value) {
+    try {
+      const u = new URL(String(value || ''));
+      return {
+        origin: u.origin,
+        pathname: u.pathname,
+        queryKeys: Array.from(new Set(Array.from(u.searchParams.keys()))).slice(0, 32),
+        hasHash: !!u.hash
+      };
+    } catch {
+      return { origin: null, pathname: null, queryKeys: [], hasHash: false };
+    }
+  }
+
+  function safePageTitle(value) {
+    return safeTextMetrics(value);
+  }
+
+  NS.Privacy = { classifyElementMeta, redactText, safeTextMetrics, sanitizeUrl, safePageTitle };
   if (typeof module !== 'undefined' && module.exports) module.exports = NS.Privacy;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
