@@ -2,7 +2,7 @@
 
 ## Source of truth
 
-GitHub `banupham/extension_agent` là source chính. Không dùng ZIP làm source phát triển nữa.
+GitHub `banupham/extension_agent` là source chính. Workflow local:
 
 ```bat
 git pull
@@ -11,18 +11,9 @@ npm install
 START_CONTROL_CENTER.bat
 ```
 
-`START_CONTROL_CENTER.bat` giữ mẫu ngắn đã chốt và chỉ đổi version title khi cần.
+Deterministic Scenario Mode hiện tại tiếp tục được giữ ổn định. Agent Mode được phát triển như một lớp mới, không thay thế scenario runner.
 
-## Baseline rebuild
-
-Cấu trúc/runtime được rebuild từ hai package cũ đã xác nhận ổn:
-
-- `browser_debug_agent_control_center_v3_8_observable.zip`
-- `browser_action_recorder_v3_6_keyboard_semantic.zip`
-
-Sau đó áp lại toàn bộ thay đổi mới hơn từ lịch sử phát triển.
-
-## Cấu trúc chuẩn
+## Cấu trúc chính hiện tại
 
 ```text
 control-center/
@@ -33,8 +24,16 @@ control-center/
 ├─ server/server.js
 ├─ manager/control_center.js
 ├─ manager/public/{index.html,app.js,style.css}
+├─ manager/strategy/
+│  ├─ index.js
+│  ├─ contracts.js
+│  ├─ baseline_strategy.js
+│  └─ README.md
 ├─ extension/stealth-extension/{manifest.json,background.js}
-└─ script/checks/{run_check.js,device_behavior.js}
+└─ script/checks/
+   ├─ run_check.js
+   ├─ device_behavior.js
+   └─ strategy_contract.js
 
 recorder/
 ├─ ACTION_CONTRACT.json
@@ -44,136 +43,179 @@ recorder/
 ├─ manifest.json
 ├─ popup.html
 └─ popup.js
-```
 
-Stealth Executor giữ layout monolithic `manifest.json + background.js` như package cũ.
+docs/
+└─ AGENT_TRAINING_ARCHITECTURE.md
+```
 
 ## Control Center V3.10
 
-### Queue / Runs & Logs
+Queue/Runs & Logs, browser↔scenario assignment (`all`, `pair`, `random`, `manual`) và execution (`parallel`, `sequential`) giữ nguyên. `manager/control_center.js` chưa require Strategy module; integration chỉ thực hiện sau khi Observer + goal checker + executor bridge được test độc lập.
 
-- `saveState()` không thay live run object bằng clone; clone chỉ dùng khi serialize JSON.
-- Có diagnostics theo run, worker queue, watchdog và finalize ngay khi runner phát `summary`.
-- Run `queued/running` còn sót sau restart được đánh dấu `interrupted`.
+## Executor / deterministic scenario
 
-### Browser ↔ Scenario assignment
+Executor + `run_check.js` giữ action contract hiện tại gồm navigation, pointer, keyboard, form, wait và inspection/lifecycle actions. `clickRecorded` vẫn deterministic theo selector + `rx/ry`; scroll deterministic giữ destination chính xác.
 
-Assignment và execution là hai lớp độc lập.
+## Recorder V4.0 Detailed Input + Mouse Path
 
-Assignment:
-- `all`: mọi browser × mọi scenario.
-- `pair`: browser 1 → scenario A, browser 2 → scenario B, quay vòng nếu lệch số lượng.
-- `random`: mỗi browser nhận ngẫu nhiên 1 scenario đã chọn.
-- `manual`: tự chọn scenario cho từng browser.
+Recorder hiện tập trung vào interaction fidelity và dữ liệu demonstration phong phú.
 
-Execution:
-- `parallel`: browser khác nhau chạy song song.
-- `sequential`: toàn bộ task chạy lần lượt.
+### Timing
 
-Scheduler và `/api/v1/run` truyền `assignmentMode` + `assignments`.
+- exact waits không clamp 5000 ms;
+- gap dài được xuất thành `wait`;
+- giữ event sequence/timestamp/gap/page URL;
+- navigation do click/Enter không làm mất timing phía sau.
 
-## Executor / action contract
+### Click / mouse
 
-Executor + `run_check.js` phải đồng bộ các nhóm action:
+- `clickRecorded` giữ selectors/text/attributes/rect;
+- relative click point `rx/ry`;
+- viewport fallback;
+- pointerdown→pointerup duration;
+- mouse path trước click với samples `{t,x,y}`;
+- mouse path metrics: duration, displacement, path distance, average/peak speed.
 
-- Navigation: `openUrl`, `reload`, `goBack`, `goForward`, `waitForUrl`.
-- Pointer: `click`, `clickSelector`, `clickFirstMatch`, `clickRecorded`, `doubleClickSelector`, `hoverSelector`, `moveMouse`, `dragAndDrop`, `scroll`, `scrollTo`, `scrollBy`.
-- Keyboard: `type`, `replaceText`, `clearInput`, `pressKey`, `keyCombo`.
-- Form: `focusSelector`, `selectOption`, `setChecked`.
-- Wait: `wait`, `waitForSelector`, `waitForUrl`.
-- Inspection/lifecycle: `getElementPosition`, `getActiveTab`, `getElementText`, `getPageInfo`, `listTabs`, `getCapabilities`, `detach`.
+### Detailed text input
 
-Keyboard giữ mapping physical-key đã sửa; Backspace = VK 8, Shift modifier bit = 8, `keyUp` không gửi text.
+`replaceText` không còn là mặc định cho mọi editable field.
 
-## Deterministic clickRecorded
+Khi chuỗi thao tác tái dựng chắc chắn, Recorder giữ operations thực:
 
-Scenario gốc không random điểm click.
+- `type`;
+- `pressKey Backspace` đúng số lần;
+- `pressKey Delete` đúng số lần;
+- Enter/Tab;
+- `keyCombo`.
 
-Recorder lưu selectors/text, `rx/ry`, fallback viewport. Executor tìm lại element và tính:
+`editTrace.summary` có các count như `backspaceCount`, `deleteCount`, `typedCharCount`, `operationCount`. Đồng thời giữ `initialValue`, `finalValue`, timeline changes và timing operations.
+
+Fallback `replaceText` chỉ dùng cho các trường hợp khó tái dựng chắc chắn như paste/autofill/IME/composition/DOM replacement; metadata phải ghi reconstruction mode/reason.
+
+### Scroll / gesture
+
+Mỗi gesture có:
+
+- started/ended/duration;
+- viewport samples;
+- raw wheel samples;
+- displacement/path distance;
+- average/peak speed;
+- direction;
+- wheel delta totals;
+- speed samples;
+- conservative sourceHint.
+
+## Agent Strategy — milestone M0
+
+Đã thêm module mới:
 
 ```text
-x = rect.left + rect.width  * rx
-y = rect.top  + rect.height * ry
+control-center/manager/strategy/
 ```
 
-## Recorder V3.8 Rich Timing — hiện tại
+Contract chuẩn:
 
-Mục tiêu của V3.8 là giữ replay deterministic nhưng không làm mất dữ liệu cần cho timing/variant generator.
+```text
+Task
+Observation
+Decision
+Outcome
+Episode
+```
 
-### Exact waits
+Runtime đích:
 
-V3.7 có lỗi exporter clamp khoảng cách giữa event vào tối đa 5000 ms. V3.8 bỏ clamp này.
+```text
+TASK
+→ OBSERVE
+→ STRATEGY.decide()
+→ EXECUTE one action
+→ OBSERVE stateAfter
+→ GOAL CHECK
+→ append trajectory
+→ repeat
+```
 
-- Gap >= 1200 ms được xuất thành action `wait` riêng với đúng số ms đã ghi.
-- Gap ngắn hơn giữ ở `delay` action kế tiếp.
-- Navigation do click/Enter tạo ra không làm reset timing anchor; vì vậy thời gian load/chờ sau click không bị mất.
-- Scenario có `timing.recordedGapMs`, `timing.kind` và `timing.randomizable`.
+Strategy không tự thao tác Chrome. Nó chỉ trả một action hợp lệ theo executor action contract hoặc trạng thái `done/blocked/failed`.
 
-### Rich metadata
+Baseline provider hiện chỉ dùng để kiểm chứng contracts và vòng action cho một task đơn giản `web_search`; đây chưa phải planner/model cuối cùng.
 
-Background gắn cho event:
-- `seq`;
-- `t`;
-- `recordedAtEpoch`;
-- `gapFromPreviousMs`;
-- `pageUrl`.
+Kiến trúc đầy đủ xem `docs/AGENT_TRAINING_ARCHITECTURE.md`.
 
-Scenario có `recordingMeta` gồm recorder version, timing model, recording duration, source event count, exported action count và wait threshold.
+## Chuẩn dữ liệu training định hướng
 
-### Click trace
+Đơn vị demonstration chuẩn sẽ là:
 
-`clickRecorded` vẫn deterministic theo `rx/ry`, đồng thời lưu `pointerGesture`:
-- pointer type/button;
-- pointerdown/start point;
-- pointerup/end point;
-- duration pointerdown → pointerup.
+```text
+TASK
+STATE_BEFORE
+ACTION
+STATE_AFTER
+OUTCOME
+```
 
-### Text edit trace
+Episode gồm nhiều step và final outcome. Recorder raw interaction chỉ là nguồn telemetry; không train trực tiếp từ raw log chưa ghép task/state/outcome.
 
-Semantic replay vẫn là một `replaceText` cuối để không replay Backspace/Delete hai lần.
+Privacy mặc định loại trừ password, cookie, token, authorization header, clipboard content, payment secrets và raw sensitive form values trước khi dataset được ghi.
 
-Nhưng V3.8 giữ thêm `editTrace`:
-- thời điểm bắt đầu/kết thúc edit;
-- duration;
-- từng input change;
-- `inputType`;
-- value/length;
-- selectionStart/selectionEnd.
+## Roadmap tiếp theo
 
-Dữ liệu này dùng cho variant generator sau này mà không làm scenario gốc mất tính deterministic.
+### M1 Observer
 
-### Scroll trace
+- semantic interactive-element snapshot;
+- focused element;
+- URL/title/viewport/scroll;
+- stable element refs;
+- privacy redaction;
+- fixtures/offline tests.
 
-Một DOM scroll burst vẫn debounce 420 ms để không tạo hàng chục action.
+### M2 Training Capture
 
-V3.8 **không gộp nhiều gesture scroll riêng biệt thành một `scrollTo` nữa**. Mỗi gesture giữ action riêng và có `scrollTrace.samples` gồm timestamp + x/y của gesture.
+- gắn Task vào recording session;
+- stateBefore/action/stateAfter;
+- outcome labels;
+- Episode JSON export;
+- privacy exclusion tests.
 
-### Recorder UI/export
+### M3 Agent Runtime
 
-- Popup vẫn đúng 3 nút: Start / Stop / Export .js.
-- Export vẫn nhớ thư mục qua File System Access API + IndexedDB.
-- Recording gắn với tab và tiếp tục qua reload/navigation.
+- one-action executor bridge;
+- observe→decide→execute→observe loop;
+- budgets/recovery;
+- live trajectory diagnostics;
+- goal checker.
 
-## GitHub CI
+### M4 Dataset Pipeline
 
-Workflow `.github/workflows/extension-syntax.yml` chạy `node --check` cho:
+- schema validator;
+- sanitizer/redactor;
+- quality scoring;
+- train/validation/test split;
+- dataset statistics.
 
-- executor `background.js`;
-- manager/backend/UI;
-- broker/server;
-- `run_check.js`, `device_behavior.js`;
-- Recorder `background.js`, `content.js`, `popup.js`.
+### M5+ Strategy learning
 
-## Test tiếp trên máy thật
+```text
+baseline rules
+→ demonstration retrieval
+→ trained action policy
+→ candidate ranking/value model
+→ goal-directed planner + re-planning
+```
 
-- [ ] `git pull` và reload Recorder V3.8.
-- [ ] Record: Start → chờ 8–10 giây → click. Scenario phải có `wait` khoảng 8–10 giây, không còn 5000 ms.
-- [ ] Click → navigation → chờ trang load → action tiếp theo. Gap sau click phải còn đủ.
-- [ ] Nhập text, Backspace, sửa text, Tab/blur. Replay chỉ dùng final `replaceText`, nhưng scenario phải có `recorded.editTrace`.
-- [ ] Thực hiện hai scroll gesture riêng. Scenario phải có hai `scrollTo` riêng, mỗi action có `recorded.scrollTrace`.
-- [ ] Click lệch tâm. Replay phải tiếp tục dùng đúng `rx/ry`.
-- [ ] Sau khi xác nhận V3.8 ổn, nâng Scenario Variants để dùng `timing`, `pointerGesture`, `editTrace`, `scrollTrace` thay vì chỉ jitter `delay`.
+## CI
+
+GitHub Actions syntax workflow kiểm tra executor, manager, Recorder và Strategy module. CI còn chạy `strategy_contract.js` để xác nhận baseline sequence + contracts.
+
+## Test gần nhất cần làm
+
+1. Pull + reload Recorder V4.0 và xác nhận detailed Backspace/Delete + mouse path trên máy thật.
+2. Chạy/đọc `strategy_contract.js` để xác nhận Strategy module không ảnh hưởng manager hiện tại.
+3. Bắt đầu M1 Observer bằng fixtures trước, chưa nối vào browser runtime ngay.
+4. Khi Observer contract ổn mới map Recorder → Training Capture.
+5. Sau M1/M2 mới tích hợp Agent Mode vào Control Center.
 
 ## Phạm vi
 
-Các thay đổi tập trung vào deterministic replay, correctness, timing fidelity, scenario richness, scheduling, queue reliability và observability.
+Hướng phát triển tập trung vào browser interaction capture, deterministic automation, goal-directed task planning, training-data quality, privacy redaction, correctness, observability và testability.
