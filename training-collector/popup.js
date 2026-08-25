@@ -4,6 +4,7 @@ const taskEl = document.getElementById('task');
 const statusEl = document.getElementById('status');
 const rawStatusEl = document.getElementById('rawStatus');
 const previewEl = document.getElementById('preview');
+const sessionsEl = document.getElementById('sessions');
 
 function send(type, extra = {}) {
   return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...extra });
@@ -32,10 +33,61 @@ function showRaw(session, error) {
   ].join('\n');
 }
 
+function sessionText(session) {
+  const auto = session.autoExport || {};
+  return [
+    session.sessionId,
+    `status=${session.status} events=${session.eventCount || 0} chunks=${session.chunkCount || 0}`,
+    `autoExport=${auto.status || '-'} attempts=${auto.attempts || 0}`,
+    auto.downloadId != null ? `downloadId=${auto.downloadId} downloadState=${auto.downloadState || '-'}` : null,
+    auto.error ? `error=${auto.error}` : null
+  ].filter(Boolean).join('\n');
+}
+
+async function loadSessions() {
+  const res = await send('GET_RECENT_RAW_SESSIONS');
+  sessionsEl.textContent = '';
+  if (!res?.ok) {
+    sessionsEl.textContent = `Error: ${res?.error || 'session_list_failed'}`;
+    return;
+  }
+  const rows = Array.isArray(res.sessions) ? res.sessions : [];
+  if (!rows.length) {
+    sessionsEl.textContent = 'No raw sessions found';
+    return;
+  }
+  for (const session of rows) {
+    const row = document.createElement('div');
+    row.className = 'session-row';
+    const text = document.createElement('div');
+    text.textContent = sessionText(session);
+    row.appendChild(text);
+    if (session.status !== 'active' && Number(session.eventCount || 0) > 0 && session.autoExport?.status !== 'complete') {
+      const retry = document.createElement('button');
+      retry.textContent = 'Retry Auto Export';
+      retry.addEventListener('click', async () => {
+        retry.disabled = true;
+        retry.textContent = 'Retrying...';
+        try {
+          const result = await send('RETRY_AUTO_EXPORT', { sessionId: session.sessionId });
+          if (!result?.ok || result.result?.ok === false) throw new Error(result?.result?.error || result?.error || 'retry_failed');
+          await loadSessions();
+        } catch (error) {
+          retry.textContent = `Failed: ${String(error?.message || error)}`;
+          retry.disabled = false;
+        }
+      });
+      row.appendChild(retry);
+    }
+    sessionsEl.appendChild(row);
+  }
+}
+
 async function refresh() {
   const res = await send('GET_STATE');
   showEpisode(res.state, res.error);
   showRaw(res.rawSession, res.error);
+  await loadSessions();
 }
 
 async function previewRaw() {
@@ -97,8 +149,8 @@ document.getElementById('previewRaw').addEventListener('click', () => previewRaw
   previewEl.hidden = false;
   previewEl.textContent = String(error?.message || error);
 }));
-
 document.getElementById('exportRaw').addEventListener('click', () => exportRaw().catch(error => showRaw(null, String(error?.message || error))));
+document.getElementById('refreshSessions').addEventListener('click', () => loadSessions().catch(error => { sessionsEl.textContent = String(error?.message || error); }));
 
 document.getElementById('start').addEventListener('click', async () => {
   const instruction = taskEl.value.trim();
@@ -116,4 +168,5 @@ refresh().catch(error => {
   const text = String(error?.message || error);
   showEpisode(null, text);
   showRaw(null, text);
+  sessionsEl.textContent = text;
 });
