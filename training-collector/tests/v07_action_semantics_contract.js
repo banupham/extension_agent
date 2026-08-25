@@ -35,7 +35,7 @@ assert.ok(resolver.includes('element-from-point-actionable'));
 assert.ok(hoverTrace.includes("type: 'dom-hover-enter'"));
 assert.ok(hoverTrace.includes("type: 'dom-hover-dwell'"));
 assert.ok(hoverTrace.includes("type: 'dom-hover-leave'"));
-assert.ok(rawStore.includes("const VERSION = '0.7.0'"));
+assert.ok(rawStore.includes("const VERSION = '0.7.2'"));
 assert.ok(rawStore.includes('actionTargetResolution'));
 
 const sample = {
