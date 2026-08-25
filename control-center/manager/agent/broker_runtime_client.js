@@ -1,14 +1,19 @@
 'use strict';
 
-const WebSocket = require('ws');
+const CLIENT_VERSION = '0.1.1';
 
-const CLIENT_VERSION = '0.1.0';
+function resolveWebSocketImpl(options) {
+  if (options?.WebSocketImpl) return options.WebSocketImpl;
+  // Native manager runtime depends on control-center/package.json -> ws.
+  // Tests can inject a mock without requiring ws at module-load time.
+  return require('ws');
+}
 
 function createBrokerRuntimeClient(options = {}) {
   const url = options.url || 'ws://127.0.0.1:3000';
   const targetAgentId = options.agentId || null;
   const timeoutMs = Number(options.timeoutMs || 10000);
-  const WebSocketImpl = options.WebSocketImpl || WebSocket;
+  const WebSocketImpl = resolveWebSocketImpl(options);
   let socket = null;
   let connected = false;
   let sequence = 0;
@@ -113,4 +118,4 @@ function createBrokerRuntimeClient(options = {}) {
   };
 }
 
-module.exports = { CLIENT_VERSION, createBrokerRuntimeClient };
+module.exports = { CLIENT_VERSION, resolveWebSocketImpl, createBrokerRuntimeClient };
