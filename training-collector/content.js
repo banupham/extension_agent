@@ -1,7 +1,7 @@
 'use strict';
 
-if (!window.__TRAINING_COLLECTOR_V07__) {
-  window.__TRAINING_COLLECTOR_V07__ = true;
+if (!window.__TRAINING_COLLECTOR_V072__) {
+  window.__TRAINING_COLLECTOR_V072__ = true;
 
   const NS2 = window.TrainingCollectorV02 = window.TrainingCollectorV02 || {};
   const NS3 = window.TrainingCollectorV03 = window.TrainingCollectorV03 || {};
@@ -21,6 +21,9 @@ if (!window.__TRAINING_COLLECTOR_V07__) {
   const ReliableSender = NS6.ReliableSender;
   const TargetResolverFactory = NS7.ActionTargetResolver;
   const HoverTraceFactory = NS7.HoverTrace;
+  const RouteTraceFactory = NS7.RouteTrace;
+  const IS_TOP_FRAME = window === window.top;
+  const HEALTH_INTERVAL_MS = 10000;
 
   const S = {
     rawActive: false,
@@ -29,16 +32,19 @@ if (!window.__TRAINING_COLLECTOR_V07__) {
     transitionSeq: 0,
     pageSeq: 0,
     sourceSeq: new Map(),
+    sourceEventCounts: new Map(),
     lastKeyByRef: new Map(),
     beforeInputByRef: new Map(),
     transitionBefore: new Map(),
     lastEpisodeState: null,
     scrollTimer: null,
+    healthTimer: null,
     browserSessionId: null,
     physical: null,
     domCapture: null,
     mutationTrace: null,
     hoverTrace: null,
+    routeTrace: null,
     correlator: null,
     targetResolver: null,
     rawSender: null
@@ -63,17 +69,48 @@ if (!window.__TRAINING_COLLECTOR_V07__) {
 
   function rawBatch(events, source) {
     if (!events?.length || !S.rawSender) return;
+    const captureSource = source || 'unknown';
+    S.sourceEventCounts.set(captureSource, Number(S.sourceEventCounts.get(captureSource) || 0) + events.length);
     S.rawSender.enqueue({
       browserSessionId: S.browserSessionId,
       pageInstanceId: NS2.pageInstanceId,
-      source: source || 'unknown',
+      source: captureSource,
       events
     });
   }
 
+  function healthCounts() {
+    return Object.fromEntries(Array.from(S.sourceEventCounts.entries()).sort(([a], [b]) => a.localeCompare(b)));
+  }
+
+  function healthModules() {
+    return {
+      physical: !!S.physical,
+      dom: !!S.domCapture,
+      mutation: !!S.mutationTrace,
+      hover: !!S.hoverTrace,
+      navigation: !!S.routeTrace
+    };
+  }
+
+  function emitHealth(type = 'collector-stream-health') {
+    if (!S.rawActive || !S.rawSender) return;
+    rawBatch([decorateEvent({
+      type,
+      tsEpochMs: Date.now(),
+      tPageMs: Math.round(performance.now() * 1000) / 1000,
+      isTopFrame: IS_TOP_FRAME,
+      readyState: document.readyState,
+      visibilityState: document.visibilityState,
+      viewport: { width: innerWidth, height: innerHeight },
+      modules: healthModules(),
+      sourceEventCounts: healthCounts()
+    }, 'health')], 'health');
+  }
+
   function transitionId() { S.transitionSeq += 1; return `${NS2.pageInstanceId}-t${S.transitionSeq}`; }
   function begin(rawAction, stateBefore) {
-    if (!S.episodeActive) return null;
+    if (!S.episodeActive || !IS_TOP_FRAME) return null;
     const id = transitionId();
     const currentBefore = stateBefore || Observer.snapshot();
     const action = Normalizer.normalize({ ...rawAction, t: Math.round(relTime()) });
@@ -92,7 +129,7 @@ if (!window.__TRAINING_COLLECTOR_V07__) {
   function finish(id, delay = 0) {
     if (!id) return;
     setTimeout(() => {
-      if (!S.episodeActive) return;
+      if (!S.episodeActive || !IS_TOP_FRAME) return;
       const before = S.transitionBefore.get(id) || null;
       const after = Observer.snapshot();
       const canDiff = !!(before && StateDiff?.diffObservation && before.pageInstanceId === after.pageInstanceId);
@@ -146,16 +183,40 @@ if (!window.__TRAINING_COLLECTOR_V07__) {
       emitBatch(events) { rawBatch(events, 'hover'); }
     }) || null;
 
+    S.routeTrace = RouteTraceFactory?.createRouteTrace?.({
+      observer: Observer,
+      decorateEvent,
+      emitBatch(events) {
+        for (const event of events || []) rawBatch([event], event.type === 'semantic-snapshot' ? 'semantic' : 'navigation');
+      }
+    }) || null;
+
     S.physical.start();
     S.domCapture?.start();
     S.mutationTrace?.start();
     S.hoverTrace?.start();
+
+    const initialObservation = Observer.snapshot();
+    rawBatch([decorateEvent({
+      type: 'frame-context',
+      tsEpochMs: Date.now(),
+      tPageMs: Math.round(performance.now() * 1000) / 1000,
+      isTopFrame: IS_TOP_FRAME,
+      readyState: document.readyState,
+      viewport: { width: innerWidth, height: innerHeight },
+      coordinateSpace: 'frame-client'
+    }, 'semantic')], 'semantic');
     rawBatch([decorateEvent({
       type: 'semantic-snapshot',
       tsEpochMs: Date.now(),
       tPageMs: Math.round(performance.now() * 1000) / 1000,
-      observation: Observer.snapshot()
+      snapshotReason: 'document-start',
+      observation: initialObservation
     }, 'semantic')], 'semantic');
+
+    S.routeTrace?.start(initialObservation.page || null);
+    emitHealth('collector-stream-start');
+    S.healthTimer = setInterval(() => emitHealth('collector-stream-health'), HEALTH_INTERVAL_MS);
   }
 
   addEventListener('click', event => {
@@ -193,7 +254,7 @@ if (!window.__TRAINING_COLLECTOR_V07__) {
   }, true);
 
   addEventListener('beforeinput', event => {
-    if (!S.episodeActive) return;
+    if (!S.episodeActive || !IS_TOP_FRAME) return;
     const el = event.target instanceof Element ? event.target : null;
     if (!el || Observer.isSensitive(el)) return;
     const semantic = Observer.semanticElement(el);
@@ -202,7 +263,7 @@ if (!window.__TRAINING_COLLECTOR_V07__) {
   }, true);
 
   addEventListener('input', event => {
-    if (!S.episodeActive) return;
+    if (!S.episodeActive || !IS_TOP_FRAME) return;
     const el = event.target instanceof Element ? event.target : null;
     if (!el || Observer.isSensitive(el)) return;
     const semantic = Observer.semanticElement(el);
@@ -226,7 +287,7 @@ if (!window.__TRAINING_COLLECTOR_V07__) {
   }, true);
 
   addEventListener('scroll', () => {
-    if (!S.episodeActive) return;
+    if (!S.episodeActive || !IS_TOP_FRAME) return;
     clearTimeout(S.scrollTimer);
     S.scrollTimer = setTimeout(() => {
       const before = Observer.snapshot();
@@ -235,9 +296,17 @@ if (!window.__TRAINING_COLLECTOR_V07__) {
     }, 180);
   }, { capture: true, passive: true });
 
+  addEventListener('pagehide', () => {
+    emitHealth('collector-stream-stop');
+    if (S.healthTimer) clearInterval(S.healthTimer);
+    S.healthTimer = null;
+    S.routeTrace?.stop?.();
+  }, true);
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.scope !== 'TRAINING_COLLECTOR_V03') return false;
     if (message.type === 'START_EPISODE_CAPTURE') {
+      if (!IS_TOP_FRAME) { sendResponse({ ok: true, ignoredSubframe: true, pageInstanceId: NS2.pageInstanceId }); return false; }
       S.episodeActive = true;
       S.lastEpisodeState = Observer.snapshot();
       S.transitionBefore.clear();
@@ -252,20 +321,27 @@ if (!window.__TRAINING_COLLECTOR_V07__) {
       return false;
     }
     if (message.type === 'SNAPSHOT') {
-      sendResponse({ ok: true, observation: Observer.snapshot() });
+      sendResponse({ ok: true, observation: Observer.snapshot(), isTopFrame: IS_TOP_FRAME });
       return false;
     }
     return false;
   });
 
-  send('HELLO', { page: { pageInstanceId: NS2.pageInstanceId, origin: location.origin, pathname: location.pathname } }).then(async response => {
+  send('HELLO', {
+    page: {
+      pageInstanceId: NS2.pageInstanceId,
+      origin: location.origin,
+      pathname: location.pathname,
+      isTopFrame: IS_TOP_FRAME
+    }
+  }).then(async response => {
     if (!response?.ok) return;
     S.browserSessionId = response.browserSessionId || null;
-    S.episodeActive = !!response.episodeActive;
+    S.episodeActive = IS_TOP_FRAME && !!response.episodeActive;
     if (S.episodeActive) S.lastEpisodeState = Observer.snapshot();
     S.rawSender = ReliableSender?.createReliableSender?.({
       send,
-      journalKey: `tcRawPendingV06:${NS2.pageInstanceId}`,
+      journalKey: `tcRawPendingV072:${NS2.pageInstanceId}`,
       retryMs: 1500,
       maxPending: 128
     }) || null;
