@@ -1,4 +1,4 @@
-# STATUS — 2026-08-25
+# STATUS — 2026-08-26
 
 ## Source of truth
 
@@ -12,9 +12,9 @@ Trước khi sửa code: `STATUS.md` → `docs/PROJECT_JOURNAL.md` → source/te
 
 ---
 
-# CURRENT FOCUS — AGENT
+# CURRENT FOCUS — AGENT / Phase A1
 
-Training Collector V0.8 transport/capture gate đã đạt qua native Chrome sessions và server JSONL:
+Training Collector V0.8 transport/capture gate đã đạt và chuyển sang stability/regression support.
 
 ```text
 continuous socket ingest      PASS
@@ -22,19 +22,17 @@ late-server IndexedDB replay  PASS
 no missing/duplicate seq      PASS
 multi-frame/multi-tab         PASS
 SPA routes                    PASS
-login form observation        PASS
-credential privacy boundary   PASS
-browser close >45s finalize   PASS
-session-end                   PASS
+login privacy boundary        PASS
+browser close finalize        PASS
 ```
 
-Collector từ đây chuyển sang stability/regression support. Không tiếp tục tối ưu transport nếu không có regression mới.
+Không tiếp tục tối ưu Collector transport nếu không có regression mới.
 
 ---
 
-# Agent Phase A0 — COMPLETE: Semantic Action + Behavior + CDP Map
+# Agent Phase A0 — COMPLETE
 
-## Four-layer execution boundary
+Execution boundary:
 
 ```text
 TASK
@@ -43,11 +41,10 @@ TASK
 → AGENT ACTION CONTRACT        = WHAT
 → EXECUTION BEHAVIOR CONTRACT = HOW naturally
 → CDP EXECUTION PLAN           = exact browser-native plan
-→ AGENT RUNTIME EXTENSION      = dispatch CDP
+→ AGENT RUNTIME EXTENSION      = dispatch
 → CHROME
 → OBSERVE AFTER
-→ GOAL CHECK
-→ REPLAN
+→ GOAL CHECK / REPLAN
 ```
 
 Hard invariant:
@@ -58,149 +55,212 @@ Behavior does NOT decide task intent.
 Executor does NOT decide strategy.
 ```
 
-CDP is the execution standard for page interaction. `chrome.tabs.*` remains control-plane for tab lifecycle.
+CDP is the standard in-page execution layer. `chrome.tabs.*` remains tab lifecycle control-plane.
 
-## New Phase A0 files
+Key files:
 
 ```text
 control-center/AGENT_ACTION_CONTRACT.json
 control-center/manager/strategy/agent_action_contract.js
 control-center/manager/strategy/execution_behavior_contract.js
-control-center/script/checks/agent_action_contract.js
 docs/AGENT_ACTION_CDP_MAP.md
+docs/AGENT_EXECUTOR_GAP_MAP.md
 ```
 
-`control-center/manager/strategy/index.js` exports the new contracts.
-
-Deterministic `control-center/ACTION_CONTRACT.json` remains unchanged and separate.
-
-## Agent Action Contract v0.1 vocabulary
-
-```text
-navigation:
-  navigate back forward reload switchTab openNewTab closeTab
-
-pointer:
-  click doubleClick hover moveTo drag
-
-scroll:
-  scrollVertical scrollHorizontal scrollIntoView
-
-keyboard:
-  focus typeText replaceText clear pressKey keyCombo
-
-forms:
-  selectOption setChecked toggle submit
-
-media:
-  play pause mute unmute setVolume seek changePlaybackRate
-
-observation-dependent:
-  hoverAndObserve waitAndObserve dismiss
-```
-
-Human verification/CAPTCHA is not an action; it remains `status=blocked`, `reasonCode=human_verification_required`.
-
-## Behavior families v0.1
-
-```text
-pointer-click
-pointer-hover
-pointer-drag
-scroll-vertical
-scroll-horizontal
-scroll-target-acquisition
-keyboard-text
-keyboard-key
-focus-acquisition
-form-control
-media-control
-navigation
-observation-wait
-```
-
-Behavior Policy will learn distributions/context from human demonstrations; it must not replay human trajectories verbatim or use generic random jitter/delay.
-
-## CDP mapping examples
-
-```text
-click / hover / drag
-→ Input.dispatchMouseEvent
-
-scrollVertical / scrollHorizontal
-→ Input.dispatchMouseEvent(mouseWheel)
-
-typeText / pressKey
-→ Input.dispatchKeyEvent / Input.insertText
-
-navigate
-→ Page.navigate
-
-back / forward
-→ Page.getNavigationHistory + Page.navigateToHistoryEntry
-```
-
-Current experimental Agent Runtime executor still only directly supports a small subset (`openUrl`, `pressKey`, `type`). The semantic/CDP map is now the contract target for later runtime expansion.
+Deterministic `control-center/ACTION_CONTRACT.json` remains separate.
 
 ---
 
-# NEXT — Phase A1: Action Window Builder
+# Phase A1 — IN PROGRESS: Action Window Builder
 
-Build an offline tool that transforms raw V0.8 human sessions into candidate semantic demonstrations:
+Main files:
+
+```text
+training-collector/tools/build_action_windows.js
+training-collector/tests/action_window_contract.js
+```
+
+Current derived Action Window version: `0.1.3`.
+
+Window model:
 
 ```text
 BEFORE
-→ physical approach / hover / focus / wheel / key timing
+→ physical/semantic lead-in
 → SEMANTIC ACTION
-→ AFTER state / mutation / route
+→ AFTER / mutation / route / state
 → OUTCOME
 ```
 
-Initial actions:
+Current families:
 
 ```text
 click
+dismiss
+toggle
+focus
+selectOption
+submit
+drag
 hover / hoverAndObserve
 scrollVertical
 scrollHorizontal
 typeText
 pressKey
-drag
-toggle
-dismiss
 ```
 
-Ordering rule:
+## A1 fixes already implemented
+
+### Real DOM descriptor alignment
+
+Collector raw uses:
+
+```text
+targetDescriptor
+resolvedTargetDescriptor
+```
+
+A1 now reads these real fields. Earlier synthetic aliases (`resolvedTarget`) were insufficient for native data.
+
+### Actionable-parent label enrichment
+
+Derived target label resolution:
+
+```text
+resolvedTargetDescriptor
+→ descriptor index / semantic snapshot
+→ targetDescriptor
+→ raw descendant fallback
+```
+
+Derived output records `labelSource` and `labelEnriched`. Raw facts are never mutated.
+
+### Hover noise filtering
+
+Raw keeps all hover facts. A1 filters only derived training windows for known generic background/container targets such as `html`, `body`, `ytd-app`, `ytd-browse` when there is no stronger semantic evidence.
+
+Preview-like hover is retained when UI mutation/outcome supports semantic intent.
+
+### Preserve behavior facts for A2
+
+Action Windows now retain safe physical facts required for behavior learning:
+
+```text
+pointer: phase / x / y / movement / buttons / pressure / timing
+wheel: x / y / deltaX / deltaY / deltaMode / timing
+keyboard: phase / operation class / timing / modifiers
+```
+
+Printable human key content remains absent.
+
+### Drag derivation
+
+A1 derives `drag` from:
+
+```text
+pointer down
+→ continuous move samples
+→ pointer up
+```
+
+with duration, distance, start/end and full safe point series. This supports slider/seek/volume demonstrations.
+
+### High-confidence semantic promotion
+
+Only high-confidence cases are promoted:
+
+```text
+role=switch/checkbox or dom-change.checked → toggle
+known close/dismiss labels             → dismiss
+dom-change.selectedIndex               → selectOption
+dom-submit                              → submit
+dom-focus focused=true                  → focus
+```
+
+Ambiguous actions such as Facebook Like remain generic `click` unless state evidence is strong enough.
+
+---
+
+# “Tay chân” Agent — executor gap
+
+Current experimental runtime still directly executes only a small subset:
+
+```text
+openUrl
+pressKey
+type
+```
+
+The most important P0 gap is not another semantic verb; it is the **Observation Target Registry**:
+
+```text
+observationId + targetRef
+→ tab/frame/document
+→ semantic descriptor / current rect
+→ resolvable CDP node/runtime target
+```
+
+The Brain must be able to emit `click e17`; stale refs must fail and trigger re-observation, never blind coordinate reuse.
+
+P0 executor expansion after A1/A2/A3 design:
+
+```text
+target registry
+pointer move/hover/click/doubleClick
+vertical/horizontal wheel
+focus + text/key execution
+navigate/back/forward/reload
+```
+
+P1:
+
+```text
+drag
+scrollIntoView
+selectOption/setChecked/toggle/submit/dismiss
+tab lifecycle
+hoverAndObserve/waitAndObserve
+```
+
+Potential future action candidates, not yet core contract:
+
+```text
+contextClick
+pressAndHold
+openLinkInNewTab
+selectText
+uploadFile
+```
+
+See `docs/AGENT_EXECUTOR_GAP_MAP.md`.
+
+---
+
+# A1 next gate
+
+Run the A1 builder on native Facebook/TikTok/YouTube socket JSONL and measure:
+
+```text
+action family counts
+resolved/enriched label coverage
+hover windows kept vs filtered
+pointer facts around click
+real drag windows
+horizontal vs vertical scroll bursts
+keyboard privacy
+outcome mutation/route coverage
+frame-aware target identity
+```
+
+Then decide whether A1 needs additional derivation rules before A2.
+
+Ordering invariant:
 
 ```text
 tsEpochMs = primary global reconstruction time
-pageSeq   = page-local ordering
-sourceSeq = source-local ordering
-sessionSeq= persistence/integrity only; NOT chronological truth
+pageSeq/sourceSeq = local ordering
+sessionSeq = persistence/integrity only
 ```
-
-A1 regression demonstrations to preserve:
-
-```text
-YouTube hover-preview
-embedded iframe interactions
-YouTube media controls / playback rate
-Facebook like / comments
-Facebook horizontal carousel
-login form without credential leakage
-TikTok SPA video switching
-short-drama login-gated modal + dismiss
-multi-tab / multi-frame activity
-```
-
-A1 must also address dataset-side:
-
-```text
-actionable-parent semantic label enrichment
-hover background/container noise filtering
-```
-
-Do not mutate raw Collector facts to achieve this; derived semantics belong in dataset tooling.
 
 ---
 
@@ -211,52 +271,29 @@ A2 Behavior Feature Extractor
 → pointer/keyboard/scroll/drag features
 
 A3 Empirical Behavior Baseline
-→ context-conditioned distributions, no complex model yet
+→ context-conditioned distributions
 
 A4 One-action Agent Runtime Bridge
 → Strategy → Agent Action → Behavior → CDP → Observe After
 
 A5 Goal Checker + Replan
-
-then:
-retrieval/learned Strategy
-context-conditioned/learned Behavior Model
 ```
+
+Do not train complex models before A2/A3 offline metrics are stable.
 
 ---
 
-# Agent evaluation axes
+# Safety / privacy
+
+CAPTCHA/human verification remains:
 
 ```text
-Planning quality
-→ task success / progress / recovery
-
-Action correctness
-→ correct semantic action + target
-
-Execution fidelity
-→ trajectory/timing vs held-out human demonstrations
-
-Runtime reliability
-→ CDP execution + observation consistency
+status=blocked
+reasonCode=human_verification_required
+no automatic solve/bypass
 ```
 
-Natural execution must never reduce correctness merely to look human-like.
-
----
-
-# Collector stable baseline
-
-Runtime: `Training Collector V0.8 Socket Mirror`  
-Raw schema: `0.7.2`
-
-```text
-IndexedDB = browser-side safety buffer
-localhost WebSocket = development archive
-manual gzip = fallback/debug only
-```
-
-Do not reintroduce Downloads/offscreen auto-export as the primary data pipeline.
+Human login demonstrations may contribute timing/semantic form behavior but never credential/password/cookie/token/clipboard contents.
 
 ---
 
@@ -264,10 +301,10 @@ Do not reintroduce Downloads/offscreen auto-export as the primary data pipeline.
 
 1. GitHub is source of truth.
 2. Scenario Mode and Agent Mode remain separate.
-3. Strategy = WHAT; Behavior = HOW; CDP Planner = exact plan; Executor = dispatch.
-4. CDP is the standard page-interaction execution layer for Agent.
-5. Collector raw stays un-derived and privacy-filtered.
-6. Dataset derivation must use `tsEpochMs` as global time axis; `sessionSeq` is durability order.
-7. Human demonstrations provide distributions/context, not literal trajectory replay.
-8. CI success != native Chrome validation.
-9. Update STATUS/JOURNAL after architectural milestones.
+3. Strategy=WHAT; Behavior=HOW; CDP Planner=exact plan; Executor=dispatch.
+4. Collector raw stays un-derived and privacy-filtered.
+5. Derived cleanup belongs in dataset tooling, never overwrite raw truth.
+6. `tsEpochMs` is global dataset time; `sessionSeq` is durability order.
+7. Human demonstrations provide distributions/context, not literal replay.
+8. CI success != native Chrome Agent validation.
+9. Update STATUS/JOURNAL after architecture or dataset-contract milestones.
