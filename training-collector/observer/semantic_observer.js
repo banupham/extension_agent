@@ -42,23 +42,30 @@
     };
   }
 
+  function privacyFor(el) {
+    return Privacy.classifyElementMeta(rawMeta(el));
+  }
+
+  function isSensitive(el) {
+    return !!privacyFor(el).sensitive;
+  }
+
   function semanticElement(el) {
     if (!(el instanceof Element)) return null;
     const rect = el.getBoundingClientRect();
     const meta = rawMeta(el);
     const privacy = Privacy.classifyElementMeta(meta);
-    const aria = meta.ariaLabel || meta.placeholder || meta.label || '';
+    if (privacy.sensitive) return null;
+    const label = meta.ariaLabel || meta.placeholder || meta.label || '';
     const tag = el.tagName.toLowerCase();
     return {
       ref: getRef(el),
       tag,
       role: el.getAttribute('role') || null,
-      label: Privacy.redactText(aria, privacy.sensitive),
+      label: Privacy.redactText(label, false),
       editable: !!(el.isContentEditable || ['input', 'textarea', 'select'].includes(tag)),
       enabled: !el.matches(':disabled'),
       visible: visible(el),
-      sensitive: privacy.sensitive,
-      privacyReason: privacy.reason,
       selector: cssSelector(el),
       rect: {
         x: Math.round(rect.x), y: Math.round(rect.y),
@@ -70,7 +77,7 @@
   function snapshot() {
     const candidates = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]'))
       .filter(visible).slice(0, 500);
-    const active = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    const active = document.activeElement && document.activeElement !== document.body && !isSensitive(document.activeElement) ? document.activeElement : null;
     return {
       schemaVersion: '0.2.0',
       pageInstanceId: NS.pageInstanceId,
@@ -83,5 +90,5 @@
     };
   }
 
-  NS.SemanticObserver = { getRef, semanticElement, snapshot, cssSelector };
+  NS.SemanticObserver = { getRef, semanticElement, snapshot, cssSelector, isSensitive };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
