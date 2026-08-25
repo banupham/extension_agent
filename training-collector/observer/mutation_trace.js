@@ -7,6 +7,7 @@
   function createMutationTrace(options = {}) {
     const observer = options.observer;
     const emitBatch = typeof options.emitBatch === 'function' ? options.emitBatch : () => {};
+    const decorateEvent = typeof options.decorateEvent === 'function' ? options.decorateEvent : event => event;
     let mo = null;
     let timer = null;
     let burst = null;
@@ -74,14 +75,14 @@
       if (!burst) return;
       const out = burst;
       burst = null;
-      try { emitBatch([out]); } catch {}
+      let decorated = out;
+      try { decorated = decorateEvent(out, 'mutation') || out; } catch {}
+      try { emitBatch([decorated]); } catch {}
     }
 
     function start() {
       if (mo) return;
-      mo = new MutationObserver(records => {
-        for (const record of records) absorb(record);
-      });
+      mo = new MutationObserver(records => { for (const record of records) absorb(record); });
       mo.observe(document.documentElement, {
         subtree: true,
         childList: true,
