@@ -57,6 +57,7 @@ jobs:
           node --check training-collector/tools/analyze_raw.js
           node --check training-collector/tools/build_action_semantics.js
           node --check training-collector/socket-server/server.js
+          node --check training-collector/socket-server/integration_test.js
           node --check training-collector/background.js
           node --check training-collector/content.js
           node --check training-collector/popup.js
@@ -86,3 +87,7 @@ jobs:
         run: node training-collector/tests/v072_frame_stream_contract.js
       - name: Run Collector V0.8 socket mirror contract test
         run: node training-collector/tests/v08_socket_mirror_contract.js
+      - name: Install socket server dependency
+        run: npm install --prefix training-collector/socket-server --no-audit --no-fund
+      - name: Run Collector V0.8 socket server integration test
+        run: npm test --prefix training-collector/socket-server
