@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Training Collector V0.5 Compact Raw",
-  "version": "0.5.0",
-  "description": "Privacy-first continuous physical and semantic DOM capture with compact target refs, mutation bursts, improved visibility and selector quality.",
+  "name": "Training Collector V0.6 IndexedDB Reliable Raw",
+  "version": "0.6.0",
+  "description": "Privacy-first continuous physical and semantic DOM capture with IndexedDB chunk persistence, ACK retry, compact target refs and mutation bursts.",
   "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage", "downloads"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background.js"},
@@ -13,6 +13,7 @@
         "core/privacy.js",
         "core/action_normalizer.js",
         "core/state_diff.js",
+        "core/reliable_sender.js",
         "observer/element_registry.js",
         "observer/semantic_observer.js",
         "correlation/physical_semantic_correlator.js",
@@ -26,6 +27,6 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Training Collector V0.5"
+    "default_title": "Training Collector V0.6"
   }
 }
