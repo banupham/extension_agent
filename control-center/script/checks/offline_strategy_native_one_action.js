@@ -39,7 +39,9 @@ async function main() {
     },
     async executePlan(payload) {
       assert.equal(payload.observationId, 'obs-before');
-      assert.ok(Array.isArray(payload.plan));
+      assert.equal(payload.plan?.actionType, 'play');
+      assert.ok(Array.isArray(payload.plan?.steps));
+      assert.ok(payload.plan.steps.length > 0);
       executed += 1;
       phase = 'after';
       return { ok: true };
