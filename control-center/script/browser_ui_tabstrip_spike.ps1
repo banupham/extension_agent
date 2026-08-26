@@ -354,7 +354,7 @@ function Get-IsSelected($TabElement) {
   } catch { return $false }
 }
 
-if (['switchTab', 'closeTab'] -contains $Action) {
+if (@('switchTab', 'closeTab') -contains $Action) {
   if ([string]::IsNullOrWhiteSpace($TargetTabTitle)) { throw 'browser_ui_tabstrip_target_tab_title_required' }
 }
 
