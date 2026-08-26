@@ -9,6 +9,13 @@ assert.strictEqual(args.label, 'Like');
 assert.strictEqual(args.timeout, '5000');
 assert.strictEqual(Harness.normalizeText('  Hello   WORLD '), 'hello world');
 
+const scopeArgs = Harness.parseArgs(['--tabs', '--tabs-scope', 'matching', '--host', 'facebook.com', '--max-tabs', '4']);
+assert.deepStrictEqual(Harness.scopeFromArgs(scopeArgs, 'all'), {
+  mode: 'matching',
+  hostname: 'facebook.com',
+  maxTabs: 4
+});
+
 const observation = {
   interactiveElements: [
     { ref: 'e1', label: 'Like', role: 'button' },
