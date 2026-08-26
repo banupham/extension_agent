@@ -33,9 +33,11 @@
   function validatePlan(plan) {
     if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('invalid_cdp_plan');
     if (!SUPPORTED_PLAN_VERSIONS.has(plan.cdpPlanVersion)) throw new Error('unsupported_cdp_plan_version');
-    if (!Array.isArray(plan.steps) || plan.steps.length === 0 || plan.steps.length > 500) throw new Error('invalid_cdp_plan_steps');
 
     const actionType = typeof plan.actionType === 'string' ? plan.actionType : null;
+    if (!Array.isArray(plan.steps) || plan.steps.length > 500) throw new Error('invalid_cdp_plan_steps');
+    if (plan.steps.length === 0 && actionType !== 'waitAndObserve') throw new Error('invalid_cdp_plan_steps');
+
     const targetRef = typeof plan.targetRef === 'string' && plan.targetRef.trim() ? plan.targetRef.trim() : null;
     const destinationRef = typeof plan.destinationRef === 'string' && plan.destinationRef.trim() ? plan.destinationRef.trim() : null;
 

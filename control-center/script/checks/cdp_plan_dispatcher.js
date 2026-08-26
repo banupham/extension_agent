@@ -73,11 +73,24 @@ const forwardPlan = Dispatcher.validatePlan({
 });
 assert.strictEqual(forwardPlan.steps[1].historyOffset, 1);
 
+const waitPlan = Dispatcher.validatePlan({
+  cdpPlanVersion: '0.1.3',
+  actionType: 'waitAndObserve',
+  steps: []
+});
+assert.strictEqual(waitPlan.actionType, 'waitAndObserve');
+assert.strictEqual(waitPlan.steps.length, 0);
+
 assert.throws(() => Dispatcher.validatePlan({
   cdpPlanVersion: '9.9.9',
   actionType: 'click',
   steps: [{ method: 'Input.dispatchMouseEvent', params: {} }]
 }), /unsupported_cdp_plan_version/);
+assert.throws(() => Dispatcher.validatePlan({
+  cdpPlanVersion: '0.1.3',
+  actionType: 'click',
+  steps: []
+}), /invalid_cdp_plan_steps/);
 assert.throws(() => Dispatcher.validatePlan({
   cdpPlanVersion: '0.1.2',
   actionType: 'click',
@@ -135,6 +148,16 @@ assert.throws(() => Dispatcher.validatePlan({
   assert.strictEqual(result.stepCount, 3);
   assert.strictEqual(calls.length, 3);
   assert.deepStrictEqual(sleeps, [10, 20, 80]);
+
+  const waitCalls = [];
+  const waitResult = await Dispatcher.dispatchPlan(waitPlan, async (method, params) => {
+    waitCalls.push({ method, params });
+    return { ok: true };
+  }, async () => {});
+  assert.strictEqual(waitResult.ok, true);
+  assert.strictEqual(waitResult.stepCount, 0);
+  assert.strictEqual(waitResult.resultCount, 0);
+  assert.deepStrictEqual(waitCalls, []);
 
   const dragCalls = [];
   const dragResult = await Dispatcher.dispatchPlan(dragPlan, async (method, params) => {

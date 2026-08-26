@@ -113,7 +113,7 @@ function cdpPrimitiveFor(type) {
     seek: ['Input.dispatchMouseEvent'],
     changePlaybackRate: ['Input.dispatchMouseEvent|Input.dispatchKeyEvent'],
     hoverAndObserve: ['Input.dispatchMouseEvent', 'Runtime.evaluate'],
-    waitAndObserve: ['Runtime.evaluate'],
+    waitAndObserve: [],
     dismiss: ['Input.dispatchMouseEvent|Input.dispatchKeyEvent']
   };
   return map[type] || [];

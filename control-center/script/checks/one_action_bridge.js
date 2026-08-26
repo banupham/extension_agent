@@ -184,6 +184,55 @@ const runtime = {
     postActionSettle: false
   }), /destination_ref_not_in_observation/);
 
+  let waitObserveCount = 0;
+  let waitExecuted = null;
+  const waitRuntime = {
+    async observe() {
+      waitObserveCount += 1;
+      // First observation is the decision snapshot. The semantic change occurs only
+      // after 63 subsequent 80ms polls (~5.04s), proving waitAndObserve is not
+      // constrained by the ordinary 800ms post-action settle deadline.
+      const ready = waitObserveCount >= 65;
+      return {
+        observationId: `wait-obs-${waitObserveCount}`,
+        url: 'https://example.test/wait',
+        title: ready ? 'WAITANDOBSERVE PASS' : 'WAITANDOBSERVE ARMED',
+        viewport: { width: 800, height: 600 },
+        scroll: { x: 0, y: 0 },
+        interactiveElements: ready
+          ? [{ ref: 'e1', tag: 'button', label: 'Wait Ready', visible: true, enabled: true, rect: { x: 20, y: 20, width: 100, height: 30 } }]
+          : []
+      };
+    },
+    async executePlan(payload) {
+      waitExecuted = payload;
+      assert.strictEqual(payload.plan.actionType, 'waitAndObserve');
+      assert.deepStrictEqual(payload.plan.steps, []);
+      return { ok: true, actionType: 'waitAndObserve', stepCount: 0, resultCount: 0 };
+    }
+  };
+
+  const waited = await runOneAction({
+    runtime: waitRuntime,
+    decide: async () => ({ status: 'act', action: { type: 'waitAndObserve' } }),
+    settleSleep: async () => {}
+  });
+  assert.strictEqual(waited.mappedAction.type, 'waitAndObserve');
+  assert.strictEqual(waited.behavior.metadata.behaviorFamily, 'observation-wait');
+  assert.strictEqual(waited.cdpPlan.actionType, 'waitAndObserve');
+  assert.deepStrictEqual(waited.cdpPlan.steps, []);
+  assert.strictEqual(waitExecuted.observationId, 'wait-obs-1');
+  assert.strictEqual(waited.execution.ok, true);
+  assert.strictEqual(waited.execution.stepCount, 0);
+  assert.strictEqual(waited.after.title, 'WAITANDOBSERVE PASS');
+  assert.ok(waited.after.interactiveElements.some(x => x.label === 'Wait Ready'));
+  assert.strictEqual(waited.postActionObservation.mode, 'settled');
+  assert.strictEqual(waited.postActionObservation.waitedMs, 5120);
+  assert.strictEqual(waited.postActionObservation.semanticChanged, true);
+  assert.strictEqual(waited.postActionObservation.deadlineReached, false);
+  assert.strictEqual(waited.postActionObservation.policy.requireSemanticChange, true);
+  assert.strictEqual(waited.postActionObservation.policy.maxWindowMs, 6000);
+
   console.log('One-action Agent bridge contract: PASS');
 })().catch(error => {
   console.error(error);

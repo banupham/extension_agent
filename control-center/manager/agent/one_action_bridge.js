@@ -5,6 +5,7 @@ const { sampledBehavior } = require('../behavior/empirical_policy.js');
 const { buildCdpPlan } = require('../execution/cdp_plan.js');
 const { buildDragCdpPlan } = require('../execution/drag_plan.js');
 const { buildFormCdpPlan } = require('../execution/form_plan.js');
+const { buildWaitAndObservePlan } = require('../execution/wait_plan.js');
 
 const BRIDGE_VERSION = '0.2.1';
 const DEFAULT_POST_ACTION_SETTLE = Object.freeze({
@@ -13,9 +14,15 @@ const DEFAULT_POST_ACTION_SETTLE = Object.freeze({
   maxWindowMs: 800,
   stableSamples: 2
 });
+const DEFAULT_WAIT_AND_OBSERVE_SETTLE = Object.freeze({
+  pollMs: 80,
+  minWindowMs: 400,
+  maxWindowMs: 6000,
+  stableSamples: 2
+});
 const SETTLE_ACTION_TYPES = new Set([
   'click', 'doubleClick', 'hover', 'moveTo', 'drag', 'focus',
-  'pressKey', 'keyCombo', 'typeText', 'setChecked', 'selectOption'
+  'pressKey', 'keyCombo', 'typeText', 'setChecked', 'selectOption', 'waitAndObserve'
 ]);
 
 function findTarget(observation, targetRef) {
@@ -65,15 +72,19 @@ function settlePolicy(options, mappedAction) {
   if (requested === false || requested?.enabled === false) return null;
   if (!SETTLE_ACTION_TYPES.has(mappedAction?.type)) return null;
   const source = requested && typeof requested === 'object' ? requested : {};
+  const defaults = mappedAction?.type === 'waitAndObserve'
+    ? DEFAULT_WAIT_AND_OBSERVE_SETTLE
+    : DEFAULT_POST_ACTION_SETTLE;
   const positive = (value, fallback) => {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? n : fallback;
   };
-  const pollMs = positive(source.pollMs, DEFAULT_POST_ACTION_SETTLE.pollMs);
-  const minWindowMs = positive(source.minWindowMs, DEFAULT_POST_ACTION_SETTLE.minWindowMs);
-  const maxWindowMs = Math.max(minWindowMs, positive(source.maxWindowMs, DEFAULT_POST_ACTION_SETTLE.maxWindowMs));
-  const stableSamples = Math.max(2, Math.round(positive(source.stableSamples, DEFAULT_POST_ACTION_SETTLE.stableSamples)));
-  return { pollMs, minWindowMs, maxWindowMs, stableSamples };
+  const pollMs = positive(source.pollMs, defaults.pollMs);
+  const minWindowMs = positive(source.minWindowMs, defaults.minWindowMs);
+  const maxWindowMs = Math.max(minWindowMs, positive(source.maxWindowMs, defaults.maxWindowMs));
+  const stableSamples = Math.max(2, Math.round(positive(source.stableSamples, defaults.stableSamples)));
+  const requireSemanticChange = mappedAction?.type === 'waitAndObserve';
+  return { pollMs, minWindowMs, maxWindowMs, stableSamples, requireSemanticChange };
 }
 
 async function observeAfterAction(runtime, mappedAction, options = {}) {
@@ -114,7 +125,8 @@ async function observeAfterAction(runtime, mappedAction, options = {}) {
     }
     observation = next;
 
-    if (waitedMs >= policy.minWindowMs && stableSamples >= policy.stableSamples) {
+    const changeRequirementMet = !policy.requireSemanticChange || semanticChanged;
+    if (waitedMs >= policy.minWindowMs && stableSamples >= policy.stableSamples && changeRequirementMet) {
       return {
         observation,
         metadata: {
@@ -216,7 +228,9 @@ async function runOneAction(options) {
     ? buildDragCdpPlan({ mappedAction, behavior, source: target, destination, context })
     : ['setChecked', 'selectOption'].includes(mappedAction.type)
       ? buildFormCdpPlan({ mappedAction, behavior, target, context })
-      : buildCdpPlan({ mappedAction, behavior, target, context });
+      : mappedAction.type === 'waitAndObserve'
+        ? buildWaitAndObservePlan({ mappedAction, behavior })
+        : buildCdpPlan({ mappedAction, behavior, target, context });
 
   const execution = await runtime.executePlan({
     observationId: before.observationId,
@@ -251,6 +265,7 @@ async function runOneAction(options) {
 module.exports = {
   BRIDGE_VERSION,
   DEFAULT_POST_ACTION_SETTLE,
+  DEFAULT_WAIT_AND_OBSERVE_SETTLE,
   SETTLE_ACTION_TYPES,
   findTarget,
   pointerStartFor,
