@@ -67,6 +67,17 @@ const scroll = sampledBehavior({
 assert.strictEqual(scroll.scroll.axis, 'vertical');
 assert.ok(Number.isFinite(scroll.scroll.constraints.absoluteDelta));
 
+const fallbackScroll = sampledBehavior({
+  baseline: null,
+  mappedAction: mapAgentAction({ type: 'scrollVertical' }),
+  rng: fixedRng
+});
+assert.strictEqual(fallbackScroll.profile, 'conservative-fallback');
+assert.strictEqual(fallbackScroll.scroll.constraints.durationMs, null);
+assert.strictEqual(fallbackScroll.scroll.constraints.eventCount, null);
+assert.strictEqual(fallbackScroll.scroll.constraints.absoluteDelta, null);
+assert.strictEqual(fallbackScroll.scroll.constraints.correctionRatio, null);
+
 const typing = sampledBehavior({
   baseline,
   mappedAction: mapAgentAction({ type: 'typeText' }),

@@ -3,6 +3,7 @@
 const PLAN_VERSION = '0.1.1';
 
 function finite(value, fallback = null) {
+  if (value == null || value === '') return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
@@ -129,7 +130,9 @@ function scrollPlan(mappedAction, behavior, context = {}) {
   const absoluteDelta = Math.max(1, finite(constraints.absoluteDelta, 480));
   const correctionRatio = clamp(finite(constraints.correctionRatio, 0), 0, 0.35);
   const direction = finite(mappedAction.args?.direction, 1) < 0 ? -1 : 1;
-  const point = context.pointerStart || context.viewportCenter || { x: 400, y: 300 };
+  // Generic page scroll must not inherit a stale pointer position from a prior page/action.
+  // Anchor wheel events at the current viewport center; targeted/nested scrolling is a separate action.
+  const point = context.viewportCenter || context.pointerStart || { x: 400, y: 300 };
   const weights = Array.from({ length: eventCount }, (_, i) => Math.sin(Math.PI * (i + 1) / (eventCount + 1)));
   const sum = weights.reduce((a, b) => a + b, 0) || 1;
   const correctionEvents = correctionRatio > 0.04 && eventCount >= 3 ? 1 : 0;
