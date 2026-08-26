@@ -1,6 +1,8 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
 const {
   parseArgs,
   validateRequest,
@@ -53,5 +55,9 @@ assert.match(decoded, /-TargetTabTitle 'UI TAB BETA'/);
 const openDecoded = Buffer.from(powershellArgs(openRequest)[4], 'base64').toString('utf16le');
 assert.match(openDecoded, /-Action 'openNewTab'/);
 assert.ok(!openDecoded.includes('-TargetTabTitle'));
+
+const psSource = fs.readFileSync(path.join(__dirname, '..', 'browser_ui_tabstrip_spike.ps1'), 'utf8');
+assert.ok(psSource.includes("if (@('switchTab', 'closeTab') -contains $Action)"));
+assert.ok(!psSource.includes("if (['switchTab', 'closeTab'] -contains $Action)"));
 
 console.log('Browser UI tab-strip spike contract: PASS');
