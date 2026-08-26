@@ -21,22 +21,47 @@ function bestSimilarity(needleTokens, phrases) {
   return best;
 }
 
+function historyActionTypes(history) {
+  return (Array.isArray(history) ? history : [])
+    .map(item => String(item?.actionType || item?.action?.type || '').trim())
+    .filter(Boolean);
+}
+
+function sameActionHistory(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
+function validatePrototype(proto, name) {
+  if (!proto || typeof proto !== 'object' || Array.isArray(proto)) throw new Error(`${name} must be an object`);
+  if (typeof proto.type !== 'string' || !proto.type.trim()) throw new Error(`${name}.type required`);
+  if (!Array.isArray(proto.instructions)) throw new Error(`${name}.instructions must be an array`);
+  if (!Array.isArray(proto.targetLabels)) throw new Error(`${name}.targetLabels must be an array`);
+}
+
 function validateModel(model) {
   if (!model || typeof model !== 'object' || Array.isArray(model)) throw new Error('offline baseline model object required');
   if (model.kind !== 'offline-semantic-prototype-baseline') throw new Error(`unsupported offline baseline model kind: ${model.kind || '<missing>'}`);
   if (!Array.isArray(model.actionPrototypes) || model.actionPrototypes.length === 0) throw new Error('offline baseline model requires actionPrototypes');
-  for (const [index, proto] of model.actionPrototypes.entries()) {
-    if (!proto || typeof proto !== 'object' || Array.isArray(proto)) throw new Error(`actionPrototypes[${index}] must be an object`);
-    if (typeof proto.type !== 'string' || !proto.type.trim()) throw new Error(`actionPrototypes[${index}].type required`);
-    if (!Array.isArray(proto.instructions)) throw new Error(`actionPrototypes[${index}].instructions must be an array`);
-    if (!Array.isArray(proto.targetLabels)) throw new Error(`actionPrototypes[${index}].targetLabels must be an array`);
+  for (const [index, proto] of model.actionPrototypes.entries()) validatePrototype(proto, `actionPrototypes[${index}]`);
+  if (model.historyPrototypes != null) {
+    if (!Array.isArray(model.historyPrototypes)) throw new Error('historyPrototypes must be an array');
+    for (const [index, proto] of model.historyPrototypes.entries()) {
+      validatePrototype(proto, `historyPrototypes[${index}]`);
+      if (!Array.isArray(proto.priorActionTypes)) throw new Error(`historyPrototypes[${index}].priorActionTypes must be an array`);
+      for (const [historyIndex, actionType] of proto.priorActionTypes.entries()) {
+        if (typeof actionType !== 'string' || !actionType.trim()) {
+          throw new Error(`historyPrototypes[${index}].priorActionTypes[${historyIndex}] required`);
+        }
+      }
+    }
   }
   return model;
 }
 
-function choosePrototype(model, task) {
+function scorePrototypes(prototypes, task) {
   const taskTokens = tokens(task?.instruction);
-  const scored = model.actionPrototypes.map(proto => {
+  return (prototypes || []).map(proto => {
     const instructionScore = bestSimilarity(taskTokens, proto.instructions);
     const targetLabelScore = bestSimilarity(taskTokens, proto.targetLabels);
     const score = (0.35 * instructionScore) + (0.65 * targetLabelScore);
@@ -47,7 +72,23 @@ function choosePrototype(model, task) {
     b.instructionScore - a.instructionScore ||
     a.proto.type.localeCompare(b.proto.type)
   ));
-  return scored[0] || null;
+}
+
+function choosePrototype(model, task, history = []) {
+  const priorActionTypes = historyActionTypes(history);
+  const historyMatches = (model.historyPrototypes || []).filter(proto =>
+    sameActionHistory(proto.priorActionTypes, priorActionTypes)
+  );
+  const useHistory = historyMatches.length > 0;
+  const candidates = useHistory ? historyMatches : model.actionPrototypes;
+  const scored = scorePrototypes(candidates, task);
+  const chosen = scored[0] || null;
+  return chosen ? {
+    ...chosen,
+    historyMatched: useHistory,
+    priorActionTypes,
+    prototypeSource: useHistory ? 'historyPrototypes' : 'actionPrototypes'
+  } : null;
 }
 
 function chooseTargetRef(proto, task, observation) {
@@ -86,8 +127,8 @@ function createOfflineBaselineProvider(options = {}) {
     name: 'offline-semantic-prototype-baseline',
     version: String(model.modelVersion || '0.1.0'),
 
-    async decide({ task, observation }) {
-      const chosen = choosePrototype(model, task);
+    async decide({ task, observation, history = [] }) {
+      const chosen = choosePrototype(model, task, history);
       if (!chosen) {
         return {
           status: 'blocked',
@@ -107,7 +148,10 @@ function createOfflineBaselineProvider(options = {}) {
             modelVersion: model.modelVersion || null,
             prototypeType: chosen.proto.type,
             instructionScore: chosen.instructionScore,
-            targetLabelScore: chosen.targetLabelScore
+            targetLabelScore: chosen.targetLabelScore,
+            historyMatched: chosen.historyMatched,
+            priorActionTypes: chosen.priorActionTypes,
+            prototypeSource: chosen.prototypeSource
           }
         };
       }
@@ -132,6 +176,9 @@ function createOfflineBaselineProvider(options = {}) {
           metadata: {
             modelVersion: model.modelVersion || null,
             prototypeType: chosen.proto.type,
+            historyMatched: chosen.historyMatched,
+            priorActionTypes: chosen.priorActionTypes,
+            prototypeSource: chosen.prototypeSource,
             error: String(error?.message || error)
           }
         };
@@ -148,7 +195,10 @@ function createOfflineBaselineProvider(options = {}) {
         metadata: {
           modelVersion: model.modelVersion || null,
           instructionScore: chosen.instructionScore,
-          targetLabelScore: chosen.targetLabelScore
+          targetLabelScore: chosen.targetLabelScore,
+          historyMatched: chosen.historyMatched,
+          priorActionTypes: chosen.priorActionTypes,
+          prototypeSource: chosen.prototypeSource
         }
       };
     }
@@ -159,7 +209,10 @@ module.exports = {
   tokens,
   jaccard,
   bestSimilarity,
+  historyActionTypes,
+  sameActionHistory,
   validateModel,
+  scorePrototypes,
   choosePrototype,
   chooseTargetRef,
   createOfflineBaselineProvider
