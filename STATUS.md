@@ -8,25 +8,26 @@ Before code changes:
 
 ```text
 STATUS.md
-→ docs/PROJECT_JOURNAL.md
+→ docs/PROJECT_JOURNAL.md / focused appendices
 → current source/tests on main
 ```
 
-Detailed native evidence is kept in `docs/PROJECT_JOURNAL.md` and focused appendices, including:
+Recent focused evidence includes:
 
 ```text
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_BROWSER_UI_OS.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CDP_NATIVE.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_AGENT_CURSOR.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_KEYBOARD_FIDELITY.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CLEAR_NATIVE.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MOVETO_NATIVE.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_SCROLLINTOVIEW_NATIVE.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_DRAG_BATCH.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_FORMS_BATCH.md
 ```
 
 ---
 
-# CURRENT FOCUS — finish existing CDP / webpage native validation
+# CURRENT FOCUS — batch native validation of remaining existing Agent Actions
 
 ```text
 A0 Agent/Behavior contracts        COMPLETE
@@ -41,7 +42,9 @@ Autonomous multi-step              NOT STARTED
 
 Collector V0.8 transport/capture gate is complete and only needs stability/regression support.
 
-Native-PASS functional evidence:
+Functional Agent PASS != Brain-quality PASS != natural-behavior PASS.
+
+## Native-PASS functional matrix
 
 ```text
 tab inventory / matching
@@ -50,11 +53,12 @@ OBSERVE semantic targets
 basic click + visible effect
 OBSERVE AFTER / invalidation
 vertical scroll
-hover
-moveTo
 horizontal scroll
 scrollIntoView
+hover
+moveTo
 doubleClick
+drag with semantic source + destination refs
 focus
 typeText
 replaceText
@@ -65,13 +69,28 @@ navigate
 reload
 back history-CDP
 forward history-CDP
+setChecked
+selectOption
+toggle
+submit
 stale-ref rejection after newer observation
 moving-target live-geometry rejection before pointer click
+drag destination live-geometry rejection before release
+form target-state rejection when observed checkbox/select state changes
 post-action settled semantic observation for delayed dynamic UI
-Agent Cursor V0.1 hover/click visualization + Observer isolation
+Agent Cursor V0.1 pointer visualization + Observer isolation
 ```
 
-Functional Agent PASS != Brain-quality PASS != natural-behavior PASS.
+Forms batch is now **4/4 native PASS**:
+
+```text
+setChecked
+selectOption
+toggle
+submit
+```
+
+`setChecked` and `selectOption` were first native-confirmed unsupported, then fixed on `feat/agent-tab-context`, CI-passed, native re-tested, and selectively promoted to `main`. Their PAGE_CDP pointer phases were also visually confirmed through Agent Cursor after reloading the Runtime extension.
 
 ---
 
@@ -88,21 +107,21 @@ main
 → merge only native-PASS fix
 ```
 
-Reusable experiment branch only:
+Reusable experiment branch:
 
 ```text
 feat/agent-tab-context
 ```
 
-Do not create a branch per bug.
+Do not merge the whole experimental branch blindly. Selectively promote only native-proven code/tests. Browser UI/OS experiments remain deferred.
 
-Controlled local tests reuse:
+Controlled local tests reuse one fixed surface:
 
 ```text
 http://127.0.0.1:8091
 ```
 
-Change page content/state instead of allocating new ports.
+Batch test mode is allowed for speed, but each gate remains one semantic Agent Action followed by execution + observation. This is not autonomous multi-step.
 
 ---
 
@@ -136,21 +155,18 @@ Executor does NOT choose strategy.
 
 # CDP / Runtime baseline
 
-Planner emits:
-
-```text
-cdpPlanVersion = 0.1.2
-```
-
 Runtime dispatcher accepts:
 
 ```text
 0.1.0
 0.1.1
 0.1.2
+0.1.3
 ```
 
-Allowlisted EXECUTE_PLAN methods:
+`0.1.3` is currently required by semantic drag because the plan binds both `targetRef` and `destinationRef`. Other existing planners may still emit compatible earlier versions.
+
+Allowlisted EXECUTE_PLAN methods remain:
 
 ```text
 Input.dispatchMouseEvent
@@ -164,168 +180,110 @@ Page.navigateToHistoryEntry
 
 No arbitrary raw-CDP tunnel from Brain.
 
-## Target freshness / geometry
+## Observation-bound target safety
 
-Observation-bound refs use TTL 4s and latest-observation rules. A newer observation on the same tab invalidates the old one. Before target-dependent pointer dispatch, Runtime re-reads live geometry and compares it with observed geometry using a 2px tolerance; geometry change causes `target_geometry_changed`, invalidates the observation and rejects rather than silently retargeting. The guard is also re-run immediately before `mousePressed`.
+Observation refs use TTL 4s and latest-observation rules. A newer observation invalidates the old one.
 
-`scrollIntoView` is target-derived and is also covered by the observation-bound live-geometry guard before its wheel plan executes.
+Target-dependent actions use narrow Runtime binding. Runtime re-reads live geometry and rejects `target_geometry_changed` instead of silently retargeting. Pointer actions re-check immediately before press where applicable. Drag additionally validates destination geometry before execution and immediately before release.
+
+Forms add narrow observed state binding:
+
+```text
+checkbox/radio → inputType + checked
+select         → selectedValue + selectedIndex + option metadata
+```
+
+No text/password input values are exposed for this feature. If bound check/select state or option structure changes after OBSERVE, Runtime rejects `target_state_changed`.
+
+## Forms execution
+
+```text
+setChecked
+→ if state already equals requested value: no toggle
+→ otherwise observation-bound PAGE_CDP click
+
+selectOption
+→ resolve requested semantic option from observed option metadata
+→ PAGE_CDP pointer acquire/focus
+→ Input.dispatchKeyEvent Home / ArrowDown / Enter
+```
+
+Strategy still emits no selector, coordinate, or raw CDP packet.
 
 ## Settled post-action observation
 
-One-action bridge `0.2.1` uses bounded semantic settling:
+One-action bridge `0.2.1` uses bounded semantic settling for action families that need it:
 
 ```text
 observe immediately
 → poll every 80ms
 → minimum window 400ms
-→ stop after semantic snapshot stable for >= 2 samples
+→ semantic stability >= 2 samples
 → maximum deadline 800ms
 ```
 
-Native dynamic UI re-test captured `DYNAMIC READY` and `Dynamic Child` inside the same one-action result.
-
 ## Keyboard/input fidelity
-
-Native evidence:
-
-```text
-typeText via Input.insertText
-→ beforeinput / input
-→ no keydown / keypress / keyup for inserted characters
-
-replaceText
-→ observation-bound pointer focus
-→ Control+A via Input.dispatchKeyEvent produces keydown/keyup
-→ replacement characters via Input.insertText produce beforeinput/input
-→ OLD → NEW PASS
-
-clear
-→ observation-bound pointer focus
-→ Control+A via Input.dispatchKeyEvent
-→ Backspace via Input.dispatchKeyEvent
-→ target OLD → empty
-→ non-target Distractor KEEP → KEEP
-→ PASS
-```
-
-Conclusion:
 
 ```text
 Input.dispatchKeyEvent = key-like listener semantics
 Input.insertText       = text insertion semantics
 ```
 
-Visual text success is not proof of physical keyboard listener fidelity. Any future keydown/keyup-sensitive typing path should be a separate execution variant below Strategy.
-
-## PAGE_CDP modifier boundary
-
-Modifier-aware `keyCombo` is native PASS for webpage listeners. `Alt+ArrowLeft` delivered real modifier-aware CDP events to page JavaScript, but PAGE_CDP did not trigger Chrome/GPM browser-shell Back. Do not keep tuning PAGE_CDP to impersonate browser chrome shortcuts.
+`typeText` via `Input.insertText` provides `beforeinput/input`, not physical-key listener fidelity. Physical-key-like typing remains a future execution variant only if a real task requires it.
 
 ## Agent Cursor V0.1
 
-Promoted to `main` after native PASS:
+PAGE_CDP `Input.dispatchMouseEvent` is the source of truth for the debug cursor mirror. The overlay is telemetry only, `pointer-events:none`, isolated from Observer, and must never change execution timing.
 
-```text
-PAGE_CDP Input.dispatchMouseEvent = source of truth
-→ fire-and-forget mirror telemetry
-→ viewport-sized closed-Shadow-DOM overlay
-→ pointer-events:none
-```
-
-Native gates:
-
-```text
-hover AGENT cursor visualization              PASS
-click AGENT · DOWN / AGENT · UP               PASS
-physical Windows pointer remains independent  PASS
-Observer does not expose overlay as target     PASS
-execution/outcome preserved                   PASS
-```
-
-Cursor readability refinement is presentation-only and must not alter real CDP timing.
-
-## Pointer trajectory diversity
-
-Repeated native `moveTo` tests reached the same semantic target successfully while producing visibly different pointer trajectories between runs. This is consistent with randomized target acquisition / path generation and the no-literal-trajectory-replay policy.
-
-This is functional diversity evidence only; it is not a natural-behavior quality PASS.
-
-## scrollIntoView
-
-Native evidence:
-
-```text
-Observer exposed Far Target while offscreen at rect.y = 1466.4375 with viewport.height = 640
-initial main action → cdp_plan_unsupported:scrollIntoView
-experimental planner → weighted Input.dispatchMouseEvent(mouseWheel) target acquisition
-Far Target became visible
-after.title = SCROLLINTOVIEW PASS
-no click
-Runtime observation-bound target guard added and native re-test still PASS
-```
-
-Promoted to `main` as commit `3efdc3e984c01a59b2afeb9c528331f2556d43ad`; runtime-syntax run `32950694941` SUCCESS.
-
-Human visual assessment of current scroll motion is roughly ~80% natural. Do not hand-tune this functional gate; leave further naturalness improvement to Behavior learning/refinement.
+Repeated `moveTo` and other pointer tests show non-identical trajectories. This is functional diversity evidence, not natural-behavior quality PASS. Naturalness refinements remain Behavior-learning work.
 
 ---
 
 # Browser UI / OS control — DEFERRED
 
-Experimental work on `feat/agent-tab-context` proved:
+Experimental evidence retained on `feat/agent-tab-context` includes Win32/Windows-UIA browser-shell control probes. Do not integrate BROWSER_UI_OS into Runtime during this PAGE_CDP functional phase.
 
-```text
-Win32 SendInput Alt+Left                    PASS with foreground/focus
-Windows UI Automation + real mouse Back     PASS
-Windows UI Automation + real mouse Forward  PASS
-```
-
-Current decision:
-
-```text
-DO NOT integrate BROWSER_UI_OS into Agent Runtime now.
-Keep evidence/code for later advanced tasks.
-Continue CDP/webpage validation on main.
-```
-
-Any future OS-control integration must require explicit consent before taking temporary control of the real Windows keyboard/mouse and must use an exclusive desktop-input lease.
+Any future OS-control integration requires explicit user consent and an exclusive desktop-input lease.
 
 ---
 
-# NEXT — `drag` native validation
+# NEXT — Observation / UI batch
 
-`drag` already exists in the Agent Action Contract and requires a semantic `targetRef`, but current public action shape/harness does not yet document a destination representation and the CDP planner has no proven native drag path.
-
-Test the existing capability on `main` before designing or adding destination semantics.
-
-First gate:
+Run the existing capabilities on the fixed `8091` batch lab without adding new functionality first:
 
 ```text
-OBSERVE draggable source
-→ issue existing semantic drag(source targetRef)
-→ classify current behavior
+dismiss
+hoverAndObserve
+waitAndObserve
 ```
 
-If current execution is unsupported, treat that as a native-confirmed implementation/contract gap before deciding the minimal semantic destination shape. Strategy must never emit raw destination coordinates.
-
-After `drag`, continue existing actions such as:
+For every action:
 
 ```text
-selectOption / setChecked / submit / dismiss
+existing capability PASS → record evidence
+existing capability FAIL → classify exact native gap
+only then fix on feat/agent-tab-context
+```
+
+After Observation/UI, continue:
+
+```text
 multi-frame observation
+media: play / pause / mute / unmute / setVolume / seek / changePlaybackRate
+tab lifecycle: switchTab / openNewTab / closeTab
 ```
 
 No autonomous multi-step work yet.
 
 ---
 
-# Known later fidelity/robustness gates
+# Known later fidelity / robustness gates
 
 ```text
 focus primitive metadata cleanup
-multi-frame Agent observation
 physical-key-like text-entry variant only if a real task requires listener fidelity
-pointer naturalness refinement
+pointer/scroll/drag naturalness refinement through Behavior learning
+Browser UI/OS integration when an actual shell-control task requires it
 ```
 
 ---
