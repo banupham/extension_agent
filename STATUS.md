@@ -12,10 +12,11 @@ STATUS.md
 → current source/tests on main
 ```
 
-Detailed historical/native evidence lives in `docs/PROJECT_JOURNAL.md`. Browser-UI/OS experimental evidence and the deferral decision are recorded in:
+Detailed historical/native evidence lives in `docs/PROJECT_JOURNAL.md` plus focused appendices:
 
 ```text
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_BROWSER_UI_OS.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CDP_NATIVE.md
 ```
 
 ---
@@ -49,6 +50,7 @@ horizontal scroll
 doubleClick
 focus
 typeText
+pressKey
 back history-CDP
 forward history-CDP
 ```
@@ -146,10 +148,20 @@ Page.navigateToHistoryEntry
 
 No arbitrary raw-CDP tunnel from Brain.
 
+`pressKey` native evidence on `main`:
+
+```text
+Input.dispatchKeyEvent keyDown Enter
+→ Input.dispatchKeyEvent keyUp Enter
+execution.ok = true
+stepCount = resultCount = 2
+before.title = PressKey Test
+after.title  = PRESSKEY PASS
+```
+
 Existing but not yet native-validated on the agreed main/CDP matrix:
 
 ```text
-pressKey
 navigate
 reload
 ```
@@ -172,9 +184,9 @@ multi-frame Agent observation
 Experimental work on `feat/agent-tab-context` proved that browser chrome can be controlled through Windows-level mechanisms:
 
 ```text
-Win32 SendInput Alt+Left                  PASS with foreground/focus
-Windows UI Automation + real mouse Back   PASS
-Windows UI Automation + real mouse Forward PASS
+Win32 SendInput Alt+Left                    PASS with foreground/focus
+Windows UI Automation + real mouse Back     PASS
+Windows UI Automation + real mouse Forward  PASS
 ```
 
 Current decision:
@@ -196,11 +208,10 @@ Do not build Agent Cursor yet.
 Immediate native sequence on `main`:
 
 ```text
-1 pressKey
-2 navigate
-3 reload
-4 stale-ref / moving-target / observer outcome gates
-5 Agent Cursor Debug Overlay when PAGE_CDP pointer observability becomes useful
+1 navigate
+2 reload
+3 stale-ref / moving-target / observer outcome gates
+4 Agent Cursor Debug Overlay when PAGE_CDP pointer observability becomes useful
 ```
 
 Agent Cursor remains mirror-only telemetry:
