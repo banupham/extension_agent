@@ -24,13 +24,15 @@ Nếu journal mâu thuẫn với source, source hiện tại trên `main` là im
 2 search journal theo component/problem
 3 fetch source hiện tại trên main
 4 fetch contract/test liên quan
-5 sửa theo boundary
-6 CI/offline test
-7 native browser validation nếu runtime behavior
-8 cập nhật STATUS/JOURNAL khi invariant/milestone thay đổi
+5 test chức năng hiện có trên main trước
+6 chỉ khi FAIL do implementation mới sửa trên nhánh thử nghiệm duy nhất
+7 CI/offline test
+8 native browser validation
+9 merge fix đã PASS rồi sync lại nhánh thử nghiệm từ main
+10 cập nhật STATUS/JOURNAL khi invariant/milestone thay đổi
 ```
 
-Không kéo nhiều thay đổi chưa có native evidence vào cùng một branch. Khi một gate đã PASS, ưu tiên merge milestone nhỏ rồi mở bug/feature tiếp theo riêng.
+Native functional validation không tạo capability/test-mode mới chỉ để làm test. Nhánh thử nghiệm dùng lại duy nhất là `feat/agent-tab-context`; không mở branch mới cho từng bug. `main` là nơi bắt đầu mọi bài test chức năng hiện có và chỉ nhận phần đã có evidence PASS.
 
 ---
 
@@ -447,6 +449,24 @@ Keep legacy `0.1.0` acceptance for backward compatibility, reject unknown versio
 
 After a plan executes, observation is invalidated and OBSERVE AFTER is mandatory.
 
+## 9.5 Native functional-test execution path
+
+For P0 functional validation, in-page actions must use the same Agent path end-to-end:
+
+```text
+OBSERVE
+→ semantic target / Agent Action
+→ Behavior
+→ CDP Plan 0.1.1
+→ allowlisted Agent Runtime dispatcher
+→ Chrome
+→ OBSERVE AFTER
+```
+
+Do not validate one Agent action by mixing in direct DOM `.click()`, arbitrary `Runtime.evaluate`, Scenario/Stealth executor primitives, or a second in-page execution path. `chrome.tabs.*` remains control-plane only.
+
+Repeated function tests should prefer neutral/controlled pages with no valuable account state. Account-backed platforms are used only as sparse smoke surfaces after the capability already works in a controlled environment; this reduces unintended account/platform effects from repeated automated interaction and is not a bypass strategy.
+
 ---
 
 # 10. CDP Execution Planner — v0.1.1
@@ -584,16 +604,20 @@ visible click effect              PASS
 observation invalidation          PASS
 OBSERVE AFTER new observation     PASS
 
-pending:
-stale-ref rejection
-doubleClick native behavior
-hover without click
+pending existing functions:
 vertical scroll
+hover without click
 horizontal carousel scroll
-focus + typeText
+doubleClick native behavior
+focus
+typeText
 back / forward
+
+later invariant/evidence gates:
+stale-ref rejection when exercisable through existing interfaces
 moving-target rejection/reobserve
 post-action semantic outcome fidelity
+keyboard listener fidelity
 ```
 
 ---
@@ -665,12 +689,16 @@ Human login demonstrations có thể đóng góp timing/semantic form behavior n
 ## D047 — Dispatcher accepts planner 0.1.1 while retaining 0.1.0 compatibility after native evidence
 ## D048 — Functional Agent PASS, Brain-quality PASS and natural-behavior PASS are separate milestones
 ## D049 — Visible native UI effect may validate executor even when OBSERVE AFTER semantic outcome capture is incomplete
+## D050 — Native functional validation tests existing capabilities on main before any implementation change
+## D051 — Implementation failures use one reusable experiment branch (`feat/agent-tab-context`), not one branch per bug
+## D052 — P0 in-page functional validation uses one unified CDP Planner → allowlisted Runtime dispatcher path
+## D053 — Repeated functional tests prefer neutral/controlled pages; account-backed platforms are sparse smoke-validation surfaces
 
 ---
 
 # 14. Next native gate
 
-Continue one action/function at a time before autonomous loops:
+Continue existing actions/functions one at a time before autonomous loops. Start on `main`; do not add test-only Agent commands.
 
 ```text
 DONE:
@@ -679,18 +707,23 @@ OBSERVE semantic targets
 basic click + visible UI effect
 OBSERVE AFTER / invalidation
 
-NEXT:
-stale ref rejection
-doubleClick safe target
-hover only
+NEXT EXISTING FUNCTIONS:
 vertical scroll
+hover only
 horizontal carousel scroll
-focus then type non-sensitive text
+doubleClick safe target
+focus
+type non-sensitive text
 back / forward
+
+LATER INVARIANT / EVIDENCE GATES:
+stale ref rejection when exercisable with existing interfaces
 moving-target rejection/reobserve
+post-action semantic outcome fidelity
+keyboard listener fidelity
 ```
 
-Measure functional correctness first.
+Measure functional correctness first. Prefer neutral/controlled pages for repeated tests; reserve account-backed sites for sparse smoke verification.
 
 Separate later measurements:
 
@@ -731,3 +764,5 @@ what is deliberately NOT claimed?
 what bug/regression was discovered and fixed?
 what is the next smallest native gate?
 ```
+
+Operational native-test rules are also persistent engineering memory: test existing functions on `main`, use a single reusable experiment branch only after implementation failure, keep the P0 CDP path unified, and avoid repeated account-backed interactions when a neutral controlled surface can prove the same function.
