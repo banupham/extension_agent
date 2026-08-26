@@ -1,0 +1,32 @@
+name: episode-dataset-gate
+
+on:
+  push:
+    branches:
+      - feat/agent-tab-context
+    paths:
+      - 'control-center/EPISODE_OUTCOME_DATASET_CONTRACT.json'
+      - 'control-center/manager/training/episode_outcome_dataset.js'
+      - 'control-center/manager/strategy/contracts.js'
+      - 'control-center/manager/strategy/agent_action_contract.js'
+      - 'control-center/AGENT_ACTION_CONTRACT.json'
+      - 'control-center/script/checks/episode_outcome_dataset.js'
+      - '.github/workflows/episode-dataset-gate.yml'
+  workflow_dispatch:
+
+jobs:
+  episode-dataset:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check JavaScript syntax
+        run: |
+          node --check control-center/manager/training/episode_outcome_dataset.js
+          node --check control-center/script/checks/episode_outcome_dataset.js
+      - name: Validate dataset contract JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('control-center/EPISODE_OUTCOME_DATASET_CONTRACT.json','utf8'))"
+      - name: Run episode/outcome dataset contract
+        run: node control-center/script/checks/episode_outcome_dataset.js
