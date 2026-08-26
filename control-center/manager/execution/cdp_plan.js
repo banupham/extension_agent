@@ -1,6 +1,6 @@
 'use strict';
 
-const PLAN_VERSION = '0.1.1';
+const PLAN_VERSION = '0.1.2';
 
 function finite(value, fallback = null) {
   if (value == null || value === '') return fallback;
@@ -188,6 +188,20 @@ function keyboardPlan(mappedAction, behavior) {
   return [];
 }
 
+function navigationHistoryPlan(mappedAction) {
+  const offset = mappedAction.type === 'back' ? -1 : 1;
+  return [
+    { delayMs: 0, method: 'Page.getNavigationHistory', params: {} },
+    {
+      delayMs: 0,
+      postDelayMs: 120,
+      method: 'Page.navigateToHistoryEntry',
+      params: {},
+      historyOffset: offset
+    }
+  ];
+}
+
 function buildCdpPlan({ mappedAction, behavior, target = null, context = {} }) {
   if (!mappedAction?.type) throw new Error('mappedAction required');
   let steps = [];
@@ -198,6 +212,7 @@ function buildCdpPlan({ mappedAction, behavior, target = null, context = {} }) {
   else if (family === 'keyboard-text' || family === 'keyboard-key') steps = keyboardPlan(mappedAction, behavior);
   else if (mappedAction.type === 'navigate') steps = [{ delayMs: 0, method: 'Page.navigate', params: { url: String(mappedAction.args?.url || '') } }];
   else if (mappedAction.type === 'reload') steps = [{ delayMs: 0, method: 'Page.reload', params: { ignoreCache: false } }];
+  else if (mappedAction.type === 'back' || mappedAction.type === 'forward') steps = navigationHistoryPlan(mappedAction);
   else throw new Error(`cdp_plan_unsupported:${mappedAction.type}`);
 
   return {
@@ -217,5 +232,6 @@ module.exports = {
   hoverPlan,
   scrollPlan,
   keyboardPlan,
+  navigationHistoryPlan,
   buildCdpPlan
 };
