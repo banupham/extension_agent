@@ -54,8 +54,71 @@ physical-key DOM listener fidelity        NOT PROVIDED by Input.insertText
 
 This is not classified as a functional failure of the existing `typeText` action. Do not replace or modify this execution path merely to satisfy the fidelity experiment. If a task later requires physical-key-like listener semantics, that should be a separate execution variant below Strategy rather than changing the semantic `typeText` intent.
 
-## Next existing capability to native-test
+## `replaceText` — initial NATIVE FAIL on `main`
 
-`replaceText` is already present in Agent Action Contract and currently shares the `keyboard-text` planner family with `typeText`.
+Controlled precondition:
 
-Native-test it on `main` before modifying implementation. The expected semantic behavior is replacement of an existing input value, not simple append. If the current implementation appends instead of replacing, classify that as a native-confirmed implementation gap and only then fix it on `feat/agent-tab-context`.
+```text
+focusedRef = e0
+label = Replace Target
+editable = true
+input value = OLD
+```
+
+Semantic action:
+
+```text
+replaceText(targetRef=e0, text="NEW")
+```
+
+Initial planner behavior on `main` treated `replaceText` exactly like `typeText`:
+
+```text
+Input.insertText "N"
+→ Input.insertText "E"
+→ Input.insertText "W"
+```
+
+Native result:
+
+```text
+execution.ok = true
+stepCount = resultCount = 3
+expected value = NEW
+actual value   = OLDNEW
+after.title = VALUE OLDNEW EVENTS keyup,keydown,beforeinput,input,beforeinput,input,beforeinput,input
+```
+
+Classification:
+
+```text
+low-level insert dispatch succeeds      PASS
+semantic replaceText behavior           FAIL
+cause                                   planner appends; it never selects/replaces existing content
+```
+
+This is a native-confirmed implementation gap, so the fix is developed only on reusable branch `feat/agent-tab-context`.
+
+Experimental fix pending native re-test:
+
+```text
+replaceText remains ONE semantic Agent Action
+→ acquire focus on the observation-bound editable target using page pointer input
+→ browser-native Control+A key sequence
+→ Input.insertText replacement characters
+```
+
+The plan also rejects non-editable targets. Existing moving-target live-geometry protection remains applicable to the focus click. Modifier key description now provides `KeyA` / Windows VK 65 for the Control+A sequence.
+
+Contract/CI evidence for experimental head `dd661b0b0ac6bedf136de08e1e80e0f4563fc6c7`:
+
+```text
+JavaScript syntax                           PASS
+Agent action + behavior contracts           PASS
+CDP execution planner contract              PASS
+CDP dispatcher contract                     PASS
+one-action bridge contract                  PASS
+full runtime-syntax workflow job            PASS
+```
+
+Do not merge this fix to `main` until native re-test proves `OLD → NEW`.
