@@ -104,8 +104,13 @@ async function main(argv = process.argv.slice(2)) {
       strategyCalls === 1 &&
       result.replan.decision?.status === 'act' &&
       result.replan.decision?.action?.type === 'submit' &&
+      !!result.replan.decision?.action?.contractVersion &&
+      result.invariant?.returnedActDecisionUsesSemanticAgentAction === true &&
+      result.invariant?.oneSemanticActionPerLoop === true &&
       result.invariant?.nextActionExecuted === false &&
-      result.invariant?.boundedStrategyCalls === true
+      result.invariant?.boundedStrategyCalls === true &&
+      result.invariant?.goalCheckerChoseAction === false &&
+      result.invariant?.episodeBudgetCalledStrategy === false
     );
 
     console.log(JSON.stringify({
