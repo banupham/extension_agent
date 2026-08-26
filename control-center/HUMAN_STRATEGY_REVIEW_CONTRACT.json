@@ -8,6 +8,8 @@
     "requiresTaskPrivacyReviewed": true,
     "requiresSemanticLabelsVerified": true,
     "requiresOutcomeVerified": true,
+    "requiresCredentialsExcludedConfirmation": true,
+    "requiresSecretsExcludedConfirmation": true,
     "requiresSplitGroup": true,
     "stepAnnotationRequired": [
       "transitionId",
