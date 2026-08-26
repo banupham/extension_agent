@@ -1,6 +1,7 @@
 'use strict';
 
 const { validateTask, validateObservation, validateDecision } = require('../strategy/contracts.js');
+const { validateAgentAction } = require('../strategy/agent_action_contract.js');
 const { evaluateGoal } = require('../goal/goal_checker.js');
 const { reduceOutcomeToControl } = require('../goal/outcome_controller.js');
 const { evaluateEpisodeBudget } = require('../goal/episode_budget.js');
@@ -54,6 +55,15 @@ async function resolveReplanObservation(stepResult, observeForReplan) {
   };
 }
 
+function validateSemanticReplanDecision(rawDecision) {
+  const decision = validateDecision(rawDecision);
+  if (decision.status !== 'act') return decision;
+  return {
+    ...decision,
+    action: validateAgentAction(decision.action)
+  };
+}
+
 function baseReplanState(permitted) {
   return {
     permitted,
@@ -77,6 +87,7 @@ function buildResult({ outcome, control, budget, replan }) {
       boundedStrategyCalls: replan.strategyCallCount <= 1,
       oneSemanticActionPerLoop: true,
       nextActionExecuted: false,
+      returnedActDecisionUsesSemanticAgentAction: replan.decision?.status !== 'act' || !!replan.decision?.action?.contractVersion,
       goalCheckerChoseAction: false,
       episodeBudgetCalledStrategy: false
     }
@@ -119,16 +130,22 @@ async function orchestrateOneStepReplan(input = {}) {
   replan.attempted = true;
   replan.strategyCallCount = 1;
 
+  let rawDecision;
   try {
-    const rawDecision = await strategy.decide({
+    rawDecision = await strategy.decide({
       task,
       observation: resolved.observation,
       history: budget.history
     });
-    replan.decision = validateDecision(rawDecision);
   } catch (error) {
     replan.errorCode = 'replan_strategy_failed';
-    replan.strategyError = String(error?.message || error || 'replan_strategy_failed');
+    return buildResult({ outcome, control, budget, replan });
+  }
+
+  try {
+    replan.decision = validateSemanticReplanDecision(rawDecision);
+  } catch (error) {
+    replan.errorCode = 'replan_decision_invalid';
   }
 
   return buildResult({ outcome, control, budget, replan });
@@ -140,5 +157,6 @@ module.exports = {
   actionTypeFor,
   goalInputFor,
   resolveReplanObservation,
+  validateSemanticReplanDecision,
   orchestrateOneStepReplan
 };
