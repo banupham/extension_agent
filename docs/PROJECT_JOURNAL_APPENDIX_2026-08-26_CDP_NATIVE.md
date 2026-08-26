@@ -198,22 +198,115 @@ observation is invalidated so caller must re-observe = PASS
 
 After CI + native PASS, only this geometry guard source/test change was ported to `main`; Browser UI/OS experimental work on the reusable branch was not merged as part of this fix.
 
+## post-action semantic outcome fidelity — initial NATIVE FAIL, fixed and NATIVE PASS
+
+Controlled page behavior:
+
+```text
+click Open Dynamic Panel
+→ immediate title/state = CLICK ACK
+→ 250ms later title/state = DYNAMIC READY
+→ new interactive button = Dynamic Child
+```
+
+Initial native evidence with one-action bridge `0.2.0`:
+
+```text
+execution.ok = true
+stepCount = resultCount = 13
+immediate after.title = CLICK ACK
+after.interactiveElements contained only Open Dynamic Panel
+```
+
+A later standalone observation on the same rendered page returned:
+
+```text
+title = DYNAMIC READY
+interactiveElements:
+  Open Dynamic Panel
+  Dynamic Child
+```
+
+Classification:
+
+```text
+click executor = PASS
+dynamic DOM rendering = PASS
+Observer semantic capability = PASS
+single immediate OBSERVE AFTER timing = FAIL / too early
+```
+
+Fix developed on `feat/agent-tab-context` in one-action bridge `0.2.1`:
+
+```text
+for UI/input outcome-sensitive actions:
+  observe immediately after execute
+  → poll every 80ms
+  → minimum observation window 400ms
+  → require semantic snapshot stability for >= 2 samples
+  → maximum deadline 800ms
+```
+
+The fingerprint intentionally ignores `observationId`, timestamps and pointer geometry animation. It compares URL/title/focus/scroll and semantic interactive-element state. This is bounded outcome settling, not a fixed 250ms sleep tied to the test page, and it does not execute another Agent Action.
+
+Native re-test using the same page and same semantic click command:
+
+```text
+bridgeVersion = 0.2.1
+execution.ok = true
+after.title = DYNAMIC READY
+after.interactiveElements contained Open Dynamic Panel + Dynamic Child
+postActionObservation.mode = settled
+samples = 6
+waitedMs = 400
+semanticChanged = true
+stableSamples = 3
+deadlineReached = false
+policy.pollMs = 80
+policy.minWindowMs = 400
+policy.maxWindowMs = 800
+policy.stableSamples = 2
+oneActionOnly = true
+```
+
+Classification:
+
+```text
+post-action delayed semantic outcome captured in same one-action result = PASS
+no manual second OBSERVE required = PASS
+no second Agent Action introduced = PASS
+bounded settle deadline preserved = PASS
+```
+
+After native PASS and contract/CI success, the isolated one-action bridge `0.2.1` change and regression test were ported to `main` without merging Browser UI/OS experimental work.
+
 ## Current native validation status
 
 ```text
-pressKey                          PASS
-navigate                          PASS
-reload                            PASS
-stale-ref after newer observation PASS
-moving-target live-geometry guard PASS
+pressKey                               PASS
+navigate                               PASS
+reload                                 PASS
+stale-ref after newer observation      PASS
+moving-target live-geometry guard      PASS
+post-action settled semantic outcome   PASS
 ```
 
 ## Next native sequence
 
+The previously deferred Agent Cursor Debug Overlay is now the next focused task because direct PAGE_CDP functional/robustness validation has reached the point where pointer observability is useful.
+
+Required cursor invariant:
+
 ```text
-1 post-action observer outcome fidelity
-2 remaining keyboard/input fidelity or metadata cleanup gates when useful
-3 Agent Cursor Debug Overlay only when PAGE_CDP pointer observability becomes useful
+CDP dispatch remains source of truth
+cursor is mirror-only telemetry
+no input generation
+no target selection or retargeting
+no Behavior timing/trajectory changes
+pointer-events:none
+Observer ignores overlay
 ```
+
+After Agent Cursor validation, continue remaining keyboard/input fidelity, metadata cleanup and multi-frame gates as useful.
 
 No autonomous multi-step work yet.
