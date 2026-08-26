@@ -13,9 +13,20 @@ let observationCounter = 0;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms || 0))));
 
+function isWebTab(tab) {
+  return Number.isInteger(Number(tab?.id)) && /^https?:/i.test(String(tab?.url || ''));
+}
+
 async function activeTab() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tabs[0] || null;
+  const lastFocusedWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null);
+  if (Number.isInteger(Number(lastFocusedWindow?.id))) {
+    const tabs = await chrome.tabs.query({ active: true, windowId: Number(lastFocusedWindow.id) });
+    const preferred = tabs.find(isWebTab) || tabs[0];
+    if (preferred) return preferred;
+  }
+
+  const activeTabs = await chrome.tabs.query({ active: true });
+  return activeTabs.find(isWebTab) || activeTabs[0] || null;
 }
 
 async function attach(tabId) {
