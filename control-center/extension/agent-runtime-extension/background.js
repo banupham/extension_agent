@@ -250,7 +250,7 @@ async function navigateHistory(tabId, direction) {
 }
 
 function planRequiresTarget(plan) {
-  return ['click', 'doubleClick', 'hover', 'moveTo', 'focus', 'drag', 'toggle', 'dismiss', 'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek'].includes(plan?.actionType);
+  return ['click', 'doubleClick', 'hover', 'moveTo', 'scrollIntoView', 'focus', 'drag', 'toggle', 'dismiss', 'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek'].includes(plan?.actionType);
 }
 
 async function executeCdpPlan(tabId, plan, observationId = null) {

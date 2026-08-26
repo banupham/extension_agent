@@ -194,6 +194,51 @@ function scrollPlan(mappedAction, behavior, context = {}) {
   return steps;
 }
 
+function scrollIntoViewPlan(mappedAction, behavior, target, context = {}) {
+  const rect = target?.rect;
+  if (!rect) throw new Error('scroll_into_view_requires_target_rect');
+  const point = context.viewportCenter || context.pointerStart || { x: 400, y: 300 };
+  const viewportWidth = Math.max(1, Number(point.x) * 2);
+  const viewportHeight = Math.max(1, Number(point.y) * 2);
+  const x = finite(rect.x, 0), y = finite(rect.y, 0);
+  const width = Math.max(1, finite(rect.width, 1)), height = Math.max(1, finite(rect.height, 1));
+  const right = x + width, bottom = y + height;
+  const needX = x < 0 || right > viewportWidth;
+  const needY = y < 0 || bottom > viewportHeight;
+  const deltaX = needX ? x + width / 2 - Number(point.x) : 0;
+  const deltaY = needY ? y + height / 2 - Number(point.y) : 0;
+
+  if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) {
+    return [{
+      delayMs: 0,
+      method: 'Input.dispatchMouseEvent',
+      params: { type: 'mouseWheel', x: Number(point.x), y: Number(point.y), deltaX: 0, deltaY: 0 },
+      behaviorPhase: 'scroll-target-already-visible'
+    }];
+  }
+
+  const constraints = behavior?.scroll?.constraints || {};
+  const magnitude = Math.max(Math.abs(deltaX), Math.abs(deltaY));
+  const fallbackEvents = clamp(Math.ceil(magnitude / 240), 2, 12);
+  const eventCount = clamp(Math.round(finite(constraints.eventCount, fallbackEvents)), 2, 24);
+  const durationMs = clamp(finite(constraints.durationMs, Math.max(220, Math.min(900, magnitude * 0.45))), 32, 1800);
+  const weights = Array.from({ length: eventCount }, (_, i) => Math.sin(Math.PI * (i + 1) / (eventCount + 1)));
+  const sum = weights.reduce((a, b) => a + b, 0) || 1;
+
+  return weights.map(weight => ({
+    delayMs: durationMs / eventCount,
+    method: 'Input.dispatchMouseEvent',
+    params: {
+      type: 'mouseWheel',
+      x: Number(point.x),
+      y: Number(point.y),
+      deltaX: deltaX * weight / sum,
+      deltaY: deltaY * weight / sum
+    },
+    behaviorPhase: 'scroll-target-acquisition'
+  }));
+}
+
 function canonicalModifier(token) {
   return MODIFIER_ALIASES[String(token || '').trim().toLowerCase()] || null;
 }
@@ -407,6 +452,7 @@ function buildCdpPlan({ mappedAction, behavior, target = null, context = {} }) {
   const family = mappedAction.behaviorFamily || behavior?.metadata?.behaviorFamily || 'generic';
   if (mappedAction.type === 'replaceText') steps = replaceTextPlan(mappedAction, behavior, target, context);
   else if (mappedAction.type === 'clear') steps = clearTextPlan(mappedAction, behavior, target, context);
+  else if (mappedAction.type === 'scrollIntoView') steps = scrollIntoViewPlan(mappedAction, behavior, target, context);
   else if (family === 'pointer-click' || family === 'focus-acquisition') steps = clickPlan(mappedAction, behavior, target, context);
   else if (family === 'pointer-hover') steps = hoverPlan(mappedAction, behavior, target, context);
   else if (family === 'scroll-vertical' || family === 'scroll-horizontal') steps = scrollPlan(mappedAction, behavior, context);
@@ -433,6 +479,7 @@ module.exports = {
   clickPlan,
   hoverPlan,
   scrollPlan,
+  scrollIntoViewPlan,
   canonicalModifier,
   keyDescription,
   modifierDescription,

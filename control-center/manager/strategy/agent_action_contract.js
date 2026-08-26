@@ -84,7 +84,7 @@ function cdpPrimitiveFor(type) {
     drag: ['Input.dispatchMouseEvent'],
     scrollVertical: ['Input.dispatchMouseEvent(mouseWheel)'],
     scrollHorizontal: ['Input.dispatchMouseEvent(mouseWheel)'],
-    scrollIntoView: ['Runtime.callFunctionOn|DOM.scrollIntoViewIfNeeded'],
+    scrollIntoView: ['Input.dispatchMouseEvent(mouseWheel)'],
     focus: ['Runtime.callFunctionOn|DOM.focus'],
     typeText: ['Input.dispatchKeyEvent|Input.insertText'],
     replaceText: ['Input.dispatchMouseEvent|Input.dispatchKeyEvent|Input.insertText'],

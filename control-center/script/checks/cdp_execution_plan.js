@@ -66,6 +66,42 @@ assert.ok(fallbackScrollPlan.steps.every(step => step.params.x === 640 && step.p
 assert.ok(fallbackScrollPlan.steps.every(step => step.params.deltaY > 0 && step.params.deltaX === 0));
 assert.ok(Math.abs(fallbackScrollPlan.steps.reduce((sum, step) => sum + step.params.deltaY, 0) - 480) < 1e-6);
 
+const scrollIntoViewBehavior = validateExecutionBehavior({
+  actionType: 'scrollIntoView', targetRef: 'e20',
+  scroll: { axis: 'vertical', constraints: { durationMs: 360, eventCount: 5 } },
+  metadata: { behaviorFamily: 'scroll-target-acquisition' }
+});
+const farTarget = { ref: 'e20', rect: { x: 8, y: 1466.4375, width: 180, height: 60 } };
+const scrollIntoViewPlan = Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'scrollIntoView', targetRef: 'e20' }),
+  behavior: scrollIntoViewBehavior,
+  target: farTarget,
+  context: { viewportCenter: { x: 340.5, y: 320 } }
+});
+assert.strictEqual(scrollIntoViewPlan.actionType, 'scrollIntoView');
+assert.strictEqual(scrollIntoViewPlan.steps.length, 5);
+assert.ok(scrollIntoViewPlan.steps.every(step => step.method === 'Input.dispatchMouseEvent' && step.params.type === 'mouseWheel'));
+assert.ok(scrollIntoViewPlan.steps.every(step => step.params.x === 340.5 && step.params.y === 320));
+assert.ok(scrollIntoViewPlan.steps.every(step => step.params.deltaX === 0 && step.params.deltaY > 0));
+assert.ok(!scrollIntoViewPlan.steps.some(step => ['mousePressed', 'mouseReleased'].includes(step.params.type)));
+const expectedTargetDelta = (1466.4375 + 30) - 320;
+assert.ok(Math.abs(scrollIntoViewPlan.steps.reduce((sum, step) => sum + step.params.deltaY, 0) - expectedTargetDelta) < 1e-6);
+const visibleTargetPlan = Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'scrollIntoView', targetRef: 'e21' }),
+  behavior: scrollIntoViewBehavior,
+  target: { ref: 'e21', rect: { x: 20, y: 100, width: 120, height: 40 } },
+  context: { viewportCenter: { x: 340.5, y: 320 } }
+});
+assert.strictEqual(visibleTargetPlan.steps.length, 1);
+assert.strictEqual(visibleTargetPlan.steps[0].params.deltaX, 0);
+assert.strictEqual(visibleTargetPlan.steps[0].params.deltaY, 0);
+assert.throws(() => Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'scrollIntoView', targetRef: 'e22' }),
+  behavior: scrollIntoViewBehavior,
+  target: { ref: 'e22' },
+  context: { viewportCenter: { x: 340.5, y: 320 } }
+}), /scroll_into_view_requires_target_rect/);
+
 const typeBehavior = validateExecutionBehavior({ actionType: 'typeText', keyboard: { initialPauseMs: 50, constraints: { interKeyMedianMs: 80, holdMedianMs: 70 } }, metadata: { behaviorFamily: 'keyboard-text' } });
 const typePlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'typeText', args: { text: 'abc' } }), behavior: typeBehavior });
 assert.strictEqual(typePlan.steps.length, 3);
