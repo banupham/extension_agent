@@ -1,0 +1,44 @@
+{
+  "goalCheckerVersion": "0.1.0",
+  "successAggregation": "all",
+  "outputContract": "Outcome@0.1.0",
+  "criterionTypes": {
+    "page": {
+      "fields": ["url", "title"],
+      "operators": ["equals", "includes"]
+    },
+    "pageSignal": {
+      "operators": ["equals"]
+    },
+    "element": {
+      "matchKeys": ["label", "labelIncludes", "role", "tag"],
+      "expectKeys": ["exists", "visible", "enabled", "editable", "checked", "selectedValue", "selectedIndex", "focused"]
+    },
+    "browserTab": {
+      "matchKeys": ["title", "titleIncludes", "url", "urlIncludes"],
+      "expectKeys": ["exists", "active"]
+    }
+  },
+  "forbiddenEvidenceKeys": [
+    "selector",
+    "selectors",
+    "x",
+    "y",
+    "rect",
+    "framePath",
+    "tabId",
+    "cdp",
+    "cdpPlan",
+    "rawValue",
+    "password",
+    "cookie",
+    "token",
+    "clipboard"
+  ],
+  "notes": [
+    "Goal Checker evaluates outcome only; it does not choose or execute the next action.",
+    "taskSucceeded requires explicit successCriteria; execution.ok alone never proves task success.",
+    "progress is the fraction of AFTER criteria matched; metadata.progressDelta compares BEFORE vs AFTER.",
+    "Observation-bound targetRef is not a stable task-success identity."
+  ]
+}
