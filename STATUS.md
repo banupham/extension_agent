@@ -55,6 +55,7 @@ navigate
 reload
 back history-CDP
 forward history-CDP
+stale-ref rejection after newer observation
 ```
 
 Functional Agent PASS != Brain-quality PASS != natural-behavior PASS.
@@ -184,19 +185,23 @@ before.url/title = /reload / Reload 1
 after.url/title  = /reload / Reload 2
 ```
 
-All previously implemented P0 CDP actions scheduled for direct native validation are now functionally PASS:
+`stale-ref` native evidence on `main`:
 
 ```text
-pressKey
-navigate
-reload
+OBSERVE #1 → semantic click action → Behavior → CDP plan
+OBSERVE #2 injected before execute
+execute with observationId #1
+→ stale_observation
+→ no pointer event dispatched
+browser remained NOT CLICKED
 ```
+
+Registry protection is therefore native-validated for the "newer observation makes older targetRef stale" case.
 
 Known later fidelity/robustness gates:
 
 ```text
 Input.insertText physical-key/listener fidelity
-stale-ref rejection
 moving-target geometry revalidation / reject + reobserve
 post-action semantic outcome fidelity
 focus primitive metadata cleanup
@@ -234,10 +239,9 @@ Do not build Agent Cursor yet.
 Immediate native sequence on `main`:
 
 ```text
-1 stale-ref rejection — new observation invalidates old targetRef/observationId
-2 moving-target geometry evidence / rejection behavior
-3 post-action observer outcome fidelity
-4 Agent Cursor Debug Overlay when PAGE_CDP pointer observability becomes useful
+1 moving-target geometry evidence / rejection behavior
+2 post-action observer outcome fidelity
+3 Agent Cursor Debug Overlay when PAGE_CDP pointer observability becomes useful
 ```
 
 Agent Cursor remains mirror-only telemetry:
