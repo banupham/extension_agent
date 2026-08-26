@@ -17,6 +17,7 @@ Detailed historical/native evidence lives in `docs/PROJECT_JOURNAL.md` plus focu
 ```text
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_BROWSER_UI_OS.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CDP_NATIVE.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_AGENT_CURSOR.md
 ```
 
 ---
@@ -51,6 +52,7 @@ doubleClick
 focus
 typeText
 pressKey
+modifier-aware keyCombo at PAGE_CDP/page listener level
 navigate
 reload
 back history-CDP
@@ -58,6 +60,7 @@ forward history-CDP
 stale-ref rejection after newer observation
 moving-target live-geometry rejection before pointer click
 post-action settled semantic observation for delayed dynamic UI
+Agent Cursor V0.1 hover/click visualization + Observer isolation
 ```
 
 Functional Agent PASS != Brain-quality PASS != natural-behavior PASS.
@@ -164,6 +167,26 @@ before.title = PressKey Test
 after.title  = PRESSKEY PASS
 ```
 
+Modifier-aware `keyCombo` evidence promoted to `main`:
+
+```text
+Alt+ArrowLeft PAGE_CDP plan:
+rawKeyDown Alt
+→ rawKeyDown ArrowLeft modifiers=Alt
+→ keyUp ArrowLeft
+→ keyUp Alt
+
+page JavaScript listener received Alt+ArrowLeft = PASS
+```
+
+Boundary evidence:
+
+```text
+PAGE_CDP Input.dispatchKeyEvent can deliver modifier combinations to webpage listeners.
+It did NOT trigger Chrome/GPM browser-shell Back/Forward accelerators.
+Do not keep tuning PAGE_CDP to impersonate browser chrome shortcuts.
+```
+
 `navigate` native evidence on `main`:
 
 ```text
@@ -174,7 +197,7 @@ before.url/title = / / Navigate Start
 after.url/title  = /target / NAVIGATE PASS
 ```
 
-Additional external HTTPS smoke navigation to `https://pixelscan.dev/bot` also reached the requested URL with `execution.ok = true`. This is navigation evidence only; it is NOT evidence of stealth, bot-detection bypass, or platform acceptance. The immediate after-observation title was empty on that external page, so external page-load/observer timing remains separate from navigation execution correctness.
+Additional external HTTPS smoke navigation reached the requested URL with `execution.ok = true`. This is navigation evidence only; it is NOT evidence of stealth, bot-detection bypass, or platform acceptance.
 
 `reload` native evidence on `main`:
 
@@ -198,22 +221,7 @@ execute with observationId #1
 browser remained NOT CLICKED
 ```
 
-Registry protection is therefore native-validated for the "newer observation makes older targetRef stale" case.
-
-`moving-target` native evidence:
-
-```text
-initial implementation:
-OBSERVE target at x=40
-→ target moved live to x=380 without a new observation
-→ execution.ok=true
-→ old x=40 was clicked
-→ OLD POSITION TRAP fired
-```
-
-This native-confirmed failure was fixed on the reusable experimental branch and the isolated fix was ported to `main` after CI + native PASS.
-
-Current Runtime behavior:
+`moving-target` current Runtime behavior:
 
 ```text
 resolve observation-bound target
@@ -231,28 +239,10 @@ Native re-test:
 target moved x=40 → x=380
 expected = target_geometry_changed
 actual   = target_geometry_changed
-browser remained TARGET MOVED TO B
 neither old-position trap nor moved target was clicked
 ```
 
-`post-action outcome` native evidence:
-
-```text
-initial implementation:
-click Open Dynamic Panel
-→ execution.ok=true
-→ page immediately entered CLICK ACK
-→ Dynamic Child appeared 250ms later
-→ single immediate OBSERVE AFTER returned CLICK ACK and did not include Dynamic Child
-
-later standalone OBSERVE:
-title = DYNAMIC READY
-interactiveElements included Dynamic Child
-```
-
-Classification: click execution and Observer semantic capability were both correct; one-action bridge outcome timing was too early.
-
-One-action bridge `0.2.1` now performs bounded semantic settling for UI/input actions:
+One-action bridge `0.2.1` bounded semantic settling:
 
 ```text
 observe immediately after execution
@@ -262,9 +252,7 @@ observe immediately after execution
 → maximum deadline 800ms
 ```
 
-The semantic fingerprint excludes observation IDs/timestamps and pointer geometry animation; it uses URL/title/focus/scroll plus semantic interactive-element state.
-
-Native re-test:
+Native dynamic-outcome re-test:
 
 ```text
 bridgeVersion = 0.2.1
@@ -280,7 +268,27 @@ deadlineReached = false
 oneActionOnly = true
 ```
 
-No second Agent Action and no manual second OBSERVE were required.
+Agent Cursor V0.1 is promoted to `main` after native PASS:
+
+```text
+PAGE_CDP Input.dispatchMouseEvent = source of truth
+→ fire-and-forget mirror telemetry
+→ viewport-sized closed-Shadow-DOM overlay
+→ pointer-events:none
+```
+
+Native gates:
+
+```text
+hover AGENT cursor visualization              PASS
+click AGENT · DOWN / AGENT · UP               PASS
+physical Windows pointer remains independent  PASS
+Observer does not expose overlay as target     PASS
+click execution preserved                     PASS
+settled Dynamic Child outcome preserved        PASS
+```
+
+Any cursor readability refinement is presentation-only and must not alter real CDP timing.
 
 Known later fidelity/robustness gates:
 
@@ -307,40 +315,34 @@ Current decision:
 ```text
 DO NOT integrate BROWSER_UI_OS into Agent Runtime now.
 Keep the experimental evidence/code for later advanced tasks.
-Return to CDP/webpage functional validation on main.
+Continue CDP/webpage functional/fidelity validation on main.
 ```
 
 Any future OS-control integration must require explicit consent before taking temporary control of the real Windows keyboard/mouse and must use an exclusive desktop-input lease.
 
 ---
 
-# NEXT — Agent Cursor Debug Overlay
+# NEXT — Input.insertText listener fidelity
 
-The remaining direct PAGE_CDP functional/robustness gates no longer block pointer observability. Build the previously approved Agent Cursor as mirror-only debug telemetry.
+Test the existing `typeText` implementation without adding a new capability.
 
-Required invariant:
-
-```text
-CDP dispatch = source of truth
-→ cursor mirrors x/y/timing/button state only
-→ never generates input
-→ never selects/retargets targets
-→ never changes Behavior timing/trajectory
-→ pointer-events:none
-→ Observer must ignore the overlay
-```
-
-Preferred implementation direction:
+Question to answer empirically:
 
 ```text
-Agent Runtime CDP dispatch
-→ emit/mirror pointer debug state
-→ isolated page overlay (Shadow DOM or equivalent)
-→ high z-index visual cursor
-→ no execution authority
+Input.insertText
+→ input/beforeinput events only?
+→ or keydown/keypress/keyup too?
 ```
 
-After Agent Cursor functional validation, continue remaining fidelity/metadata gates as useful.
+This is a fidelity classification gate, not a typing-success gate: visual text insertion already PASSes.
+
+After this, continue:
+
+```text
+focus primitive metadata cleanup
+multi-frame Agent observation
+then remaining P1 actions as useful
+```
 
 No autonomous multi-step work yet.
 
