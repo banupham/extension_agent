@@ -1,0 +1,52 @@
+{
+  "contractVersion": "0.1.0",
+  "name": "human-strategy-review",
+  "purpose": "Convert privacy-safe Human Task Episode review exports into verified Strategy episode records without teaching raw behavior trajectories to Strategy.",
+  "input": {
+    "reviewExportVersion": "0.1.0",
+    "requiresStrategyReadyReviewExport": true,
+    "requiresTaskPrivacyReviewed": true,
+    "requiresSemanticLabelsVerified": true,
+    "requiresOutcomeVerified": true,
+    "requiresSplitGroup": true,
+    "stepAnnotationRequired": [
+      "transitionId",
+      "action",
+      "outcome"
+    ],
+    "optionalStepAnnotation": [
+      "blocker",
+      "decisionReasonCode"
+    ]
+  },
+  "boundaries": {
+    "rawTelemetryRemainsSourceOfTruth": true,
+    "rawActionIsEvidenceNotStrategyLabel": true,
+    "reviewerMustVerifySemanticAgentAction": true,
+    "reviewerMustVerifyOutcomeAndProgress": true,
+    "controlIsDerivedByA5_2": true,
+    "episodeBudgetIsDerivedByA5_3": true,
+    "strategyActionMustNotContainSelectorCoordinateOrRawCdp": true,
+    "strategyObservationMustRemainPrivacySafe": true,
+    "taskMayBeReplacedByPrivacyReviewedTaskOverride": true,
+    "privateReasoningStored": false
+  },
+  "source": {
+    "kind": "human-demonstration",
+    "labelVerifiedOnlyAfterReviewerConfirmation": true,
+    "outcomeVerifiedOnlyAfterReviewerConfirmation": true
+  },
+  "output": {
+    "datasetContract": "agent-episode-outcome-dataset@0.1.0",
+    "initialSplit": "unassigned",
+    "trainingEligibilityBeforeSplit": false,
+    "requiresDatasetValidatorPass": true,
+    "terminalEpisodeRequired": true
+  },
+  "terminalPolicy": {
+    "done": "final A5.2/A5.3 state is done",
+    "blocked": "final A5.2/A5.3 state is blocked",
+    "failed": "final A5.3 budget state is terminal failed",
+    "nonTerminalReviewIsRejected": true
+  }
+}
