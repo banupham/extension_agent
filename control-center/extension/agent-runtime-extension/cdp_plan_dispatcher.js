@@ -5,6 +5,8 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.AgentCdpPlanDispatcher = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function factory() {
+  const SUPPORTED_PLAN_VERSIONS = new Set(['0.1.0', '0.1.1']);
+  const LATEST_PLAN_VERSION = '0.1.1';
   const ALLOWED_METHODS = new Set([
     'Input.dispatchMouseEvent',
     'Input.dispatchKeyEvent',
@@ -23,7 +25,7 @@
 
   function validatePlan(plan) {
     if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('invalid_cdp_plan');
-    if (plan.cdpPlanVersion !== '0.1.0') throw new Error('unsupported_cdp_plan_version');
+    if (!SUPPORTED_PLAN_VERSIONS.has(plan.cdpPlanVersion)) throw new Error('unsupported_cdp_plan_version');
     if (!Array.isArray(plan.steps) || plan.steps.length === 0 || plan.steps.length > 500) throw new Error('invalid_cdp_plan_steps');
     return {
       cdpPlanVersion: plan.cdpPlanVersion,
@@ -61,5 +63,5 @@
     };
   }
 
-  return { ALLOWED_METHODS, validatePlan, dispatchPlan };
+  return { SUPPORTED_PLAN_VERSIONS, LATEST_PLAN_VERSION, ALLOWED_METHODS, validatePlan, dispatchPlan };
 });
