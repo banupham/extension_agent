@@ -1,0 +1,61 @@
+{
+  "contractVersion": "0.1.0",
+  "milestone": "A5.4",
+  "name": "explicit-one-step-replan",
+  "purpose": "Permit at most one explicit Strategy decision after A5.1-A5.3 grant a non-terminal replan.",
+  "input": [
+    "Task",
+    "completed one-action step result",
+    "compact prior step history",
+    "episode budgets",
+    "optional explicit blocker",
+    "Strategy provider",
+    "fresh observation callback when settled AFTER page observation is unavailable"
+  ],
+  "pipeline": [
+    "A5.1 semantic Goal Checker",
+    "A5.2 Outcome Controller",
+    "A5.3 Episode Budget Guard",
+    "if terminal=false and shouldReplan=true: resolve semantic observation",
+    "call Strategy exactly once",
+    "return next Decision without executing it"
+  ],
+  "invariants": {
+    "maxStrategyCallsPerInvocation": 1,
+    "executesNextAction": false,
+    "oneSemanticActionPerLoop": true,
+    "goalCheckerChoosesAction": false,
+    "episodeBudgetCallsStrategy": false,
+    "autonomousLoop": false,
+    "requiresFreshObservationWhenAfterPageObservationMissing": true
+  },
+  "terminalNoReplan": [
+    "goal satisfied",
+    "explicit blocker",
+    "episode budget exhaustion"
+  ],
+  "privacy": {
+    "historyMayStore": [
+      "stepIndex",
+      "recordedAtMs",
+      "actionType",
+      "controlStatus",
+      "actionSucceeded",
+      "taskSucceeded",
+      "progress",
+      "progressDelta",
+      "reasonCode",
+      "errorCode",
+      "shouldReplan"
+    ],
+    "historyMustNotStore": [
+      "selector",
+      "coordinate",
+      "CDP plan",
+      "browser packet",
+      "full observation",
+      "credential",
+      "private reasoning"
+    ]
+  }
+}
