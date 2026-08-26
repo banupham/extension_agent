@@ -9,6 +9,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   const NS5 = window.TrainingCollectorV05 = window.TrainingCollectorV05 || {};
   const NS6 = window.TrainingCollectorV06 = window.TrainingCollectorV06 || {};
   const NS7 = window.TrainingCollectorV07 = window.TrainingCollectorV07 || {};
+  const NS9 = window.TrainingCollectorV09 = window.TrainingCollectorV09 || {};
   NS2.pageInstanceId = `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const Observer = NS2.SemanticObserver;
@@ -22,6 +23,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   const TargetResolverFactory = NS7.ActionTargetResolver;
   const HoverTraceFactory = NS7.HoverTrace;
   const RouteTraceFactory = NS7.RouteTrace;
+  const StrategyEpisodeView = NS9.StrategyEpisodeView;
   const IS_TOP_FRAME = window === window.top;
   const HEALTH_INTERVAL_MS = 10000;
 
@@ -53,6 +55,14 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   function relTime() { return Math.max(0, performance.now() - S.startedAt); }
   function send(type, payload = {}) {
     return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...payload }).catch(() => null);
+  }
+
+  function strategyObservation(snapshot, transitionIdValue, phase) {
+    if (!StrategyEpisodeView?.sanitizeSnapshot) return null;
+    return StrategyEpisodeView.sanitizeSnapshot(snapshot, {
+      observationId: `${transitionIdValue}-${phase}`,
+      capturedAt: new Date().toISOString()
+    });
   }
 
   function decorateEvent(event, source = 'unknown') {
@@ -121,6 +131,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       startedAtMs: Math.round(relTime()),
       stateBefore: canDiff ? null : currentBefore,
       stateBeforeDiff: canDiff ? StateDiff.diffObservation(S.lastEpisodeState, currentBefore) : null,
+      strategyObservationBefore: strategyObservation(currentBefore, id, 'before'),
       action
     } });
     return id;
@@ -138,6 +149,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
         endedAtMs: Math.round(relTime()),
         stateAfter: canDiff ? null : after,
         stateAfterDiff: canDiff ? StateDiff.diffObservation(before, after) : null,
+        strategyObservationAfter: strategyObservation(after, id, 'after'),
         actionSucceeded: true
       } });
       S.transitionBefore.delete(id);
