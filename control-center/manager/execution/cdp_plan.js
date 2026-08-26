@@ -3,6 +3,7 @@
 const PLAN_VERSION = '0.1.1';
 
 function finite(value, fallback = null) {
+  if (value == null || value === '') return fallback;
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
