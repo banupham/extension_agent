@@ -74,7 +74,7 @@ function cdpPrimitiveFor(type) {
     scrollIntoView: ['Runtime.callFunctionOn|DOM.scrollIntoViewIfNeeded'],
     focus: ['Runtime.callFunctionOn|DOM.focus'],
     typeText: ['Input.dispatchKeyEvent|Input.insertText'],
-    replaceText: ['Input.dispatchKeyEvent|Input.insertText'],
+    replaceText: ['Input.dispatchMouseEvent|Input.dispatchKeyEvent|Input.insertText'],
     clear: ['Input.dispatchKeyEvent'],
     pressKey: ['Input.dispatchKeyEvent'],
     keyCombo: ['Input.dispatchKeyEvent'],
