@@ -18,6 +18,7 @@ Detailed historical/native evidence lives in `docs/PROJECT_JOURNAL.md` plus focu
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_BROWSER_UI_OS.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CDP_NATIVE.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_AGENT_CURSOR.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_KEYBOARD_FIDELITY.md
 ```
 
 ---
@@ -51,6 +52,7 @@ horizontal scroll
 doubleClick
 focus
 typeText
+replaceText
 pressKey
 modifier-aware keyCombo at PAGE_CDP/page listener level
 navigate
@@ -156,16 +158,28 @@ Page.navigateToHistoryEntry
 
 No arbitrary raw-CDP tunnel from Brain.
 
-`pressKey` native evidence on `main`:
+Keyboard/input fidelity evidence:
 
 ```text
-Input.dispatchKeyEvent keyDown Enter
-→ Input.dispatchKeyEvent keyUp Enter
-execution.ok = true
-stepCount = resultCount = 2
-before.title = PressKey Test
-after.title  = PRESSKEY PASS
+typeText via Input.insertText
+→ beforeinput / input
+→ no keydown / keypress / keyup for inserted characters
+
+replaceText
+→ observation-bound pointer focus
+→ Control+A via Input.dispatchKeyEvent produces keydown/keyup
+→ replacement characters via Input.insertText produce beforeinput/input
+→ OLD → NEW native PASS
 ```
+
+Conclusion:
+
+```text
+Input.dispatchKeyEvent = key-like listener semantics
+Input.insertText       = text insertion semantics
+```
+
+Do not treat visual text success as proof of physical keyboard listener fidelity. A future keydown/keyup-sensitive typing path should be a separate execution variant below Strategy.
 
 Modifier-aware `keyCombo` evidence promoted to `main`:
 
@@ -187,88 +201,9 @@ It did NOT trigger Chrome/GPM browser-shell Back/Forward accelerators.
 Do not keep tuning PAGE_CDP to impersonate browser chrome shortcuts.
 ```
 
-`navigate` native evidence on `main`:
+`navigate`, `reload`, stale-ref rejection, moving-target live-geometry guard, post-action settled observation and Agent Cursor V0.1 are all native PASS on `main`; detailed evidence is kept in the appendices listed above.
 
-```text
-Page.navigate → http://127.0.0.1:8091/target
-execution.ok = true
-stepCount = resultCount = 1
-before.url/title = / / Navigate Start
-after.url/title  = /target / NAVIGATE PASS
-```
-
-Additional external HTTPS smoke navigation reached the requested URL with `execution.ok = true`. This is navigation evidence only; it is NOT evidence of stealth, bot-detection bypass, or platform acceptance.
-
-`reload` native evidence on `main`:
-
-```text
-Page.reload { ignoreCache:false }
-execution.ok = true
-stepCount = resultCount = 1
-observationInvalidated = true
-before.url/title = /reload / Reload 1
-after.url/title  = /reload / Reload 2
-```
-
-`stale-ref` native evidence on `main`:
-
-```text
-OBSERVE #1 → semantic click action → Behavior → CDP plan
-OBSERVE #2 injected before execute
-execute with observationId #1
-→ stale_observation
-→ no pointer event dispatched
-browser remained NOT CLICKED
-```
-
-`moving-target` current Runtime behavior:
-
-```text
-resolve observation-bound target
-→ read live element geometry immediately before target-dependent dispatch
-→ compare observed/live rect with 2px tolerance
-→ re-check before mousePressed
-→ if geometry changed: target_geometry_changed
-→ invalidate observation
-→ REJECT; do not silent-retarget
-```
-
-Native re-test:
-
-```text
-target moved x=40 → x=380
-expected = target_geometry_changed
-actual   = target_geometry_changed
-neither old-position trap nor moved target was clicked
-```
-
-One-action bridge `0.2.1` bounded semantic settling:
-
-```text
-observe immediately after execution
-→ poll every 80ms
-→ minimum observation window 400ms
-→ stop after semantic snapshot is stable for >= 2 samples
-→ maximum deadline 800ms
-```
-
-Native dynamic-outcome re-test:
-
-```text
-bridgeVersion = 0.2.1
-execution.ok = true
-after.title = DYNAMIC READY
-after.interactiveElements includes Dynamic Child
-postActionObservation.mode = settled
-samples = 6
-waitedMs = 400
-semanticChanged = true
-stableSamples = 3
-deadlineReached = false
-oneActionOnly = true
-```
-
-Agent Cursor V0.1 is promoted to `main` after native PASS:
+Agent Cursor V0.1 invariant:
 
 ```text
 PAGE_CDP Input.dispatchMouseEvent = source of truth
@@ -277,25 +212,14 @@ PAGE_CDP Input.dispatchMouseEvent = source of truth
 → pointer-events:none
 ```
 
-Native gates:
-
-```text
-hover AGENT cursor visualization              PASS
-click AGENT · DOWN / AGENT · UP               PASS
-physical Windows pointer remains independent  PASS
-Observer does not expose overlay as target     PASS
-click execution preserved                     PASS
-settled Dynamic Child outcome preserved        PASS
-```
-
 Any cursor readability refinement is presentation-only and must not alter real CDP timing.
 
 Known later fidelity/robustness gates:
 
 ```text
-Input.insertText physical-key/listener fidelity
 focus primitive metadata cleanup
 multi-frame Agent observation
+physical-key-like text-entry variant only if a real task requires listener fidelity
 ```
 
 ---
@@ -322,26 +246,30 @@ Any future OS-control integration must require explicit consent before taking te
 
 ---
 
-# NEXT — Input.insertText listener fidelity
+# NEXT — clear action native validation
 
-Test the existing `typeText` implementation without adding a new capability.
+`clear` already exists in Agent Action Contract and requires `targetRef`.
 
-Question to answer empirically:
+Test current implementation on `main` before modifying it.
+
+Expected semantic behavior:
 
 ```text
-Input.insertText
-→ input/beforeinput events only?
-→ or keydown/keypress/keyup too?
+editable target with value OLD
+→ semantic clear(targetRef)
+→ selected target becomes empty
 ```
 
-This is a fidelity classification gate, not a typing-success gate: visual text insertion already PASSes.
+The test must verify the action clears the observation-bound target rather than depending on whichever element happens to be focused.
 
-After this, continue:
+After `clear`, continue existing actions such as:
 
 ```text
-focus primitive metadata cleanup
-multi-frame Agent observation
-then remaining P1 actions as useful
+moveTo
+scrollIntoView
+drag
+form controls
+multi-frame observation
 ```
 
 No autonomous multi-step work yet.
