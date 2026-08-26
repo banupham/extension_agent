@@ -6,14 +6,19 @@ on:
       - feat/agent-tab-context
     paths:
       - 'control-center/EPISODE_OUTCOME_DATASET_CONTRACT.json'
+      - 'control-center/HUMAN_STRATEGY_REVIEW_CONTRACT.json'
       - 'control-center/manager/training/episode_outcome_dataset.js'
       - 'control-center/manager/training/episode_dataset_export.js'
+      - 'control-center/manager/training/human_strategy_episode_adapter.js'
+      - 'control-center/manager/goal/outcome_controller.js'
+      - 'control-center/manager/goal/episode_budget.js'
       - 'control-center/manager/strategy/contracts.js'
       - 'control-center/manager/strategy/agent_action_contract.js'
       - 'control-center/AGENT_ACTION_CONTRACT.json'
       - 'control-center/script/episode_outcome_dataset_gate.js'
       - 'control-center/script/checks/episode_outcome_dataset.js'
       - 'control-center/script/checks/episode_dataset_export.js'
+      - 'control-center/script/checks/human_strategy_episode_adapter.js'
       - 'training-collector/core/episode_builder.js'
       - 'training-collector/core/strategy_episode_view.js'
       - 'training-collector/core/task_episode_review_export.js'
@@ -44,9 +49,11 @@ jobs:
         run: |
           node --check control-center/manager/training/episode_outcome_dataset.js
           node --check control-center/manager/training/episode_dataset_export.js
+          node --check control-center/manager/training/human_strategy_episode_adapter.js
           node --check control-center/script/episode_outcome_dataset_gate.js
           node --check control-center/script/checks/episode_outcome_dataset.js
           node --check control-center/script/checks/episode_dataset_export.js
+          node --check control-center/script/checks/human_strategy_episode_adapter.js
           node --check training-collector/core/episode_builder.js
           node --check training-collector/core/strategy_episode_view.js
           node --check training-collector/core/task_episode_review_export.js
@@ -62,11 +69,14 @@ jobs:
       - name: Validate JSON contracts and manifest
         run: |
           node -e "JSON.parse(require('fs').readFileSync('control-center/EPISODE_OUTCOME_DATASET_CONTRACT.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('control-center/HUMAN_STRATEGY_REVIEW_CONTRACT.json','utf8'))"
           node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8'))"
       - name: Run episode/outcome dataset contract
         run: node control-center/script/checks/episode_outcome_dataset.js
       - name: Run episode split/export contract
         run: node control-center/script/checks/episode_dataset_export.js
+      - name: Run human Strategy episode adapter contract
+        run: node control-center/script/checks/human_strategy_episode_adapter.js
       - name: Run Strategy episode observation view contract
         run: node training-collector/tests/strategy_episode_view_contract.js
       - name: Run Task Episode architecture contract
