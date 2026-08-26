@@ -24,8 +24,11 @@ const DEFAULT_WAIT_AND_OBSERVE_SETTLE = Object.freeze({
   stableSamples: 2
 });
 const SETTLE_ACTION_TYPES = new Set([
-  'click', 'doubleClick', 'hover', 'moveTo', 'drag', 'focus',
-  'pressKey', 'keyCombo', 'typeText', 'setChecked', 'selectOption', 'waitAndObserve'
+  'click', 'doubleClick', 'hover', 'hoverAndObserve', 'moveTo', 'drag', 'focus',
+  'toggle', 'submit', 'play', 'pause', 'mute', 'unmute', 'dismiss',
+  'pressKey', 'keyCombo', 'typeText', 'replaceText', 'clear',
+  'setChecked', 'selectOption', 'setVolume', 'seek', 'changePlaybackRate',
+  'waitAndObserve'
 ]);
 
 function findTarget(observation, targetRef) {
