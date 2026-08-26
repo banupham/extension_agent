@@ -16,6 +16,22 @@ assert.deepStrictEqual(Harness.scopeFromArgs(scopeArgs, 'all'), {
   maxTabs: 4
 });
 
+assert.strictEqual(Harness.explicitTabId('181183499'), 181183499);
+assert.strictEqual(Harness.explicitTabId('facebook'), null);
+
+const tabs = [
+  { tabId: 11, active: false, title: 'Broker agents', url: 'http://127.0.0.1:3000/agents' },
+  { tabId: 12, active: true, title: 'Facebook', url: 'https://web.facebook.com/?locale=vi_VN' }
+];
+assert.strictEqual(Harness.chooseTabByKeyword(tabs, 'facebook').tabId, 12);
+assert.strictEqual(Harness.chooseTabByKeyword(tabs, 'web.facebook.com').tabId, 12);
+assert.strictEqual(Harness.tabMatchesKeyword(tabs[1], 'Facebook'), true);
+assert.throws(() => Harness.chooseTabByKeyword(tabs, 'youtube'), /tab_keyword_not_found/);
+assert.throws(() => Harness.chooseTabByKeyword([
+  { tabId: 21, active: false, title: 'Facebook Home', url: 'https://web.facebook.com/' },
+  { tabId: 22, active: false, title: 'Facebook Messages', url: 'https://web.facebook.com/messages/' }
+], 'facebook'), /ambiguous_tab_keyword/);
+
 const observation = {
   interactiveElements: [
     { ref: 'e1', label: 'Like', role: 'button' },
