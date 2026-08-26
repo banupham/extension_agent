@@ -3,10 +3,12 @@
 const assert = require('assert');
 const { createStrategy, validateTask, validateObservation, validateDecision } = require('../../manager/strategy');
 
-// A5.1 remains a separate post-action evaluator, but loading its focused
-// contract test here keeps it inside the existing strategy CI gate without
-// wiring Goal Checker into Strategy or enabling replan.
+// A5.1/A5.2 remain separate post-action evaluation/control layers. Loading
+// their focused tests here keeps them inside the existing strategy CI gate
+// without wiring Goal Checker/Outcome Controller into Strategy or enabling
+// autonomous replan.
 require('./goal_checker.js');
+require('./outcome_controller.js');
 
 async function main() {
   const task = validateTask({
