@@ -57,6 +57,7 @@ jobs:
           node --check control-center/script/checks/cdp_execution_plan.js
           node --check control-center/script/checks/cdp_plan_dispatcher.js
           node --check control-center/script/checks/one_action_bridge.js
+          node --check control-center/script/checks/tab_lifecycle_bridge.js
           node --check control-center/script/checks/agent_runtime_broker_client.js
           node --check control-center/script/checks/broker_runtime_client.js
           node --check control-center/script/checks/agent_one_action_cli.js
@@ -130,6 +131,8 @@ jobs:
         run: node control-center/script/checks/cdp_plan_dispatcher.js
       - name: Run one-action Agent bridge contract test
         run: node control-center/script/checks/one_action_bridge.js
+      - name: Run tab lifecycle one-action bridge contract test
+        run: node control-center/script/checks/tab_lifecycle_bridge.js
       - name: Run Agent Runtime broker client contract test
         run: node control-center/script/checks/agent_runtime_broker_client.js
       - name: Run Manager broker runtime adapter contract test

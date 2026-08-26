@@ -27,6 +27,15 @@ class MockWebSocket {
         result = { ok: true, observation: { observationId: 'obs-1', interactiveElements: [] } };
       } else if (msg.payload.action === 'agentExecutePlan') {
         result = { ok: true, result: { ok: true, stepCount: msg.payload.data.plan.steps.length } };
+      } else if (msg.payload.action === 'agentExecuteBrowserAction') {
+        result = {
+          ok: true,
+          result: {
+            ok: true,
+            actionType: msg.payload.data.action.actionType,
+            tab: { tabId: msg.payload.tabId, active: true, url: 'https://facebook.com/' }
+          }
+        };
       } else {
         result = { ok: true, runtimeVersion: '0.2.1' };
       }
@@ -65,6 +74,14 @@ class MockWebSocket {
     }
   });
   assert.strictEqual(execution.stepCount, 1);
+
+  const browserExecution = await client.executeBrowserAction({
+    tabId: 7,
+    action: { browserActionVersion: '0.1.0', actionType: 'switchTab', args: {} }
+  });
+  assert.strictEqual(browserExecution.ok, true);
+  assert.strictEqual(browserExecution.actionType, 'switchTab');
+  assert.strictEqual(browserExecution.tab.tabId, 7);
 
   const status = await client.status();
   assert.strictEqual(status.runtimeVersion, '0.2.1');

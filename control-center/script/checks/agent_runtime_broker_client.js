@@ -23,6 +23,7 @@ class MockWebSocket {
 MockWebSocket.instances = [];
 
 const commands = [];
+const middlewareCalls = [];
 const client = createClient({
   server: 'ws://127.0.0.1:3000',
   healthUrl: 'http://127.0.0.1:3000/health',
@@ -33,6 +34,13 @@ const client = createClient({
   reconnectMax: 60000,
   getIdentity: async () => ({ agentId: 'runtime-test', label: 'Runtime Test' }),
   getMeta: async () => ({ product: 'agent-runtime', runtimeVersion: '0.2.0' }),
+  commandMiddleware: async (payload, next) => {
+    middlewareCalls.push(payload.action);
+    if (payload.action === 'agentExecuteBrowserAction') {
+      return { ok: true, result: { ok: true, actionType: payload.data.action.actionType } };
+    }
+    return next(payload);
+  },
   handleCommand: async payload => { commands.push(payload); return { ok: true, echoed: payload.action }; }
 });
 
@@ -51,9 +59,26 @@ const client = createClient({
   ws.emit({ type: 'command', commandId: 'c1', payload: { action: 'agentObserve' } });
   await new Promise(resolve => setTimeout(resolve, 5));
   assert.strictEqual(commands.length, 1);
+  assert.deepStrictEqual(middlewareCalls, ['agentObserve']);
   const result = ws.sent.find(x => x.type === 'result' && x.commandId === 'c1');
   assert(result);
   assert.strictEqual(result.result.echoed, 'agentObserve');
+
+  ws.emit({
+    type: 'command',
+    commandId: 'c2',
+    payload: {
+      action: 'agentExecuteBrowserAction',
+      tabId: 7,
+      data: { action: { browserActionVersion: '0.1.0', actionType: 'switchTab', args: {} } }
+    }
+  });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.deepStrictEqual(middlewareCalls, ['agentObserve', 'agentExecuteBrowserAction']);
+  assert.strictEqual(commands.length, 1, 'intercepted browser action must not fall through to CDP/background handler');
+  const browserResult = ws.sent.find(x => x.type === 'result' && x.commandId === 'c2');
+  assert(browserResult);
+  assert.strictEqual(browserResult.result.result.actionType, 'switchTab');
 
   ws.emit({ type: 'heartbeat', ts: Date.now() });
   await new Promise(resolve => setTimeout(resolve, 1));

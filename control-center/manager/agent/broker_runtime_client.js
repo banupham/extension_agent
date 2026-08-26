@@ -108,6 +108,17 @@ function createBrokerRuntimeClient(options = {}) {
     return result.result || result;
   }
 
+  async function executeBrowserAction({ action, tabId = null }) {
+    if (!action || typeof action !== 'object') throw new Error('browser_action_required');
+    const result = await sendCommand({
+      action: 'agentExecuteBrowserAction',
+      tabId: Number.isInteger(Number(tabId)) ? Number(tabId) : undefined,
+      data: { action }
+    });
+    if (!result?.ok) throw new Error(result?.error || 'agent_execute_browser_action_failed');
+    return result.result || result;
+  }
+
   async function status(tabId = null) {
     return sendCommand({ action: 'agentStatus', tabId: Number.isInteger(Number(tabId)) ? Number(tabId) : undefined });
   }
@@ -128,6 +139,7 @@ function createBrokerRuntimeClient(options = {}) {
     observe,
     observeTabs,
     executePlan,
+    executeBrowserAction,
     status
   };
 }

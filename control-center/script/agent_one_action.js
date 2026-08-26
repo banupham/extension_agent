@@ -172,7 +172,9 @@ async function main(argv = process.argv.slice(2)) {
     const result = await runOneAction({
       runtime: {
         observe: () => runtime.observe(resolvedTabId),
-        executePlan: payload => runtime.executePlan({ ...payload, tabId: resolvedTabId })
+        listTabs: scope => runtime.listTabs(scope),
+        executePlan: payload => runtime.executePlan({ ...payload, tabId: resolvedTabId }),
+        executeBrowserAction: payload => runtime.executeBrowserAction({ ...payload, tabId: resolvedTabId })
       },
       baseline,
       decide: async observation => {
@@ -196,10 +198,14 @@ async function main(argv = process.argv.slice(2)) {
       action: result.mappedAction,
       behavior: result.behavior,
       cdpPlan: result.cdpPlan,
+      browserAction: result.browserAction,
       execution: result.execution,
       invariant: result.invariant,
       beforePage: { url: result.before?.url || null, title: result.before?.title || null },
-      afterPage: { url: result.after?.url || null, title: result.after?.title || null }
+      afterPage: { url: result.after?.url || null, title: result.after?.title || null },
+      beforeBrowserContext: result.beforeBrowserContext,
+      afterBrowserContext: result.afterBrowserContext,
+      postActionObservation: result.postActionObservation
     };
     console.log(JSON.stringify(args.full ? result : compact, null, 2));
   } finally {

@@ -16,6 +16,7 @@
     const reconnectMax = Number(options.reconnectMax || 30000);
     const heartbeatMs = Number(options.heartbeatMs || 20000);
     const handleCommand = options.handleCommand;
+    const commandMiddleware = options.commandMiddleware || globalThis.AgentRuntimeBrokerCommandMiddleware || null;
     const getIdentity = options.getIdentity;
     const getMeta = options.getMeta;
     const fetchImpl = options.fetchImpl || globalThis.fetch;
@@ -23,6 +24,7 @@
     const log = typeof options.log === 'function' ? options.log : () => {};
 
     if (typeof handleCommand !== 'function') throw new Error('broker handleCommand required');
+    if (commandMiddleware != null && typeof commandMiddleware !== 'function') throw new Error('broker commandMiddleware must be a function');
     if (typeof getIdentity !== 'function') throw new Error('broker getIdentity required');
     if (typeof getMeta !== 'function') throw new Error('broker getMeta required');
 
@@ -69,6 +71,12 @@
       const meta = await getMeta();
       send({ type: 'register', role, agentId: identity.agentId, meta: { ...meta, label: identity.label || '' } });
     }
+    async function dispatchCommand(payload) {
+      if (typeof commandMiddleware === 'function') {
+        return commandMiddleware(payload, handleCommand);
+      }
+      return handleCommand(payload);
+    }
     async function onMessage(event) {
       let message;
       try { message = JSON.parse(typeof event.data === 'string' ? event.data : String(event.data)); }
@@ -79,7 +87,7 @@
       }
       if (message.type !== 'command') return;
       try {
-        const result = await handleCommand(message.payload || {});
+        const result = await dispatchCommand(message.payload || {});
         send({ type: 'result', commandId: message.commandId, result });
       } catch (error) {
         send({ type: 'result', commandId: message.commandId, result: { ok: false, error: String(error?.message || error) } });

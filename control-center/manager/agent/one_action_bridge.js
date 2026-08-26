@@ -9,6 +9,8 @@ const { buildMediaCdpPlan } = require('../execution/media_plan.js');
 const { buildWaitAndObservePlan } = require('../execution/wait_plan.js');
 
 const BRIDGE_VERSION = '0.2.1';
+const BROWSER_ACTION_VERSION = '0.1.0';
+const TAB_LIFECYCLE_ACTION_TYPES = new Set(['switchTab', 'openNewTab', 'closeTab']);
 const DEFAULT_POST_ACTION_SETTLE = Object.freeze({
   pollMs: 80,
   minWindowMs: 400,
@@ -66,6 +68,30 @@ function semanticObservationFingerprint(observation) {
       selectedIndex: Number.isInteger(Number(element?.selectedIndex)) ? Number(element.selectedIndex) : null
     }))
   });
+}
+
+function browserContextFingerprint(tabs) {
+  const normalized = (Array.isArray(tabs) ? tabs : []).map(tab => ({
+    tabId: Number(tab?.tabId),
+    windowId: Number.isInteger(Number(tab?.windowId)) ? Number(tab.windowId) : null,
+    active: tab?.active === true,
+    title: String(tab?.title || ''),
+    url: String(tab?.url || '')
+  })).sort((a, b) => a.tabId - b.tabId);
+  return JSON.stringify(normalized);
+}
+
+function buildBrowserAction(mappedAction) {
+  if (!TAB_LIFECYCLE_ACTION_TYPES.has(mappedAction?.type)) throw new Error('browser_action_type_required');
+  const args = mappedAction?.args && typeof mappedAction.args === 'object' ? { ...mappedAction.args } : {};
+  if (mappedAction.type === 'openNewTab' && !String(args.url || '').trim()) {
+    throw new Error('openNewTab requires args.url');
+  }
+  return {
+    browserActionVersion: BROWSER_ACTION_VERSION,
+    actionType: mappedAction.type,
+    args
+  };
 }
 
 function settlePolicy(options, mappedAction) {
@@ -189,9 +215,12 @@ async function runOneAction(options) {
       mappedAction: null,
       behavior: null,
       cdpPlan: null,
+      browserAction: null,
       execution: null,
       before,
       after: null,
+      beforeBrowserContext: null,
+      afterBrowserContext: null,
       postActionObservation: null,
       invariant: {
         oneActionOnly: true,
@@ -219,6 +248,48 @@ async function runOneAction(options) {
     target,
     rng: options.rng || Math.random
   });
+
+  if (TAB_LIFECYCLE_ACTION_TYPES.has(mappedAction.type)) {
+    if (typeof runtime.executeBrowserAction !== 'function') throw new Error('runtime executeBrowserAction required');
+    if (typeof runtime.listTabs !== 'function') throw new Error('runtime listTabs required for browser-context observation');
+
+    const beforeTabs = await runtime.listTabs({ mode: 'all' });
+    const browserAction = buildBrowserAction(mappedAction);
+    const execution = await runtime.executeBrowserAction({ action: browserAction });
+    const afterTabs = await runtime.listTabs({ mode: 'all' });
+    const semanticChanged = browserContextFingerprint(beforeTabs) !== browserContextFingerprint(afterTabs);
+
+    return {
+      bridgeVersion: BRIDGE_VERSION,
+      beforeObservationId: before.observationId,
+      afterObservationId: null,
+      decision: chosen.decision,
+      mappedAction,
+      behavior,
+      cdpPlan: null,
+      browserAction,
+      execution,
+      before,
+      after: null,
+      beforeBrowserContext: { capturedAt: Date.now(), tabs: beforeTabs },
+      afterBrowserContext: { capturedAt: Date.now(), tabs: afterTabs },
+      postActionObservation: {
+        mode: 'browser-context',
+        samples: 1,
+        waitedMs: 0,
+        semanticChanged,
+        deadlineReached: false
+      },
+      invariant: {
+        oneActionOnly: true,
+        actionExecuted: true,
+        reObservedAfterExecution: true,
+        reObservedSurface: 'browser-context',
+        selectorUsedByStrategy: false,
+        literalTrajectoryReplay: false
+      }
+    };
+  }
 
   const context = {
     pointerStart: pointerStartFor(before, options.previousPointer || before.agentPointer || null),
@@ -251,14 +322,18 @@ async function runOneAction(options) {
     mappedAction,
     behavior,
     cdpPlan,
+    browserAction: null,
     execution,
     before,
     after,
+    beforeBrowserContext: null,
+    afterBrowserContext: null,
     postActionObservation: settled.metadata,
     invariant: {
       oneActionOnly: true,
       actionExecuted: true,
       reObservedAfterExecution: !!after?.observationId,
+      reObservedSurface: 'page',
       selectorUsedByStrategy: false,
       literalTrajectoryReplay: false
     }
@@ -267,12 +342,16 @@ async function runOneAction(options) {
 
 module.exports = {
   BRIDGE_VERSION,
+  BROWSER_ACTION_VERSION,
+  TAB_LIFECYCLE_ACTION_TYPES,
   DEFAULT_POST_ACTION_SETTLE,
   DEFAULT_WAIT_AND_OBSERVE_SETTLE,
   SETTLE_ACTION_TYPES,
   findTarget,
   pointerStartFor,
   semanticObservationFingerprint,
+  browserContextFingerprint,
+  buildBrowserAction,
   settlePolicy,
   observeAfterAction,
   decideOneAction,
