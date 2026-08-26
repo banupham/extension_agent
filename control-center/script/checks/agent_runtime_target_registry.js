@@ -7,7 +7,6 @@ const { createRegistry, geometryChanged } = require('../../extension/agent-runti
 
 let now = 1000;
 const registry = createRegistry({ ttlMs: 4000, now: () => now });
-
 const first = registry.register({
   observationId: 'obs-1',
   tabId: 7,
@@ -25,30 +24,63 @@ assert.strictEqual(first.targets.length, 1);
 assert.strictEqual(first.targets[0].ref, 'e17');
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first.targets[0], 'selector'), false);
 
-const resolved = registry.resolve({ observationId: 'obs-1', tabId: 7, targetRef: 'e17', currentUrl: 'https://example.test/a' });
+const resolved = registry.resolve({
+  observationId: 'obs-1', tabId: 7, targetRef: 'e17', currentUrl: 'https://example.test/a'
+});
 assert.strictEqual(resolved.selector, '#private-selector');
 assert.strictEqual(resolved.rect.centerX, 140);
 assert.strictEqual(resolved.rect.centerY, 65);
 
-assert.strictEqual(geometryChanged({ x: 100, y: 50, width: 80, height: 30 }, { x: 101.5, y: 49, width: 80.5, height: 30 }, 2), false);
-assert.strictEqual(geometryChanged({ x: 100, y: 50, width: 80, height: 30 }, { x: 380, y: 50, width: 80, height: 30 }, 2), true);
+assert.strictEqual(
+  geometryChanged(
+    { x: 100, y: 50, width: 80, height: 30 },
+    { x: 101.5, y: 49, width: 80.5, height: 30 },
+    2
+  ),
+  false
+);
+assert.strictEqual(
+  geometryChanged(
+    { x: 100, y: 50, width: 80, height: 30 },
+    { x: 380, y: 50, width: 80, height: 30 },
+    2
+  ),
+  true
+);
 assert.strictEqual(geometryChanged(null, { x: 1, y: 1, width: 10, height: 10 }), true);
 
-registry.register({ observationId: 'obs-2', tabId: 7, url: 'https://example.test/a', targets: [{ ref: 'e2', tag: 'a', role: 'link', label: 'Next', rect: { x: 10, y: 10, width: 40, height: 20 } }] });
+registry.register({
+  observationId: 'obs-2',
+  tabId: 7,
+  url: 'https://example.test/a',
+  targets: [{ ref: 'e2', tag: 'a', role: 'link', label: 'Next', rect: { x: 10, y: 10, width: 40, height: 20 } }]
+});
 assert.throws(() => registry.resolve({ observationId: 'obs-1', tabId: 7, targetRef: 'e17' }), /stale_observation/);
 
 now += 4100;
 assert.throws(() => registry.resolve({ observationId: 'obs-2', tabId: 7, targetRef: 'e2' }), /stale_observation/);
 
 now = 9000;
-registry.register({ observationId: 'obs-3', tabId: 7, url: 'https://example.test/a', targets: [{ ref: 'e3', tag: 'button', role: 'button', label: 'Open', rect: { x: 1, y: 2, width: 30, height: 20 } }] });
+registry.register({
+  observationId: 'obs-3', tabId: 7, url: 'https://example.test/a',
+  targets: [{ ref: 'e3', tag: 'button', role: 'button', label: 'Open', rect: { x: 1, y: 2, width: 30, height: 20 } }]
+});
 assert.throws(() => registry.resolve({ observationId: 'obs-3', tabId: 7, targetRef: 'e3', currentUrl: 'https://example.test/b' }), /stale_observation_url_changed/);
 
 registry.invalidateTab(7);
 assert.strictEqual(registry.status(7).observationId, null);
 
-// Agent Cursor Debug Overlay contract: telemetry only, never an input source.
 const extensionRoot = path.resolve(__dirname, '../../extension/agent-runtime-extension');
+
+// Drag plans bind both source and destination to the same observation. Runtime must
+// guard destination geometry before dispatch and immediately before mouse release.
+const runtimeSource = fs.readFileSync(path.join(extensionRoot, 'background.js'), 'utf8');
+assert.match(runtimeSource, /let guardedDestination = null/);
+assert.match(runtimeSource, /targetRef: normalized\.destinationRef/);
+assert.match(runtimeSource, /guardTargetGeometry\(tabId, guardedDestination\)/);
+assert.match(runtimeSource, /params\?\.type === 'mouseReleased'/);
+
+// Agent Cursor Debug Overlay contract: telemetry only, never an input source.
 const manifest = JSON.parse(fs.readFileSync(path.join(extensionRoot, 'manifest.json'), 'utf8'));
 const scripts = manifest.content_scripts || [];
 assert.ok(scripts.some(entry => Array.isArray(entry.js) && entry.js.includes('agent_cursor_overlay.js')));

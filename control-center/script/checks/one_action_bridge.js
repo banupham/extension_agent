@@ -119,6 +119,71 @@ const runtime = {
     rng: () => 0.5
   }), /target_ref_not_in_observation/);
 
+  let dragObserveCount = 0;
+  let dragExecuted = null;
+  const dragRuntime = {
+    async observe() {
+      dragObserveCount += 1;
+      return {
+        observationId: `drag-obs-${dragObserveCount}`,
+        url: 'https://example.test/drag',
+        title: dragExecuted ? 'DRAG PASS' : 'Drag Test',
+        viewport: { width: 800, height: 600 },
+        scroll: { x: 0, y: 0 },
+        interactiveElements: [
+          { ref: 'e10', tag: 'button', label: 'Drag Source', visible: true, enabled: true, rect: { x: 70, y: 190, width: 140, height: 70 } },
+          { ref: 'e11', tag: 'button', label: 'Drop Zone', visible: true, enabled: true, rect: { x: 440, y: 170, width: 180, height: 120 } }
+        ]
+      };
+    },
+    async executePlan(payload) {
+      dragExecuted = payload;
+      return { ok: true, stepCount: payload.plan.steps.length };
+    }
+  };
+
+  const drag = await runOneAction({
+    runtime: dragRuntime,
+    decide: async observation => {
+      const source = observation.interactiveElements.find(x => x.label === 'Drag Source');
+      const destination = observation.interactiveElements.find(x => x.label === 'Drop Zone');
+      return {
+        status: 'act',
+        action: { type: 'drag', targetRef: source.ref, args: { destinationRef: destination.ref } }
+      };
+    },
+    rng: () => 0.5,
+    postActionSettle: false
+  });
+  assert.strictEqual(drag.mappedAction.type, 'drag');
+  assert.strictEqual(drag.mappedAction.targetRef, 'e10');
+  assert.strictEqual(drag.mappedAction.args.destinationRef, 'e11');
+  assert.strictEqual(drag.behavior.metadata.behaviorFamily, 'pointer-drag');
+  assert.strictEqual(drag.cdpPlan.cdpPlanVersion, '0.1.3');
+  assert.strictEqual(drag.cdpPlan.targetRef, 'e10');
+  assert.strictEqual(drag.cdpPlan.destinationRef, 'e11');
+  assert.strictEqual(dragExecuted.observationId, 'drag-obs-1');
+  assert.ok(drag.cdpPlan.steps.some(step => step.params?.type === 'mousePressed'));
+  assert.ok(drag.cdpPlan.steps.some(step => step.params?.type === 'mouseReleased'));
+  const heldMoves = drag.cdpPlan.steps.filter(step => step.params?.type === 'mouseMoved' && step.params?.buttons === 1);
+  assert.ok(heldMoves.length >= 2);
+  assert.ok(heldMoves.every(step => step.params.button === 'left'));
+  const release = drag.cdpPlan.steps.find(step => step.params?.type === 'mouseReleased');
+  assert.ok(release.params.x >= 440 && release.params.x <= 620);
+  assert.ok(release.params.y >= 170 && release.params.y <= 290);
+  assert.strictEqual(drag.after.title, 'DRAG PASS');
+  assert.strictEqual(drag.postActionObservation.mode, 'immediate');
+
+  await assert.rejects(() => runOneAction({
+    runtime: dragRuntime,
+    decide: async () => ({
+      status: 'act',
+      action: { type: 'drag', targetRef: 'e10', args: { destinationRef: 'missing' } }
+    }),
+    rng: () => 0.5,
+    postActionSettle: false
+  }), /destination_ref_not_in_observation/);
+
   console.log('One-action Agent bridge contract: PASS');
 })().catch(error => {
   console.error(error);

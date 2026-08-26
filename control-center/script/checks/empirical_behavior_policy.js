@@ -88,7 +88,7 @@ assert.ok(Number.isFinite(typing.keyboard.constraints.holdMedianMs));
 
 const drag = sampledBehavior({
   baseline,
-  mappedAction: mapAgentAction({ type: 'drag', targetRef: 'slider' }),
+  mappedAction: mapAgentAction({ type: 'drag', targetRef: 'slider', args: { destinationRef: 'drop-zone' } }),
   target: { rect: { width: 160, height: 20 } },
   rng: fixedRng
 });

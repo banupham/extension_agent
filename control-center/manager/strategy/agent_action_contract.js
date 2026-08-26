@@ -41,11 +41,21 @@ function validateAgentAction(action) {
     }
   }
 
+  const args = isPlainObject(action.args) ? { ...action.args } : {};
+  if (type === 'drag') {
+    const destinationRef = typeof args.destinationRef === 'string' && args.destinationRef.trim()
+      ? args.destinationRef.trim()
+      : null;
+    if (!destinationRef) throw new Error('drag requires args.destinationRef');
+    if (destinationRef === targetRef) throw new Error('drag source and destination must differ');
+    args.destinationRef = destinationRef;
+  }
+
   return {
     contractVersion: AGENT_ACTION_CONTRACT_VERSION,
     type,
     targetRef,
-    args: isPlainObject(action.args) ? action.args : {},
+    args,
     intent: typeof action.intent === 'string' ? action.intent : null,
     expectedOutcome: isPlainObject(action.expectedOutcome) ? action.expectedOutcome : {}
   };

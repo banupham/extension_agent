@@ -3,6 +3,7 @@
 const { mapAgentAction } = require('../strategy/agent_action_contract.js');
 const { sampledBehavior } = require('../behavior/empirical_policy.js');
 const { buildCdpPlan } = require('../execution/cdp_plan.js');
+const { buildDragCdpPlan } = require('../execution/drag_plan.js');
 
 const BRIDGE_VERSION = '0.2.1';
 const DEFAULT_POST_ACTION_SETTLE = Object.freeze({
@@ -12,7 +13,7 @@ const DEFAULT_POST_ACTION_SETTLE = Object.freeze({
   stableSamples: 2
 });
 const SETTLE_ACTION_TYPES = new Set([
-  'click', 'doubleClick', 'hover', 'moveTo', 'focus',
+  'click', 'doubleClick', 'hover', 'moveTo', 'drag', 'focus',
   'pressKey', 'keyCombo', 'typeText'
 ]);
 
@@ -189,6 +190,12 @@ async function runOneAction(options) {
   const target = mappedAction.targetRef ? findTarget(before, mappedAction.targetRef) : null;
   if (mappedAction.targetRef && !target) throw new Error('target_ref_not_in_observation');
 
+  const destinationRef = mappedAction.type === 'drag'
+    ? String(mappedAction.args?.destinationRef || '').trim()
+    : '';
+  const destination = destinationRef ? findTarget(before, destinationRef) : null;
+  if (destinationRef && !destination) throw new Error('destination_ref_not_in_observation');
+
   const behavior = sampledBehavior({
     baseline: options.baseline || null,
     mappedAction,
@@ -196,16 +203,14 @@ async function runOneAction(options) {
     rng: options.rng || Math.random
   });
 
-  const cdpPlan = buildCdpPlan({
-    mappedAction,
-    behavior,
-    target,
-    context: {
-      pointerStart: pointerStartFor(before, options.previousPointer || before.agentPointer || null),
-      viewportCenter: pointerStartFor(before, null),
-      rng: options.rng || Math.random
-    }
-  });
+  const context = {
+    pointerStart: pointerStartFor(before, options.previousPointer || before.agentPointer || null),
+    viewportCenter: pointerStartFor(before, null),
+    rng: options.rng || Math.random
+  };
+  const cdpPlan = mappedAction.type === 'drag'
+    ? buildDragCdpPlan({ mappedAction, behavior, source: target, destination, context })
+    : buildCdpPlan({ mappedAction, behavior, target, context });
 
   const execution = await runtime.executePlan({
     observationId: before.observationId,

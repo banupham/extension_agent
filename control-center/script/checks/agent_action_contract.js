@@ -27,6 +27,12 @@ assert.strictEqual(click.targetRef, 'e271');
 assert.strictEqual(behaviorFamilyFor('click'), 'pointer-click');
 assert.ok(cdpPrimitiveFor('click').includes('Input.dispatchMouseEvent'));
 
+const drag = mapAgentAction({ type: 'drag', targetRef: 'e10', args: { destinationRef: 'e11' } });
+assert.strictEqual(drag.behaviorFamily, 'pointer-drag');
+assert.strictEqual(drag.targetRef, 'e10');
+assert.strictEqual(drag.args.destinationRef, 'e11');
+assert.ok(drag.cdpPrimitives.includes('Input.dispatchMouseEvent'));
+
 const horizontal = mapAgentAction({ type: 'scrollHorizontal', args: { direction: 'right' } });
 assert.strictEqual(horizontal.behaviorFamily, 'scroll-horizontal');
 assert.ok(horizontal.cdpPrimitives.some(item => item.includes('mouseWheel')));
@@ -56,6 +62,8 @@ assert.strictEqual(explicit.pointer.dwellBeforeDownMs, 90);
 assert.strictEqual(explicit.pointer.holdMs, 65);
 
 throws(() => validateAgentAction({ type: 'click' }), /requires targetRef/);
+throws(() => validateAgentAction({ type: 'drag', targetRef: 'e1' }), /drag requires args\.destinationRef/);
+throws(() => validateAgentAction({ type: 'drag', targetRef: 'e1', args: { destinationRef: 'e1' } }), /source and destination must differ/);
 throws(() => validateAgentAction({ type: 'click', targetRef: 'e1', selector: '#bad' }), /must not use selector/);
 throws(() => validateAgentAction({ type: 'click', targetRef: 'e1', x: 10, y: 20 }), /must not emit raw coordinates/);
 throws(() => validateAgentAction({ type: 'click', targetRef: 'e1', cdpMethod: 'Input.dispatchMouseEvent' }), /must not emit raw CDP/);

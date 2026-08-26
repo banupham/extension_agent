@@ -5,8 +5,8 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.AgentCdpPlanDispatcher = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function factory() {
-  const SUPPORTED_PLAN_VERSIONS = new Set(['0.1.0', '0.1.1', '0.1.2']);
-  const LATEST_PLAN_VERSION = '0.1.2';
+  const SUPPORTED_PLAN_VERSIONS = new Set(['0.1.0', '0.1.1', '0.1.2', '0.1.3']);
+  const LATEST_PLAN_VERSION = '0.1.3';
   const ALLOWED_METHODS = new Set([
     'Input.dispatchMouseEvent',
     'Input.dispatchKeyEvent',
@@ -35,6 +35,16 @@
     if (!SUPPORTED_PLAN_VERSIONS.has(plan.cdpPlanVersion)) throw new Error('unsupported_cdp_plan_version');
     if (!Array.isArray(plan.steps) || plan.steps.length === 0 || plan.steps.length > 500) throw new Error('invalid_cdp_plan_steps');
 
+    const actionType = typeof plan.actionType === 'string' ? plan.actionType : null;
+    const targetRef = typeof plan.targetRef === 'string' && plan.targetRef.trim() ? plan.targetRef.trim() : null;
+    const destinationRef = typeof plan.destinationRef === 'string' && plan.destinationRef.trim() ? plan.destinationRef.trim() : null;
+
+    if (actionType === 'drag') {
+      if (plan.cdpPlanVersion !== '0.1.3') throw new Error('drag_binding_requires_plan_0.1.3');
+      if (!targetRef || !destinationRef) throw new Error('drag_target_refs_required');
+      if (targetRef === destinationRef) throw new Error('drag_source_destination_must_differ');
+    }
+
     const steps = plan.steps.map((step, index) => {
       const method = typeof step?.method === 'string' ? step.method : '';
       if (!ALLOWED_METHODS.has(method)) throw new Error(`cdp_method_not_allowed:${method || index}`);
@@ -42,7 +52,7 @@
       const historyOffset = normalizeHistoryOffset(step?.historyOffset);
 
       if (historyOffset != null) {
-        if (plan.cdpPlanVersion !== '0.1.2') throw new Error('history_binding_requires_plan_0.1.2');
+        if (!['0.1.2', '0.1.3'].includes(plan.cdpPlanVersion)) throw new Error('history_binding_requires_plan_0.1.2');
         if (method !== 'Page.navigateToHistoryEntry') throw new Error('history_binding_method_invalid');
         if (Object.prototype.hasOwnProperty.call(params, 'entryId')) throw new Error('history_binding_entry_id_conflict');
         const previousMethod = index > 0 && typeof plan.steps[index - 1]?.method === 'string' ? plan.steps[index - 1].method : '';
@@ -60,8 +70,9 @@
 
     return {
       cdpPlanVersion: plan.cdpPlanVersion,
-      actionType: typeof plan.actionType === 'string' ? plan.actionType : null,
-      targetRef: typeof plan.targetRef === 'string' ? plan.targetRef : null,
+      actionType,
+      targetRef,
+      destinationRef,
       steps
     };
   }

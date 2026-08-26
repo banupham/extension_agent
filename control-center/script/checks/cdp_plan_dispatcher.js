@@ -3,10 +3,11 @@
 const assert = require('assert');
 const Dispatcher = require('../../extension/agent-runtime-extension/cdp_plan_dispatcher.js');
 
-assert.strictEqual(Dispatcher.LATEST_PLAN_VERSION, '0.1.2');
+assert.strictEqual(Dispatcher.LATEST_PLAN_VERSION, '0.1.3');
 assert(Dispatcher.SUPPORTED_PLAN_VERSIONS.has('0.1.0'));
 assert(Dispatcher.SUPPORTED_PLAN_VERSIONS.has('0.1.1'));
 assert(Dispatcher.SUPPORTED_PLAN_VERSIONS.has('0.1.2'));
+assert(Dispatcher.SUPPORTED_PLAN_VERSIONS.has('0.1.3'));
 
 const valid = Dispatcher.validatePlan({
   cdpPlanVersion: '0.1.2',
@@ -20,6 +21,21 @@ const valid = Dispatcher.validatePlan({
 });
 assert.strictEqual(valid.cdpPlanVersion, '0.1.2');
 assert.strictEqual(valid.steps.length, 3);
+
+const dragPlan = Dispatcher.validatePlan({
+  cdpPlanVersion: '0.1.3',
+  actionType: 'drag',
+  targetRef: 'e10',
+  destinationRef: 'e11',
+  steps: [
+    { method: 'Input.dispatchMouseEvent', params: { type: 'mousePressed', x: 100, y: 100, button: 'left', buttons: 1 } },
+    { delayMs: 30, method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x: 200, y: 150, button: 'left', buttons: 1 } },
+    { delayMs: 30, method: 'Input.dispatchMouseEvent', params: { type: 'mouseReleased', x: 300, y: 200, button: 'left', buttons: 0 } }
+  ]
+});
+assert.strictEqual(dragPlan.cdpPlanVersion, '0.1.3');
+assert.strictEqual(dragPlan.targetRef, 'e10');
+assert.strictEqual(dragPlan.destinationRef, 'e11');
 
 const legacy = Dispatcher.validatePlan({
   cdpPlanVersion: '0.1.0',
@@ -48,7 +64,7 @@ const backPlan = Dispatcher.validatePlan({
 assert.strictEqual(backPlan.steps[1].historyOffset, -1);
 
 const forwardPlan = Dispatcher.validatePlan({
-  cdpPlanVersion: '0.1.2',
+  cdpPlanVersion: '0.1.3',
   actionType: 'forward',
   steps: [
     { delayMs: 0, method: 'Page.getNavigationHistory', params: {} },
@@ -93,6 +109,19 @@ assert.throws(() => Dispatcher.validatePlan({
     { method: 'Page.navigateToHistoryEntry', params: { entryId: 7 }, historyOffset: -1 }
   ]
 }), /history_binding_entry_id_conflict/);
+assert.throws(() => Dispatcher.validatePlan({
+  cdpPlanVersion: '0.1.2',
+  actionType: 'drag',
+  targetRef: 'e10',
+  destinationRef: 'e11',
+  steps: [{ method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x: 1, y: 1 } }]
+}), /drag_binding_requires_plan_0\.1\.3/);
+assert.throws(() => Dispatcher.validatePlan({
+  cdpPlanVersion: '0.1.3',
+  actionType: 'drag',
+  targetRef: 'e10',
+  steps: [{ method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x: 1, y: 1 } }]
+}), /drag_target_refs_required/);
 
 (async () => {
   const calls = [];
@@ -106,6 +135,15 @@ assert.throws(() => Dispatcher.validatePlan({
   assert.strictEqual(result.stepCount, 3);
   assert.strictEqual(calls.length, 3);
   assert.deepStrictEqual(sleeps, [10, 20, 80]);
+
+  const dragCalls = [];
+  const dragResult = await Dispatcher.dispatchPlan(dragPlan, async (method, params) => {
+    dragCalls.push({ method, params });
+    return { ok: true };
+  }, async () => {});
+  assert.strictEqual(dragResult.ok, true);
+  assert.strictEqual(dragResult.cdpPlanVersion, '0.1.3');
+  assert.deepStrictEqual(dragCalls.map(call => call.params.type), ['mousePressed', 'mouseMoved', 'mouseReleased']);
 
   const backCalls = [];
   const backSleeps = [];

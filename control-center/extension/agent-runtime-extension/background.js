@@ -256,16 +256,24 @@ function planRequiresTarget(plan) {
 async function executeCdpPlan(tabId, plan, observationId = null) {
   const normalized = AgentCdpPlanDispatcher.validatePlan(plan);
   let guardedTarget = null;
+  let guardedDestination = null;
   if (planRequiresTarget(normalized)) {
     const url = await currentUrl(tabId);
     guardedTarget = registry.resolve({ tabId, observationId, targetRef: normalized.targetRef, currentUrl: url });
     await guardTargetGeometry(tabId, guardedTarget);
+    if (normalized.actionType === 'drag') {
+      guardedDestination = registry.resolve({ tabId, observationId, targetRef: normalized.destinationRef, currentUrl: url });
+      await guardTargetGeometry(tabId, guardedDestination);
+    }
   }
   const result = await AgentCdpPlanDispatcher.dispatchPlan(
     normalized,
     async (method, params) => {
       if (guardedTarget && method === 'Input.dispatchMouseEvent' && params?.type === 'mousePressed') {
         await guardTargetGeometry(tabId, guardedTarget);
+      }
+      if (guardedDestination && method === 'Input.dispatchMouseEvent' && params?.type === 'mouseReleased') {
+        await guardTargetGeometry(tabId, guardedDestination);
       }
       const value = await command(tabId, method, params);
       if (method === 'Input.dispatchMouseEvent' && params?.type === 'mouseMoved') {
