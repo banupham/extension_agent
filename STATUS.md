@@ -34,12 +34,13 @@ Current Agent native evidence:
 ```text
 tab inventory / matching                 PASS
 human keyword → exact tabId resolve      PASS
-OBSERVE semantic targets                  PASS
-semantic basic click                      PASS
-visible click effect                      PASS
-OBSERVE AFTER / invalidation              PASS
-vertical page scroll                      PASS
-hover without click                       PASS
+OBSERVE semantic targets                 PASS
+semantic basic click                     PASS
+visible click effect                     PASS
+OBSERVE AFTER / invalidation             PASS
+vertical page scroll                     PASS
+hover without click                      PASS
+horizontal page scroll                   PASS
 ```
 
 Functional Agent PASS không đồng nghĩa Brain-quality PASS hoặc natural-behavior PASS.
@@ -276,9 +277,84 @@ Classification:
 hover existing function = NATIVE PASS
 ```
 
-Important limitation: CDP mouse events do not move the OS/native cursor, so hover may be visually invisible when the target has no hover styling. This is an observability/debugging limitation, not a hover execution failure.
+CDP mouse events do not move the OS/native cursor, so correct hover may be visually hard to verify on targets without hover styling.
 
-Potential future debug-only solution: an Agent Cursor overlay may mirror the exact dispatched mouse-event x/y/timing. It must be telemetry/visualization only, `pointer-events:none`, and must never become an input source or alter Strategy/Behavior/CDP execution. Do not add it as part of the current P0 functional matrix unless explicitly scheduled.
+---
+
+# Native evidence — horizontal scroll PASS
+
+Controlled surface:
+
+```text
+http://127.0.0.1:8088/
+title = Agent Horizontal Scroll Test
+```
+
+Command:
+
+```bat
+node script/agent_one_action.js --type scrollHorizontal --direction 1 --url-includes 127.0.0.1:8088 --full
+```
+
+Plan evidence:
+
+```text
+actionType = scrollHorizontal
+behaviorFamily = scroll-horizontal
+behavior.profile = conservative-fallback
+cdpPlanVersion = 0.1.1
+4 × Input.dispatchMouseEvent(mouseWheel)
+wheel point = viewport center (683, 320.5)
+deltaX > 0 for all four events
+deltaY = 0 for all four events
+execution.ok = true
+stepCount = resultCount = 4
+observationInvalidated = true
+```
+
+Observer evidence:
+
+```text
+before.scroll = {x: 0,   y: 0}
+after.scroll  = {x: 388, y: 0}
+```
+
+Human visual confirmation: controlled horizontal track moved left-to-right direction by roughly 2/3 of the visible test distance.
+
+Classification:
+
+```text
+horizontal scroll existing function = NATIVE PASS
+```
+
+This proves functional horizontal wheel execution only, not natural human scroll quality.
+
+---
+
+# Scheduled after current functional matrix — Agent Cursor Debug Overlay
+
+After the existing P0/A4 function matrix is complete, add a debug-only visible Agent cursor to mirror actual dispatched pointer events.
+
+Boundary:
+
+```text
+CDP plan / Runtime dispatch = input source of truth
+                 ↓ mirror only
+Agent Cursor overlay        = visualization / telemetry only
+```
+
+Requirements:
+
+```text
+mirror exact dispatched x/y + timing
+never generate input or choose targets
+never modify Strategy / Behavior / CDP plan
+pointer-events:none
+must not become an Observer target
+ideally isolated in extension Shadow DOM
+```
+
+This is scheduled observability tooling, not part of the current functional gate.
 
 ---
 
@@ -294,15 +370,18 @@ basic click
 OBSERVE AFTER / invalidation
 vertical scroll
 hover without click
+horizontal scroll
 
 NEXT:
-horizontal scroll on a controlled horizontal surface
+doubleClick on a controlled safe target
 
 THEN:
-doubleClick safe target
 focus
 type non-sensitive text
 back / forward
+
+AFTER FUNCTIONAL MATRIX:
+Agent Cursor Debug Overlay
 
 LATER INVARIANT / EVIDENCE GATES:
 stale-ref rejection when exercisable via existing interfaces
