@@ -39,6 +39,44 @@ OBSERVE AFTER / invalidation           PASS
 
 This milestone is functional Agent validation only. Brain task reasoning, autonomous multi-step planning and natural-behavior quality are not declared complete by these passes.
 
+## Native validation operating rules
+
+Current P0/A4 work tests **existing Agent functions first**. Do not add a new command, test mode or capability merely to make a native test easier.
+
+```text
+main
+→ run an existing function
+→ if PASS: record evidence and continue
+→ if FAIL because of implementation: switch to the single reusable experiment branch
+→ fix + CI/offline check + native re-test
+→ merge only the native-passed fix to main
+→ sync the same experiment branch back to main
+```
+
+The reusable experiment branch is:
+
+```text
+feat/agent-tab-context
+```
+
+Do not create a new branch per native bug.
+
+Repeated functional testing should prefer a neutral/controlled page with no valuable account state. Account-backed platforms such as Facebook are reserved for sparse smoke validation after a capability already works in a controlled environment. This is to reduce unintended account/platform side effects from repeated automated interaction, not to bypass platform protections.
+
+For P0 in-page interaction validation, use one execution path consistently:
+
+```text
+OBSERVE
+→ semantic target / Agent Action
+→ Behavior
+→ CDP Plan 0.1.1
+→ allowlisted Agent Runtime dispatcher
+→ Chrome
+→ OBSERVE AFTER
+```
+
+Do not mix DOM `.click()`, arbitrary `Runtime.evaluate`, Scenario/Stealth executor actions, or another in-page executor into the same Agent functional gate. `chrome.tabs.*` remains control-plane only.
+
 ---
 
 # Agent execution boundary
@@ -453,15 +491,18 @@ Post-click observation did not expose the notification contents as completely as
 
 # Latest CI gate
 
-Last established full regression gate before this native milestone:
+CDP `0.1.1` dispatcher compatibility milestone:
 
 ```text
-run:    32910975163
-commit: 7667e66404b6aef7405b180a11707b0987975a5f
-result: SUCCESS
+PR:          #4
+workflow:    runtime-syntax
+run:         32919174975
+head commit: e7b8e0b75b0ff036b33e302c175b15debab7bdba
+result:      SUCCESS
+merge commit:d1c340e0aea5b588b071e9913361d789eb6550e0
 ```
 
-The CDP dispatcher compatibility change has its own contract coverage for:
+This gate includes the dispatcher contract for:
 
 ```text
 accept 0.1.1
@@ -477,7 +518,7 @@ CI success is NOT native Chrome Agent validation; the basic click additionally h
 
 # NEXT — continue A4 functional native validation
 
-Do not start autonomous multi-step tasks yet. Do not make naturalness the primary acceptance gate yet. Continue one function at a time:
+Do not start autonomous multi-step tasks yet. Do not add test-only Agent capabilities. Start each native capability test from `main` and use the existing CLI/action vocabulary.
 
 ```text
 TAB CONTEXT / keyword resolve      PASS
@@ -485,16 +526,23 @@ OBSERVE semantic targets           PASS
 basic click + visible UI effect    PASS
 OBSERVE AFTER / new observation    PASS
 
-next:
-stale-ref rejection
-doubleClick on a safe target
-hover without click
+next existing functions:
 vertical scroll
+hover without click
 horizontal scroll on a real carousel
-focus + type non-sensitive text as separate actions
+doubleClick on a safe target
+focus
+non-sensitive typeText
 back / forward
+
+later invariant/evidence gates:
+stale-ref rejection when it can be exercised through existing interfaces
 moving-target evidence/rejection
+post-action semantic outcome fidelity
+keyboard listener fidelity
 ```
+
+For repeated tests, prefer neutral/controlled pages. Use account-backed sites only for sparse smoke verification after the function already passes in a controlled environment.
 
 Functional correctness first. Brain quality and natural human behavior remain separate later gates.
 
@@ -571,3 +619,7 @@ Human login demonstrations may contribute timing/semantic form behavior but neve
 12. CI success != native Chrome Agent validation.
 13. Functional Agent validation != Brain quality != natural-behavior quality.
 14. Update STATUS/JOURNAL after architecture, protocol, dataset-contract or native-gate milestones.
+15. Native functional validation tests existing functions on `main` first; do not add test-only Agent capabilities.
+16. Only implementation failures move to the single reusable experiment branch `feat/agent-tab-context`; do not create a branch per bug.
+17. P0 in-page functional tests use the unified CDP Planner → allowlisted Runtime dispatcher path.
+18. Prefer neutral/controlled pages for repeated tests; account-backed platforms are sparse smoke-validation surfaces.
