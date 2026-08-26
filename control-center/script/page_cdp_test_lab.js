@@ -32,11 +32,15 @@ function frameHtml() {
 
 function mainHtml(url) {
   const waitCase = url.searchParams.get('case') === 'wait';
+  const tabCase = String(url.searchParams.get('tab') || '').trim().toLowerCase();
+  const initialTitle = ['alpha', 'beta', 'disposable'].includes(tabCase)
+    ? `UI TAB ${tabCase.toUpperCase()}`
+    : 'PAGE_CDP Batch Lab';
   return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>PAGE_CDP Batch Lab</title>
+  <title>${initialTitle}</title>
   <style>
     body{font-family:Arial,sans-serif;margin:20px;line-height:1.35}
     section{border:1px solid #aaa;border-radius:8px;padding:14px;margin:14px 0}
@@ -169,5 +173,6 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`PAGE_CDP batch lab: http://${HOST}:${PORT}/`);
   console.log(`waitAndObserve case: http://${HOST}:${PORT}/?case=wait`);
+  console.log(`Browser UI tabs: http://${HOST}:${PORT}/?tab=alpha | ?tab=beta | ?tab=disposable`);
   console.log('Stop with Ctrl+C. Keep this fixed port for all batch gates.');
 });
