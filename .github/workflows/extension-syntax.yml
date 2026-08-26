@@ -39,13 +39,21 @@ jobs:
           node --check control-center/manager/execution/cdp_plan.js
           node --check control-center/manager/execution/form_plan.js
           node --check control-center/manager/execution/media_plan.js
+          node --check control-center/manager/goal/goal_checker.js
+          node --check control-center/manager/goal/outcome_controller.js
+          node --check control-center/manager/goal/episode_budget.js
           node --check control-center/manager/agent/one_action_bridge.js
           node --check control-center/manager/agent/broker_runtime_client.js
           node --check control-center/server/server.js
           node --check control-center/script/agent_one_action.js
+          node --check control-center/script/goal_checker_gate.js
+          node --check control-center/script/outcome_control_gate.js
           node --check control-center/script/checks/run_check.js
           node --check control-center/script/checks/device_behavior.js
           node --check control-center/script/checks/strategy_contract.js
+          node --check control-center/script/checks/goal_checker.js
+          node --check control-center/script/checks/outcome_controller.js
+          node --check control-center/script/checks/episode_budget.js
           node --check control-center/script/checks/agent_action_contract.js
           node --check control-center/script/checks/empirical_behavior_policy.js
           node --check control-center/script/checks/agent_runtime_target_registry.js
@@ -104,10 +112,10 @@ jobs:
           node --check training-collector/tests/action_window_quality_contract.js
           node --check training-collector/tests/behavior_feature_contract.js
           node --check training-collector/tests/behavior_feature_analysis_contract.js
-      - name: Validate extension manifests and Agent action contract JSON
+      - name: Validate extension manifests and Agent contracts JSON
         run: |
-          node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/AGENT_ACTION_CONTRACT.json','utf8'))"
-      - name: Run strategy contract smoke test
+          node -e "const fs=require('fs'); ['training-collector/manifest.json','control-center/extension/agent-runtime-extension/manifest.json','control-center/AGENT_ACTION_CONTRACT.json','control-center/GOAL_CHECKER_CONTRACT.json','control-center/OUTCOME_CONTROL_CONTRACT.json','control-center/EPISODE_BUDGET_CONTRACT.json'].forEach(p=>JSON.parse(fs.readFileSync(p,'utf8')))"
+      - name: Run strategy + A5.1-A5.3 contract smoke test
         run: node control-center/script/checks/strategy_contract.js
       - name: Run Agent action + behavior contract smoke test
         run: node control-center/script/checks/agent_action_contract.js
