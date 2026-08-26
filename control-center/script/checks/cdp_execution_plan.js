@@ -41,9 +41,14 @@ const hoverPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'h
 assert.strictEqual(hoverPlan.steps.at(-1).postDelayMs, 400);
 
 const scrollBehavior = validateExecutionBehavior({ actionType: 'scrollHorizontal', scroll: { axis: 'horizontal', constraints: { durationMs: 240, eventCount: 4, absoluteDelta: 320, correctionRatio: 0.1 } }, metadata: { behaviorFamily: 'scroll-horizontal' } });
-const scrollPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'scrollHorizontal', args: { direction: -1 } }), behavior: scrollBehavior, context: { pointerStart: { x: 500, y: 400 } } });
+const scrollPlan = Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'scrollHorizontal', args: { direction: -1 } }),
+  behavior: scrollBehavior,
+  context: { pointerStart: { x: 500, y: 400 }, viewportCenter: { x: 600, y: 350 } }
+});
 assert.strictEqual(scrollPlan.steps.length, 5);
 assert.ok(scrollPlan.steps.slice(0, 4).every(step => step.params.deltaX < 0));
+assert.ok(scrollPlan.steps.every(step => step.params.x === 600 && step.params.y === 350));
 assert.strictEqual(scrollPlan.steps.at(-1).behaviorPhase, 'scroll-correction');
 
 const typeBehavior = validateExecutionBehavior({ actionType: 'typeText', keyboard: { initialPauseMs: 50, constraints: { interKeyMedianMs: 80, holdMedianMs: 70 } }, metadata: { behaviorFamily: 'keyboard-text' } });
