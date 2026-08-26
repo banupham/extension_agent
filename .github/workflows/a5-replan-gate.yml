@@ -7,6 +7,9 @@ on:
     paths:
       - 'control-center/manager/agent/one_step_replan.js'
       - 'control-center/manager/goal/**'
+      - 'control-center/manager/strategy/contracts.js'
+      - 'control-center/manager/strategy/agent_action_contract.js'
+      - 'control-center/script/one_step_replan_gate.js'
       - 'control-center/script/checks/one_step_replan.js'
       - 'control-center/script/checks/goal_checker.js'
       - 'control-center/script/checks/outcome_controller.js'
@@ -25,10 +28,13 @@ jobs:
           node-version: '20'
       - name: Check A5 JavaScript syntax
         run: |
+          node --check control-center/manager/strategy/contracts.js
+          node --check control-center/manager/strategy/agent_action_contract.js
           node --check control-center/manager/goal/goal_checker.js
           node --check control-center/manager/goal/outcome_controller.js
           node --check control-center/manager/goal/episode_budget.js
           node --check control-center/manager/agent/one_step_replan.js
+          node --check control-center/script/one_step_replan_gate.js
           node --check control-center/script/checks/goal_checker.js
           node --check control-center/script/checks/outcome_controller.js
           node --check control-center/script/checks/episode_budget.js
