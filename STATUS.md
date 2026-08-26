@@ -12,13 +12,14 @@ STATUS.md
 → current source/tests on main
 ```
 
-Detailed historical/native evidence lives in `docs/PROJECT_JOURNAL.md` plus focused appendices:
+Detailed native evidence is kept in `docs/PROJECT_JOURNAL.md` and focused appendices, including:
 
 ```text
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_BROWSER_UI_OS.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CDP_NATIVE.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_AGENT_CURSOR.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_KEYBOARD_FIDELITY.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CLEAR_NATIVE.md
 ```
 
 ---
@@ -38,7 +39,7 @@ Autonomous multi-step              NOT STARTED
 
 Collector V0.8 transport/capture gate is complete and only needs stability/regression support.
 
-Native-PASS functional evidence already established:
+Native-PASS functional evidence:
 
 ```text
 tab inventory / matching
@@ -53,8 +54,9 @@ doubleClick
 focus
 typeText
 replaceText
+clear
 pressKey
-modifier-aware keyCombo at PAGE_CDP/page listener level
+modifier-aware keyCombo at PAGE_CDP/page-listener level
 navigate
 reload
 back history-CDP
@@ -88,15 +90,15 @@ Reusable experiment branch only:
 feat/agent-tab-context
 ```
 
-Do not create a new branch per bug.
+Do not create a branch per bug.
 
-Future controlled local tests should reuse one base surface:
+Controlled local tests reuse:
 
 ```text
 http://127.0.0.1:8091
 ```
 
-Change test page content/state instead of allocating a new port for each test.
+Change page content/state instead of allocating new ports.
 
 ---
 
@@ -158,7 +160,27 @@ Page.navigateToHistoryEntry
 
 No arbitrary raw-CDP tunnel from Brain.
 
-Keyboard/input fidelity evidence:
+## Target freshness / geometry
+
+Observation-bound refs use TTL 4s and latest-observation rules. A newer observation on the same tab invalidates the old one. Before target-dependent pointer dispatch, Runtime re-reads live geometry and compares it with observed geometry using a 2px tolerance; geometry change causes `target_geometry_changed`, invalidates the observation and rejects rather than silently retargeting. The guard is also re-run immediately before `mousePressed`.
+
+## Settled post-action observation
+
+One-action bridge `0.2.1` uses bounded semantic settling:
+
+```text
+observe immediately
+→ poll every 80ms
+→ minimum window 400ms
+→ stop after semantic snapshot stable for >= 2 samples
+→ maximum deadline 800ms
+```
+
+Native dynamic UI re-test captured `DYNAMIC READY` and `Dynamic Child` inside the same one-action result.
+
+## Keyboard/input fidelity
+
+Native evidence:
 
 ```text
 typeText via Input.insertText
@@ -169,7 +191,15 @@ replaceText
 → observation-bound pointer focus
 → Control+A via Input.dispatchKeyEvent produces keydown/keyup
 → replacement characters via Input.insertText produce beforeinput/input
-→ OLD → NEW native PASS
+→ OLD → NEW PASS
+
+clear
+→ observation-bound pointer focus
+→ Control+A via Input.dispatchKeyEvent
+→ Backspace via Input.dispatchKeyEvent
+→ target OLD → empty
+→ non-target Distractor KEEP → KEEP
+→ PASS
 ```
 
 Conclusion:
@@ -179,31 +209,15 @@ Input.dispatchKeyEvent = key-like listener semantics
 Input.insertText       = text insertion semantics
 ```
 
-Do not treat visual text success as proof of physical keyboard listener fidelity. A future keydown/keyup-sensitive typing path should be a separate execution variant below Strategy.
+Visual text success is not proof of physical keyboard listener fidelity. Any future keydown/keyup-sensitive typing path should be a separate execution variant below Strategy.
 
-Modifier-aware `keyCombo` evidence promoted to `main`:
+## PAGE_CDP modifier boundary
 
-```text
-Alt+ArrowLeft PAGE_CDP plan:
-rawKeyDown Alt
-→ rawKeyDown ArrowLeft modifiers=Alt
-→ keyUp ArrowLeft
-→ keyUp Alt
+Modifier-aware `keyCombo` is native PASS for webpage listeners. `Alt+ArrowLeft` delivered real modifier-aware CDP events to page JavaScript, but PAGE_CDP did not trigger Chrome/GPM browser-shell Back. Do not keep tuning PAGE_CDP to impersonate browser chrome shortcuts.
 
-page JavaScript listener received Alt+ArrowLeft = PASS
-```
+## Agent Cursor V0.1
 
-Boundary evidence:
-
-```text
-PAGE_CDP Input.dispatchKeyEvent can deliver modifier combinations to webpage listeners.
-It did NOT trigger Chrome/GPM browser-shell Back/Forward accelerators.
-Do not keep tuning PAGE_CDP to impersonate browser chrome shortcuts.
-```
-
-`navigate`, `reload`, stale-ref rejection, moving-target live-geometry guard, post-action settled observation and Agent Cursor V0.1 are all native PASS on `main`; detailed evidence is kept in the appendices listed above.
-
-Agent Cursor V0.1 invariant:
+Promoted to `main` after native PASS:
 
 ```text
 PAGE_CDP Input.dispatchMouseEvent = source of truth
@@ -212,21 +226,23 @@ PAGE_CDP Input.dispatchMouseEvent = source of truth
 → pointer-events:none
 ```
 
-Any cursor readability refinement is presentation-only and must not alter real CDP timing.
-
-Known later fidelity/robustness gates:
+Native gates:
 
 ```text
-focus primitive metadata cleanup
-multi-frame Agent observation
-physical-key-like text-entry variant only if a real task requires listener fidelity
+hover AGENT cursor visualization              PASS
+click AGENT · DOWN / AGENT · UP               PASS
+physical Windows pointer remains independent  PASS
+Observer does not expose overlay as target     PASS
+execution/outcome preserved                   PASS
 ```
+
+Cursor readability refinement is presentation-only and must not alter real CDP timing.
 
 ---
 
 # Browser UI / OS control — DEFERRED
 
-Experimental work on `feat/agent-tab-context` proved that browser chrome can be controlled through Windows-level mechanisms:
+Experimental work on `feat/agent-tab-context` proved:
 
 ```text
 Win32 SendInput Alt+Left                    PASS with foreground/focus
@@ -238,37 +254,37 @@ Current decision:
 
 ```text
 DO NOT integrate BROWSER_UI_OS into Agent Runtime now.
-Keep the experimental evidence/code for later advanced tasks.
-Continue CDP/webpage functional/fidelity validation on main.
+Keep evidence/code for later advanced tasks.
+Continue CDP/webpage validation on main.
 ```
 
 Any future OS-control integration must require explicit consent before taking temporary control of the real Windows keyboard/mouse and must use an exclusive desktop-input lease.
 
 ---
 
-# NEXT — clear action native validation
+# NEXT — `moveTo` native validation
 
-`clear` already exists in Agent Action Contract and requires `targetRef`.
+`moveTo` already exists in Agent Action Contract and requires `targetRef`.
 
 Test current implementation on `main` before modifying it.
 
-Expected semantic behavior:
+Expected behavior:
 
 ```text
-editable target with value OLD
-→ semantic clear(targetRef)
-→ selected target becomes empty
+moveTo(targetRef)
+→ PAGE_CDP Input.dispatchMouseEvent(mouseMoved) trajectory
+→ arrives inside observation-bound target
+→ no mousePressed / mouseReleased
+→ page pointer/mouse-enter/move listener can observe arrival
+→ Agent Cursor mirrors the same trajectory
 ```
 
-The test must verify the action clears the observation-bound target rather than depending on whichever element happens to be focused.
-
-After `clear`, continue existing actions such as:
+After `moveTo`, continue existing actions such as:
 
 ```text
-moveTo
 scrollIntoView
 drag
-form controls
+selectOption / setChecked / submit / dismiss
 multi-frame observation
 ```
 
@@ -276,17 +292,13 @@ No autonomous multi-step work yet.
 
 ---
 
-# P1 / later
+# Known later fidelity/robustness gates
 
 ```text
-drag / slider / seek
-scrollIntoView
-selectOption / setChecked / submit / dismiss
-tab lifecycle through Agent bridge
-hoverAndObserve / waitAndObserve policy
-multi-frame targets
+focus primitive metadata cleanup
+multi-frame Agent observation
+physical-key-like text-entry variant only if a real task requires listener fidelity
 pointer naturalness refinement
-BROWSER_UI_OS Runtime/Native-Host integration
 ```
 
 ---
