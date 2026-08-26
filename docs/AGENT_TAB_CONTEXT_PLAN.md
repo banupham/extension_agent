@@ -236,6 +236,48 @@ P1 remains deferred until P0 native evidence is stable.
 13. verify stale observation cannot migrate to another tab
 ```
 
+## Native evidence recorded 2026-08-26
+
+The browser-context milestone has native PASS evidence for the core path:
+
+```text
+agentListTabs                       PASS
+switch active tab and relist        PASS
+matching --host facebook.com        PASS
+--observe --tab facebook            PASS
+keyword resolved to exact tabId     PASS
+observation URL/title = Facebook    PASS
+```
+
+A one-action click using the same human tab selector also completed successfully on the compatibility branch:
+
+```bat
+node script/agent_one_action.js --type click --label "Thông báo" --tab facebook
+```
+
+Evidence:
+
+```text
+selected semantic target = button / "Thông báo"
+CDP plan version          = 0.1.1
+execution.ok              = true
+observation invalidated   = true
+new OBSERVE AFTER id      = true
+visible Facebook panel opened = confirmed by human operator
+```
+
+The test exposed an implementation mismatch, not a tab-context failure:
+
+```text
+planner emitted 0.1.1
+runtime dispatcher accepted only 0.1.0
+→ unsupported_cdp_plan_version
+```
+
+The dispatcher compatibility fix accepts `0.1.0` and `0.1.1`, keeps the existing method allowlist/delay validation, and has native click evidence for `0.1.1`.
+
+This pass is deliberately classified as **functional Agent execution**. It does not prove Brain reasoning, autonomous multi-step planning, or natural/human-like behavior quality. Post-click observation did not expose the notification-panel contents as completely as desired; keep that as observer/outcome-fidelity evidence for a later gate.
+
 ## Future, not part of this change
 
 ```text
