@@ -20,6 +20,14 @@
     };
   }
 
+  function geometryChanged(observedRect, liveRect, tolerancePx = 2) {
+    const observed = normalizeRect(observedRect);
+    const live = normalizeRect(liveRect);
+    if (!observed || !live) return true;
+    const tolerance = Math.max(0, finite(tolerancePx) ?? 2);
+    return ['x', 'y', 'width', 'height'].some(key => Math.abs(observed[key] - live[key]) > tolerance);
+  }
+
   function publicTarget(target) {
     return {
       ref: target.ref,
@@ -112,5 +120,5 @@
     return { register, resolve, invalidateTab, status, publicTarget };
   }
 
-  return { createRegistry, normalizeRect, publicTarget };
+  return { createRegistry, normalizeRect, geometryChanged, publicTarget };
 });
