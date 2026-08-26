@@ -1,0 +1,41 @@
+{
+  "version": "0.1.0",
+  "name": "A5.2 Outcome Control",
+  "input": "validated Outcome plus optional explicit blocker evidence",
+  "statuses": {
+    "done": {
+      "when": "taskSucceeded=true",
+      "terminal": true,
+      "shouldReplan": false
+    },
+    "continue": {
+      "when": "actionSucceeded=true, taskSucceeded=false, errorCode=null, no explicit blocker",
+      "terminal": false,
+      "shouldReplan": true
+    },
+    "failed": {
+      "when": "task incomplete and action/outcome has an error",
+      "terminal": false,
+      "shouldReplan": true,
+      "note": "A5.3 budgets decide when repeated failures become terminal"
+    },
+    "blocked": {
+      "when": "explicit blocker evidence is active",
+      "terminal": true,
+      "shouldReplan": false
+    }
+  },
+  "precedence": [
+    "done",
+    "blocked",
+    "failed",
+    "continue"
+  ],
+  "invariants": {
+    "choosesNextAgentAction": false,
+    "dispatchesBrowserInput": false,
+    "enablesAutonomousMultiStep": false,
+    "zeroProgressAloneIsTerminal": false,
+    "selectorCoordinateOrCdpInput": false
+  }
+}
