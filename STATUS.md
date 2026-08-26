@@ -21,15 +21,15 @@ A0 Agent/Behavior contracts        COMPLETE
 A1 Action Window 0.1.4             COMPLETE
 A2 Behavior Feature 0.2.0          COMPLETE
 A3 Empirical baseline contract     READY
-P0 Agent Runtime                   IN NATIVE VALIDATION
-A4 One-action bridge               IN NATIVE VALIDATION
+P0 Agent Runtime                   CORE FUNCTION MATRIX NATIVE PASS
+A4 One-action bridge               CORE FUNCTION MATRIX NATIVE PASS
 A5 Goal Checker + Replan           NOT STARTED
 Autonomous multi-step              NOT STARTED
 ```
 
 Collector V0.8 transport/capture gate đã PASS và chỉ còn stability/regression support.
 
-Current Agent native evidence:
+Current native evidence:
 
 ```text
 tab inventory / matching                 PASS
@@ -41,9 +41,11 @@ OBSERVE AFTER / invalidation             PASS
 vertical page scroll                     PASS
 hover without click                      PASS
 horizontal page scroll                   PASS
-doubleClick two-cycle native behavior    PASS
+doubleClick two-cycle browser behavior   PASS
 focus editable target                    PASS
 typeText into focused editable target    PASS
+back navigation                          PASS
+forward navigation                       PASS
 ```
 
 Functional Agent PASS không đồng nghĩa Brain-quality PASS hoặc natural-behavior PASS.
@@ -84,9 +86,9 @@ TASK
 → OBSERVER
 → STRATEGY / BRAIN
 → AGENT ACTION CONTRACT        = WHAT
-→ EXECUTION BEHAVIOR CONTRACT = HOW naturally
+→ EXECUTION BEHAVIOR CONTRACT = HOW naturally / execution-variant policy
 → CDP EXECUTION PLAN           = exact browser-native plan
-→ AGENT RUNTIME EXTENSION      = dispatch only
+→ AGENT RUNTIME EXTENSION      = dispatch + narrow runtime binding only
 → CHROME
 → OBSERVE AFTER
 → GOAL CHECK / REPLAN
@@ -100,18 +102,20 @@ Behavior does NOT choose task intent.
 Executor does NOT choose strategy.
 ```
 
-`tabId` là internal execution identity. Human-facing selector (keyword/hostname/title/url) resolve một lần thành exact tabId trước OBSERVE và reuse cho EXECUTE + OBSERVE AFTER.
+Một semantic Agent Action có thể có nhiều execution variants nhưng intent không đổi. Ví dụ `back` có thể về sau có history-CDP, keyboard shortcut hoặc browser-UI variant; variant selection thuộc execution policy/planning layer, không thuộc Brain intent.
 
-CDP là standard in-page execution path. `chrome.tabs.*` chỉ là control-plane.
+`tabId` là internal execution identity. Human-facing selector resolve một lần thành exact tabId trước OBSERVE và reuse cho EXECUTE + OBSERVE AFTER.
+
+CDP là standard in-page/navigation execution path. `chrome.tabs.*` chỉ là control-plane.
 
 ---
 
 # CDP / Runtime baseline
 
-Planner:
+Planner hiện phát:
 
 ```text
-cdpPlanVersion = 0.1.1
+cdpPlanVersion = 0.1.2
 ```
 
 Runtime dispatcher accepts:
@@ -119,6 +123,7 @@ Runtime dispatcher accepts:
 ```text
 0.1.0
 0.1.1
+0.1.2
 ```
 
 Allowlisted EXECUTE_PLAN methods:
@@ -135,7 +140,7 @@ Page.navigateToHistoryEntry
 
 No arbitrary raw-CDP tunnel from Brain.
 
-Implemented and native-validated P0 plan families so far:
+Native-validated plan families:
 
 ```text
 click / focus acquisition
@@ -143,16 +148,15 @@ doubleClick
 hover
 scrollVertical / scrollHorizontal
 typeText
+back / forward history navigation
 ```
 
-Implemented but not yet native-validated:
+Implemented but not yet native-validated in the current agreed matrix:
 
 ```text
 pressKey
 navigate / reload
 ```
-
-Navigation contract/metadata includes `back` and `forward`, but current `buildCdpPlan()` has no back/forward case yet. Native-confirm this gap on `main` before any fix.
 
 Known fidelity / contract gaps:
 
@@ -173,10 +177,10 @@ Browser context:
 
 ```text
 agentListTabs                          PASS
-switch tab and relist                 PASS
+switch/relist                         PASS
 matching --host facebook.com          PASS
 --observe --tab facebook              PASS
-keyword → exact internal tabId        PASS
+human keyword → exact internal tabId  PASS
 ```
 
 Basic semantic click:
@@ -185,258 +189,193 @@ Basic semantic click:
 node script/agent_one_action.js --type click --label "Thông báo" --tab facebook
 ```
 
-Evidence:
+Evidence: target đúng, CDP execution ok, observation invalidated/re-observed, human visual confirmation notification panel opened.
 
-```text
-selected target = button / Thông báo
-CDP plan = 0.1.1
-execution.ok = true
-observation invalidated = true
-beforeObservationId != afterObservationId
-human visual confirmation: notification panel opened
-```
-
-Post-click observer chưa expose đầy đủ notification-panel contents; classify separately as observer/outcome fidelity.
+Post-click observer chưa expose đầy đủ notification contents; classify riêng là observer/outcome fidelity.
 
 ---
 
-# Native evidence — vertical scroll PASS
+# Native evidence — scroll / hover / doubleClick / focus / typing PASS
 
-Controlled surface:
-
-```text
-https://en.wikipedia.org/wiki/Web_browser
-```
-
-Command:
-
-```bat
-node script/agent_one_action.js --type scrollVertical --direction 1 --host en.wikipedia.org --full
-```
-
-Initial implementation failure:
+Vertical scroll:
 
 ```text
-missing empirical metrics: Number(null) → zero-like fallback
-previous agentPointer could anchor generic wheel over nested/control surface
-```
-
-Fix merged PR #5:
-
-```text
-missing metric remains null → planner fallback activates
-generic page scroll → viewport-center wheel anchor
-fallback ≈ 4 wheel events / ~480 px requested burst
-```
-
-Native evidence:
-
-```text
+Wikipedia controlled surface
 before.scroll.y = 0
 after.scroll.y  = 388
-same observed element moved exactly 388 px
 ```
 
-PR #5 / runtime-syntax run 32924626320 = SUCCESS.
+Initial bug fixed: missing empirical metrics must remain `null`, not become numeric zero; generic page scroll anchors at viewport center. PR #5 / runtime-syntax run `32924626320` SUCCESS.
 
----
-
-# Native evidence — hover PASS
-
-```bat
-node script/agent_one_action.js --type hover --label "Browser market" --host en.wikipedia.org --full
-```
-
-Human visual confirmation: Agent pointer logic reached `Browser market`, with no click and no navigation.
-
-CDP mouse input does not move the OS cursor; a correct hover may be visually hard to see when target styling has no hover state.
-
----
-
-# Native evidence — horizontal scroll PASS
-
-Controlled surface:
+Horizontal scroll controlled surface:
 
 ```text
-http://127.0.0.1:8088/
-title = Agent Horizontal Scroll Test
-```
-
-Command:
-
-```bat
-node script/agent_one_action.js --type scrollHorizontal --direction 1 --url-includes 127.0.0.1:8088 --full
-```
-
-Evidence:
-
-```text
-behaviorFamily = scroll-horizontal
-4 × Input.dispatchMouseEvent(mouseWheel)
-wheel anchor = viewport center = (683, 320.5)
+127.0.0.1:8088
+4 × mouseWheel
 deltaX > 0, deltaY = 0
-execution.ok = true
-before.scroll = {x:0, y:0}
-after.scroll  = {x:388, y:0}
-human visual confirmation: horizontal track moved clearly
+before.scroll.x = 0
+after.scroll.x  = 388
 ```
 
----
-
-# Native evidence — doubleClick PASS
-
-Controlled surface:
+Hover:
 
 ```text
-http://127.0.0.1:8089/
-title = Agent Double Click PASS
+Browser market on Wikipedia
+pointer logic reached target
+no click / no navigation
 ```
 
-Command:
-
-```bat
-node script/agent_one_action.js --type doubleClick --label "Double Click Target" --url-includes 127.0.0.1:8089 --full
-```
-
-Target / outcome:
+DoubleClick controlled surface `127.0.0.1:8089`:
 
 ```text
-before: ref=e0, label=Double Click Target, focusedRef=null
-after:  ref=e0, label=Agent Double Click PASS, focusedRef=e0
+clickCount 1 press/release
+→ clickCount 2 press/release
+label changed Double Click Target → Agent Double Click PASS
+focusedRef became e0
 ```
 
-CDP sequence:
-
-```text
-pointer approach
-→ mousePressed  clickCount=1
-→ mouseReleased clickCount=1
-→ 90 ms inter-click gap
-→ mousePressed  clickCount=2
-→ mouseReleased clickCount=2
-```
-
-Execution: `cdpPlanVersion=0.1.1`, `stepCount=resultCount=15`, `execution.ok=true`, observation invalidated. Human visual confirmation: button changed to `Agent Double Click PASS`.
-
-Functional behavior validated; timing naturalness remains a later gate.
-
----
-
-# Native evidence — focus PASS
-
-Controlled surface:
-
-```text
-http://127.0.0.1:8090/
-title = Agent Focus Test
-```
-
-Command:
-
-```bat
-node script/agent_one_action.js --type focus --label "Focus Target" --url-includes 127.0.0.1:8090 --full
-```
-
-Evidence:
+Focus controlled surface `127.0.0.1:8090`:
 
 ```text
 input rect = x 68..588, y 68..149
 final click = (302.34, 80.12), inside hit-box
-before.focusedRef = null
-after.focusedRef  = e0
+focusedRef: null → e0
 label: Focus Target → Focused Input
 human visual confirmation: FOCUS PASS
-execution.ok = true
 ```
 
-Functional gate only requires a valid interior hit and real focus. Exact click-point naturalness/safe-margin quality is a later Behavior/robustness concern.
+TypeText on same focused input:
 
-Metadata drift: mapped action advertises `Runtime.callFunctionOn|DOM.focus`, actual plan uses `Input.dispatchMouseEvent`. Execution truth is the CDP plan; track as cleanup, not functional failure.
+```text
+text = "Agent typing PASS 123"
+21 chars → 21 Input.insertText steps
+fallback inter-character delay = 80 ms
+execution.ok = true
+focusedRef remains e0
+human visual confirmation exact text appeared
+```
+
+Physical-key/listener fidelity remains a separate later gate.
 
 ---
 
-# Native evidence — typeText PASS
+# Native evidence — back / forward PASS
 
-Controlled surface reused the focused input at:
-
-```text
-http://127.0.0.1:8090/
-```
-
-Command:
-
-```bat
-node script/agent_one_action.js --type typeText --text "Agent typing PASS 123" --url-includes 127.0.0.1:8090 --full
-```
-
-Evidence:
+Controlled surface:
 
 ```text
-actionType = typeText
-behaviorFamily = keyboard-text
-behavior.profile = conservative-fallback
-cdpPlanVersion = 0.1.1
-21 characters → 21 Input.insertText steps
-first delay = 0 ms, fallback inter-character delay = 80 ms
+http://127.0.0.1:8091/a
+http://127.0.0.1:8091/b
+```
+
+Main originally native-failed:
+
+```text
+cdp_plan_unsupported:back
+```
+
+Root cause: Action Contract / metadata and Runtime allowlist already supported history navigation primitives, but `buildCdpPlan()` had no `back`/`forward` case.
+
+Fix on reusable experiment branch introduced CDP plan `0.1.2` with a narrow runtime history binding:
+
+```text
+Page.getNavigationHistory
+→ Page.navigateToHistoryEntry
+```
+
+Planner emits only semantic offset:
+
+```text
+back    historyOffset = -1
+forward historyOffset = +1
+```
+
+Dispatcher resolves `entryId` only from the immediately preceding `Page.getNavigationHistory` result. Strategy never sees or emits entryId.
+
+Back native evidence:
+
+```text
+before = /b
+historyOffset = -1
 execution.ok = true
-stepCount = resultCount = 21
-observationInvalidated = true
-before.focusedRef = e0
-after.focusedRef  = e0
-human visual confirmation: exact text "Agent typing PASS 123" appeared in the input
+stepCount = resultCount = 2
+after = /a
 ```
 
-Observer does not currently expose the input value; semantic label remained `Focused Input`. Functional text insertion is PASS from actual UI + execution evidence. Physical-key/listener fidelity (`keydown/keyup` semantics) remains a separate later gate.
+Forward native evidence:
+
+```text
+before = /a
+historyOffset = +1
+execution.ok = true
+stepCount = resultCount = 2
+after = /b
+```
+
+Contract tests PASS and runtime-syntax run `32928523987` SUCCESS.
+
+The native-validated fix was fast-forwarded to `main` at commit `056dd8ad24c088b6c503960a6210cc88553d53aa` before this documentation update.
 
 ---
 
-# Scheduled after current functional matrix — Agent Cursor Debug Overlay
+# Execution-variant policy
 
-After current P0/A4 function matrix, add a debug-only visible Agent cursor that mirrors actual pointer events dispatched by Runtime.
+A semantic action is WHAT, not a fixed physical mechanism.
+
+Example:
 
 ```text
-CDP plan / Runtime dispatch = input source of truth
+back
+├─ history CDP: Page.getNavigationHistory → Page.navigateToHistoryEntry   NATIVE PASS
+├─ keyboard: Alt+Left                                                     FUTURE VARIANT
+└─ browser chrome back-button pointer click                               FUTURE browser-UI/OS-control variant
+```
+
+Do not pretend browser-chrome controls are normal page-CDP targets. Browser UI requires an explicit browser-UI/OS-control boundary if implemented later.
+
+Variant selection must preserve the same Agent Action intent and must not leak CDP packets/coordinates into Strategy.
+
+---
+
+# NEXT — after current core functional matrix
+
+The agreed P0/A4 core matrix is now native PASS through `back/forward`.
+
+Next scheduled work:
+
+```text
+Agent Cursor Debug Overlay
+```
+
+Requirements:
+
+```text
+CDP plan / Runtime dispatch = source of truth
                  ↓ mirror only
 Agent Cursor overlay        = visualization / telemetry only
+
+mirror exact x/y + timing
+mirror moved / pressed / released / wheel states
+never generate input
+never choose or retarget target
+never alter Strategy / Behavior / CDP plan / registry
+pointer-events:none
+must not appear as Observer target
+prefer isolated extension Shadow DOM
 ```
 
-Requirements: mirror exact x/y/timing, never generate input/retarget/modify Strategy or Behavior, `pointer-events:none`, must not become Observer target, prefer extension Shadow DOM.
+This is an observability/debug tool, not a new execution source.
 
----
-
-# NEXT — existing function only
-
-Start from `main`.
+Remaining later evidence gates:
 
 ```text
-DONE:
-tab context / human selector
-observe semantic targets
-basic click
-OBSERVE AFTER / invalidation
-vertical scroll
-hover
-horizontal scroll
-doubleClick
-focus
-typeText
-
-NEXT:
-back on a controlled local history surface
-→ native-confirm current main behavior before any fix
-
-THEN:
-forward
-
-AFTER FUNCTIONAL MATRIX:
-Agent Cursor Debug Overlay
-
-LATER INVARIANT / EVIDENCE GATES:
 stale-ref rejection when exercisable via existing interfaces
 moving-target rejection/reobserve
 post-action semantic outcome fidelity
 keyboard listener fidelity
 focus primitive metadata cleanup
+pressKey native validation
+navigate / reload native validation
 ```
 
 Do not start autonomous multi-step tasks yet.
@@ -454,6 +393,7 @@ hoverAndObserve / waitAndObserve policy
 multi-frame target registry
 robust moving-target revalidation
 modifier-aware keyCombo
+browser-UI/OS-control execution variants where justified
 ```
 
 ---
