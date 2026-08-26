@@ -18,12 +18,15 @@
     "A5.3 Episode Budget Guard",
     "if terminal=false and shouldReplan=true: resolve semantic observation",
     "call Strategy exactly once",
+    "validate any returned act decision against the semantic Agent Action Contract",
     "return next Decision without executing it"
   ],
   "invariants": {
     "maxStrategyCallsPerInvocation": 1,
     "executesNextAction": false,
     "oneSemanticActionPerLoop": true,
+    "returnedActDecisionMustValidateAgentAction": true,
+    "strategyMayEmitSelectorCoordinateOrCdp": false,
     "goalCheckerChoosesAction": false,
     "episodeBudgetCallsStrategy": false,
     "autonomousLoop": false,
@@ -33,6 +36,10 @@
     "goal satisfied",
     "explicit blocker",
     "episode budget exhaustion"
+  ],
+  "decisionErrors": [
+    "replan_strategy_failed",
+    "replan_decision_invalid"
   ],
   "privacy": {
     "historyMayStore": [
