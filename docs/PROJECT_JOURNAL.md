@@ -28,7 +28,7 @@ Nếu journal mâu thuẫn source hiện tại trên `main`, source là implemen
 6 FAIL do implementation → dùng nhánh thử nghiệm duy nhất
 7 fix đúng boundary + contract/CI
 8 native re-test
-9 PASS → merge main
+9 PASS → merge/fast-forward main
 10 sync nhánh thử nghiệm lại main
 11 update STATUS/JOURNAL khi milestone/invariant thay đổi
 ```
@@ -55,14 +55,14 @@ TRAINING COLLECTOR
 Human → raw physical + semantic browser session
 
 AGENT
-Task → Browser Context → Observer → Strategy → Agent Action → Behavior → CDP Plan → Executor
+Task → Browser Context → Observer → Strategy → Agent Action → Behavior/Variant Policy → CDP Plan → Executor
 ```
 
 ```text
 Strategy        = WHAT
-Behavior Policy = HOW naturally
+Behavior Policy = HOW naturally / allowed execution variant
 CDP Planner     = exact browser-native plan
-Executor        = dispatch only
+Executor        = dispatch + narrow runtime binding only
 Browser Context = exact tab/frame identity
 ```
 
@@ -75,6 +75,8 @@ Executor does not choose strategy.
 ```
 
 Functional Agent PASS, Brain-quality PASS và natural-behavior PASS là ba milestone riêng.
+
+A semantic action can have multiple execution variants without changing intent. Variant selection belongs below Strategy.
 
 ---
 
@@ -130,7 +132,7 @@ Stale refs must fail; never blind-reuse old coordinates.
 
 Known moving-target gap: current registry does not robustly reread live geometry immediately before dispatch. Preferred future behavior after evidence: reject → re-observe, not silent Executor retarget.
 
-Browser-context path native PASS:
+Browser-context native PASS:
 
 ```text
 agentListTabs
@@ -146,13 +148,13 @@ One broker listens on `127.0.0.1:3000`; multiple extension clients share it by `
 
 # 5. Unified CDP execution path
 
-P0 functional validation uses one path only:
+Current P0/A4 validation path:
 
 ```text
 OBSERVE
 → semantic target / Agent Action
-→ Behavior
-→ CDP Plan 0.1.1
+→ Behavior / execution-variant policy
+→ CDP Plan 0.1.2
 → allowlisted Agent Runtime dispatcher
 → Chrome
 → OBSERVE AFTER
@@ -172,15 +174,17 @@ Page.getNavigationHistory
 Page.navigateToHistoryEntry
 ```
 
-Plan-version regression already fixed:
+Plan-version history:
 
 ```text
-planner emitted 0.1.1
-runtime originally accepted 0.1.0 only
+0.1.1 planner vs runtime 0.1.0 mismatch
 → unsupported_cdp_plan_version
+→ runtime compatibility fixed
+
+0.1.2 introduced only for narrow navigation-history binding
 ```
 
-Current dispatcher accepts `0.1.0` and `0.1.1`; planner emits `0.1.1`.
+Current dispatcher accepts `0.1.0`, `0.1.1`, `0.1.2`; planner emits `0.1.2`.
 
 ---
 
@@ -190,7 +194,7 @@ Current dispatcher accepts `0.1.0` and `0.1.1`; planner emits `0.1.1`.
 node script/agent_one_action.js --type click --label "Thông báo" --tab facebook
 ```
 
-Evidence: semantic target correct, CDP 0.1.1, execution ok, observation invalidated + re-observed, human visual confirmation notification panel opened.
+Evidence: semantic target correct, CDP execution ok, observation invalidated + re-observed, human visual confirmation notification panel opened.
 
 Post-click observer did not expose full notification contents; observer/outcome fidelity is separate from click execution.
 
@@ -204,7 +208,7 @@ Controlled page: `https://en.wikipedia.org/wiki/Web_browser`
 node script/agent_one_action.js --type scrollVertical --direction 1 --host en.wikipedia.org --full
 ```
 
-Original functional failure had two causes:
+Original failure:
 
 ```text
 previous agentPointer could anchor generic wheel on nested/control surface
@@ -227,7 +231,7 @@ after.scroll.y  = 388
 same observed element moved exactly 388 px
 ```
 
-PR #5 runtime-syntax SUCCESS. Functional PASS only, not naturalness.
+PR #5 runtime-syntax run `32924626320` SUCCESS. Functional PASS only, not naturalness.
 
 ---
 
@@ -254,7 +258,6 @@ node script/agent_one_action.js --type scrollHorizontal --direction 1 --url-incl
 Evidence:
 
 ```text
-behaviorFamily = scroll-horizontal
 4 × mouseWheel
 viewport-center anchor = (683, 320.5)
 deltaX > 0, deltaY = 0
@@ -284,7 +287,9 @@ mousePressed  clickCount=2
 mouseReleased clickCount=2
 ```
 
-After observation: same ref `e0`, label changed to `Agent Double Click PASS`, `focusedRef=e0`. Human visual confirmation matched. Functional PASS; timing naturalness remains later.
+After observation: same ref `e0`, label changed to `Agent Double Click PASS`, `focusedRef=e0`. Human visual confirmation matched.
+
+Fallback Behavior reported `holdMs=0`; Planner minimum clamp produced 10 ms holds. Functional PASS, not timing-naturalness PASS.
 
 ---
 
@@ -309,14 +314,14 @@ human visual confirmation: FOCUS PASS
 
 Functional gate requires valid interior hit + real focus. Exact click-point naturalness/safe-margin is later Behavior/robustness work.
 
-Contract drift discovered:
+Contract drift:
 
 ```text
 mappedAction.cdpPrimitives = Runtime.callFunctionOn|DOM.focus
 actual CDP plan = Input.dispatchMouseEvent mouseMoved/pressed/released
 ```
 
-Execution truth is the plan. Track mapping cleanup separately; it did not cause functional failure.
+Execution truth is the plan. Track mapping cleanup separately.
 
 ---
 
@@ -331,10 +336,6 @@ node script/agent_one_action.js --type typeText --text "Agent typing PASS 123" -
 Evidence:
 
 ```text
-actionType = typeText
-behaviorFamily = keyboard-text
-behavior.profile = conservative-fallback
-cdpPlanVersion = 0.1.1
 21 characters → 21 Input.insertText steps
 first delay = 0 ms
 fallback inter-character delay = 80 ms
@@ -343,40 +344,131 @@ stepCount = resultCount = 21
 observationInvalidated = true
 before.focusedRef = e0
 after.focusedRef  = e0
-human visual confirmation: exact text "Agent typing PASS 123" appeared
+human visual confirmation exact text appeared
 ```
 
 Observer currently does not expose input value; label remained `Focused Input`. UI + execution evidence is sufficient for functional insertion PASS.
 
-Do not overclaim: `Input.insertText` does not prove physical keyboard listener fidelity. `keydown/keyup` semantics remain a separate later gate.
+Do not overclaim: `Input.insertText` does not prove physical keyboard listener fidelity.
 
 ---
 
-# 13. Navigation gap discovered before native back/forward gate
+# 13. Native milestone — back / forward PASS and CDP 0.1.2
 
-Action Contract / metadata already include:
-
-```text
-back    → Page.getNavigationHistory + Page.navigateToHistoryEntry
-forward → Page.getNavigationHistory + Page.navigateToHistoryEntry
-```
-
-But current `control-center/manager/execution/cdp_plan.js` `buildCdpPlan()` only has explicit navigation cases for:
+Controlled local history surface:
 
 ```text
-navigate
-reload
+http://127.0.0.1:8091/a
+http://127.0.0.1:8091/b
 ```
 
-There is no `back` or `forward` plan case on current `main`, so source predicts `cdp_plan_unsupported:back|forward` before Runtime dispatch.
+Native-confirmed initial `main` failure:
 
-Per project rule, do not fix preemptively: native-confirm `back` on `main`; if it fails as predicted, that is an implementation failure and the fix belongs on reusable branch `feat/agent-tab-context`.
+```text
+node script/agent_one_action.js --type back --url-includes 127.0.0.1:8091 --full
+→ cdp_plan_unsupported:back
+```
+
+Root cause:
+
+```text
+Action Contract already had back/forward
+metadata already listed Page.getNavigationHistory + Page.navigateToHistoryEntry
+Runtime allowlist already allowed both methods
+but buildCdpPlan() had only navigate/reload navigation cases
+```
+
+Repair used the reusable branch `feat/agent-tab-context` only.
+
+Planner 0.1.2 now emits:
+
+```text
+back:
+Page.getNavigationHistory
+→ Page.navigateToHistoryEntry { historyOffset: -1 }
+
+forward:
+Page.getNavigationHistory
+→ Page.navigateToHistoryEntry { historyOffset: +1 }
+```
+
+The second step does not contain a caller-provided `entryId`. Dispatcher resolves it only from the immediately preceding `Page.getNavigationHistory` result.
+
+Boundary preserved:
+
+```text
+Strategy knows semantic back/forward only
+Planner chooses history offset
+Runtime resolves dynamic entryId
+Executor does not choose direction/intent
+```
+
+Back native PASS:
+
+```text
+before.url = /b
+after.url  = /a
+historyOffset = -1
+execution.ok = true
+stepCount = resultCount = 2
+```
+
+Forward native PASS:
+
+```text
+before.url = /a
+after.url  = /b
+historyOffset = +1
+execution.ok = true
+stepCount = resultCount = 2
+```
+
+Contract checks:
+
+```text
+CDP execution planner contract: PASS
+CDP plan dispatcher contract: PASS
+```
+
+CI:
+
+```text
+runtime-syntax run 32928523987 = SUCCESS
+head = 056dd8ad24c088b6c503960a6210cc88553d53aa
+```
+
+The branch was ahead of `main` by exactly 4 commits / 4 files, behind 0; `main` was fast-forwarded to that native-PASS head.
 
 ---
 
-# 14. Scheduled observability tool — Agent Cursor Debug Overlay
+# 14. Execution-variant policy
 
-After current functional matrix, implement a debug-only cursor mirroring actually dispatched pointer events.
+A semantic Agent Action is WHAT, not a promise of one fixed physical mechanism.
+
+Example `back`:
+
+```text
+variant A — navigation-history CDP
+Page.getNavigationHistory → Page.navigateToHistoryEntry
+NATIVE PASS
+
+variant B — keyboard shortcut
+Alt+Left
+FUTURE; depends on modifier-aware keyCombo/native keyboard fidelity
+
+variant C — pointer click on browser Back button
+FUTURE; this is browser chrome, not page viewport
+```
+
+Do not model Chrome browser UI as a normal DOM/page-CDP target. If browser-chrome pointer control is implemented, it requires an explicit browser-UI/OS-control execution boundary.
+
+Variant selection must preserve Agent intent and stay below Strategy.
+
+---
+
+# 15. Scheduled observability tool — Agent Cursor Debug Overlay
+
+The agreed core functional matrix through back/forward is now native PASS. Next scheduled work is a debug-only cursor mirroring actually dispatched pointer events.
 
 ```text
 CDP plan / Runtime dispatch = source of truth
@@ -384,11 +476,24 @@ CDP plan / Runtime dispatch = source of truth
 Agent Cursor overlay        = visualization / telemetry only
 ```
 
-Requirements: mirror exact x/y + timing and moved/pressed/released/wheel states; never generate input, choose/retarget targets, or alter Strategy/Behavior/CDP/registry; `pointer-events:none`; must not appear as Observer target; prefer isolated extension Shadow DOM.
+Requirements:
+
+```text
+mirror exact x/y + timing
+mirror moved/pressed/released/wheel states
+never generate input
+never choose/retarget target
+never alter Strategy / Behavior / CDP plan / registry
+pointer-events:none
+must not appear as Observer target
+prefer isolated extension Shadow DOM
+```
+
+This tool exists to make CDP pointer trajectories visible when page hover styling gives no visual feedback. It must never become an execution source.
 
 ---
 
-# 15. Current native matrix / next gate
+# 16. Current native matrix / remaining gates
 
 ```text
 tab inventory / matching          PASS
@@ -403,18 +508,27 @@ horizontal scroll                 PASS
 doubleClick                       PASS
 focus                             PASS
 typeText                          PASS
+back                              PASS
+forward                           PASS
+```
 
-NEXT:
-back on controlled local history surface
-→ native-confirm current main behavior
+NEXT scheduled work:
 
-THEN:
-forward
-
-AFTER FUNCTIONAL MATRIX:
+```text
 Agent Cursor Debug Overlay
+```
 
-LATER:
+Still implemented but not native-validated in this agreed matrix:
+
+```text
+pressKey
+navigate
+reload
+```
+
+Later invariant/evidence gates:
+
+```text
 stale-ref rejection via existing interfaces
 moving-target rejection/reobserve
 post-action semantic outcome fidelity
@@ -426,7 +540,7 @@ No autonomous multi-step yet.
 
 ---
 
-# 16. Persistent architectural decisions
+# 17. Persistent architectural decisions
 
 ```text
 D027 CDP is Agent in-page execution standard
@@ -440,7 +554,7 @@ D042 Brain decides only after OBSERVE and one action per loop
 D043 Focus reuses pointer-click HOW distribution
 D044 DoubleClick requires two real press/release cycles
 D045 Browser context is first-class; human selector resolves once to exact tabId
-D047 Dispatcher accepts planner 0.1.1 and retains 0.1.0 compatibility
+D047 Dispatcher retains compatibility for older supported CDP plan versions
 D048 Functional Agent / Brain quality / natural behavior are separate gates
 D049 Visible UI effect can validate executor even with incomplete semantic outcome capture
 D050 Test existing capability on main before implementation changes
@@ -454,13 +568,17 @@ D057 Agent Cursor is scheduled after functional matrix and is mirror-only teleme
 D058 DoubleClick two-cycle sequence is browser-native validated with semantic outcome
 D059 Focus functional correctness requires valid interior pointer hit + focusedRef transition; natural point quality is separate
 D060 typeText per-character Input.insertText is functionally native validated; physical-key listener fidelity is separate
-D061 back/forward contract exists but current planner support must be native-confirmed before repair
+D061 back/forward planner gap was native-confirmed before repair
+D062 CDP plan 0.1.2 adds only narrow navigation-history result binding; Strategy never emits entryId
+D063 back and forward history-CDP variants are native validated
+D064 One semantic Agent Action may have multiple execution variants; variant selection stays below Strategy
+D065 Browser-chrome UI is not a normal page-CDP target and needs an explicit control boundary if added
 ```
 
 ---
 
-# 17. Safety / maintenance
+# 18. Safety / maintenance
 
 CAPTCHA/human verification remains blocked; no automatic solve/bypass/blind retry. Never collect/train credentials, passwords, cookies, tokens, clipboard or payment secrets.
 
-Journal only facts future sessions should not rediscover: what passed, exact evidence, what is not claimed, difficult bug root cause, invariant/fix, and next smallest native gate.
+Journal only facts future sessions should not rediscover: what passed, exact evidence, what is not claimed, difficult bug root cause, invariant/fix, and next smallest gate.
