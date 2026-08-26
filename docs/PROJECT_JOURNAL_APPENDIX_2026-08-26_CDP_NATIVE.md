@@ -20,15 +20,6 @@ Command:
 node script/agent_one_action.js --type pressKey --key "Enter" --url-includes 127.0.0.1:8091 --full
 ```
 
-Controlled page behavior:
-
-```text
-initial title = PressKey Test
-keydown Enter → visible intermediate state ENTER DOWN
-keyup Enter   → visible final state PRESSKEY PASS
-final title   = PRESSKEY PASS
-```
-
 Native evidence:
 
 ```text
@@ -143,23 +134,86 @@ no accidental click = PASS
 
 This validates the production execution boundary rather than a hand-built raw CDP-only path.
 
-## Direct P0 CDP action validation status
+## moving-target live geometry — initial NATIVE FAIL, fixed and NATIVE PASS
+
+Controlled page kept the original observation latest, same URL and inside TTL, while moving the semantic target after the Agent click plan had already been built.
+
+Initial native evidence on `main` before the fix:
 
 ```text
-pressKey  PASS
-navigate  PASS
-reload    PASS
+beforeTargetRect = { x:40, y:160, width:180, height:60 }
+target moved live to { x:380, y:160, width:180, height:60 }
+execution.ok = true
+stepCount = resultCount = 13
+afterTitle = MOVING TARGET FAIL OLD
+OLD POSITION TRAP received the click
+```
+
+Classification: native-confirmed implementation failure. Observation freshness alone was insufficient because the Runtime used the observed pointer coordinates without confirming current target geometry.
+
+Fix developed on reusable branch `feat/agent-tab-context`:
+
+```text
+Target Registry adds geometryChanged(observedRect, liveRect, tolerancePx)
+Runtime target-dependent execution:
+  resolve observation/ref as before
+  → read current element state/rect
+  → compare observed vs live geometry with 2px tolerance
+  → reject missing/hidden/disabled live target
+  → reject changed geometry as target_geometry_changed
+  → invalidate observation on guard failure
+  → do NOT silent-retarget
+
+click path re-checks live geometry immediately before mousePressed
+```
+
+Contract/CI evidence:
+
+```text
+Agent Runtime target registry contract includes geometry-change cases
+runtime-syntax workflow for experimental fix completed SUCCESS
+```
+
+Native re-test after extension reload:
+
+```text
+page state = TARGET MOVED TO B
+old-position trap remained unclicked
+moved target remained unclicked
+
+ok = true
+test = moving-target-geometry-guard
+expected = target_geometry_changed
+actual   = target_geometry_changed
+```
+
+Classification:
+
+```text
+moving-target geometry change detected before click = PASS
+old coordinate not clicked = PASS
+Executor did not silently retarget to new position = PASS
+observation is invalidated so caller must re-observe = PASS
+```
+
+After CI + native PASS, only this geometry guard source/test change was ported to `main`; Browser UI/OS experimental work on the reusable branch was not merged as part of this fix.
+
+## Current native validation status
+
+```text
+pressKey                          PASS
+navigate                          PASS
+reload                            PASS
 stale-ref after newer observation PASS
+moving-target live-geometry guard PASS
 ```
 
 ## Next native sequence
 
 ```text
-1 moving-target geometry evidence / rejection behavior
-2 post-action observer outcome fidelity
-3 Agent Cursor Debug Overlay only when pointer observability becomes useful
+1 post-action observer outcome fidelity
+2 remaining keyboard/input fidelity or metadata cleanup gates when useful
+3 Agent Cursor Debug Overlay only when PAGE_CDP pointer observability becomes useful
 ```
-
-For moving-target validation, do not create a second observation before execution because that would only retest stale-observation rejection. The page itself must change geometry while the original observation remains latest, same-URL, and inside TTL.
 
 No autonomous multi-step work yet.
