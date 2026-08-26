@@ -47,6 +47,68 @@ function scopeFromArgs(args, defaultMode = 'all') {
   return scope;
 }
 
+function explicitTabId(value) {
+  if (value == null || value === true) return null;
+  const raw = String(value).trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
+
+function tabHostname(tab) {
+  try { return normalizeText(new URL(String(tab?.url || '')).hostname); }
+  catch (_) { return ''; }
+}
+
+function tabMatchesKeyword(tab, keyword) {
+  const wanted = normalizeText(keyword);
+  if (!wanted) return false;
+  const title = normalizeText(tab?.title);
+  const url = normalizeText(tab?.url);
+  const host = tabHostname(tab);
+  return title.includes(wanted) || host.includes(wanted) || url.includes(wanted);
+}
+
+function chooseTabByKeyword(tabs, keyword) {
+  const candidates = (Array.isArray(tabs) ? tabs : []).filter(tab => tabMatchesKeyword(tab, keyword));
+  if (candidates.length === 1) return candidates[0];
+  if (!candidates.length) throw new Error(`tab_keyword_not_found:${keyword}`);
+
+  const active = candidates.filter(tab => tab?.active === true);
+  if (active.length === 1) return active[0];
+
+  throw new Error(`ambiguous_tab_keyword:${keyword}:${candidates.map(tab => `${tab.tabId}:${tab.title || tab.url || ''}`).join('|')}`);
+}
+
+async function resolveCommandTabId(runtime, args) {
+  const selector = args.tab ?? args.on ?? null;
+  const exactId = explicitTabId(selector);
+  if (exactId != null) return exactId;
+
+  const keyword = selector != null && selector !== true ? String(selector).trim() : '';
+  if (keyword && ['active', 'current'].includes(normalizeText(keyword))) return null;
+  if (keyword) {
+    const tabs = await runtime.listTabs({ mode: 'all' });
+    return Number(chooseTabByKeyword(tabs, keyword).tabId);
+  }
+
+  if (args.host || args['url-includes'] || args['title-includes']) {
+    const tabs = await runtime.listTabs({
+      mode: 'matching',
+      ...(args.host ? { hostname: String(args.host) } : {}),
+      ...(args['url-includes'] ? { urlIncludes: String(args['url-includes']) } : {}),
+      ...(args['title-includes'] ? { titleIncludes: String(args['title-includes']) } : {})
+    });
+    if (tabs.length === 1) return Number(tabs[0].tabId);
+    if (!tabs.length) throw new Error('tab_filter_not_found');
+    const active = tabs.filter(tab => tab?.active === true);
+    if (active.length === 1) return Number(active[0].tabId);
+    throw new Error(`ambiguous_tab_filter:${tabs.map(tab => `${tab.tabId}:${tab.title || tab.url || ''}`).join('|')}`);
+  }
+
+  return null;
+}
+
 function chooseTarget(observation, args) {
   const targets = Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : [];
   if (args.ref) return targets.find(x => x.ref === args.ref) || null;
@@ -97,9 +159,11 @@ async function main(argv = process.argv.slice(2)) {
       return;
     }
 
+    const resolvedTabId = await resolveCommandTabId(runtime, args);
+
     if (args.observe) {
-      const observation = await runtime.observe(args.tab ? Number(args.tab) : null);
-      console.log(JSON.stringify({ agentId, observation }, null, 2));
+      const observation = await runtime.observe(resolvedTabId);
+      console.log(JSON.stringify({ agentId, resolvedTabId: resolvedTabId ?? observation?.tabId ?? null, observation }, null, 2));
       return;
     }
 
@@ -107,8 +171,8 @@ async function main(argv = process.argv.slice(2)) {
     let selectedTarget = null;
     const result = await runOneAction({
       runtime: {
-        observe: () => runtime.observe(args.tab ? Number(args.tab) : null),
-        executePlan: payload => runtime.executePlan({ ...payload, tabId: args.tab ? Number(args.tab) : null })
+        observe: () => runtime.observe(resolvedTabId),
+        executePlan: payload => runtime.executePlan({ ...payload, tabId: resolvedTabId })
       },
       baseline,
       decide: async observation => {
@@ -124,6 +188,7 @@ async function main(argv = process.argv.slice(2)) {
 
     const compact = {
       agentId,
+      tabId: resolvedTabId ?? result.before?.tabId ?? null,
       bridgeVersion: result.bridgeVersion,
       beforeObservationId: result.beforeObservationId,
       afterObservationId: result.afterObservationId,
@@ -149,4 +214,15 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, normalizeText, scopeFromArgs, chooseTarget, actionFromArgs, discoverRuntimeAgent };
+module.exports = {
+  parseArgs,
+  normalizeText,
+  scopeFromArgs,
+  explicitTabId,
+  tabMatchesKeyword,
+  chooseTabByKeyword,
+  resolveCommandTabId,
+  chooseTarget,
+  actionFromArgs,
+  discoverRuntimeAgent
+};
