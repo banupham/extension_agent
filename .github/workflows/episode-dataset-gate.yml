@@ -28,11 +28,14 @@ on:
       - 'training-collector/popup_episode_export.js'
       - 'training-collector/tools/build_strategy_episode_dataset.js'
       - 'training-collector/tools/check_task_episode_review.js'
+      - 'training-collector/tools/make_strategy_review_template.js'
+      - 'training-collector/tools/adapt_task_episode_review.js'
       - 'training-collector/tests/architecture_contract.js'
       - 'training-collector/tests/strategy_episode_view_contract.js'
       - 'training-collector/tests/task_episode_review_export_contract.js'
       - 'training-collector/tests/task_episode_review_checker_contract.js'
       - 'training-collector/tests/strategy_episode_dataset_cli_contract.js'
+      - 'training-collector/tests/human_strategy_review_cli_contract.js'
       - 'training-collector/.gitignore'
       - '.github/workflows/episode-dataset-gate.yml'
   workflow_dispatch:
@@ -61,11 +64,14 @@ jobs:
           node --check training-collector/popup_episode_export.js
           node --check training-collector/tools/build_strategy_episode_dataset.js
           node --check training-collector/tools/check_task_episode_review.js
+          node --check training-collector/tools/make_strategy_review_template.js
+          node --check training-collector/tools/adapt_task_episode_review.js
           node --check training-collector/tests/architecture_contract.js
           node --check training-collector/tests/strategy_episode_view_contract.js
           node --check training-collector/tests/task_episode_review_export_contract.js
           node --check training-collector/tests/task_episode_review_checker_contract.js
           node --check training-collector/tests/strategy_episode_dataset_cli_contract.js
+          node --check training-collector/tests/human_strategy_review_cli_contract.js
       - name: Validate JSON contracts and manifest
         run: |
           node -e "JSON.parse(require('fs').readFileSync('control-center/EPISODE_OUTCOME_DATASET_CONTRACT.json','utf8'))"
@@ -85,5 +91,7 @@ jobs:
         run: node training-collector/tests/task_episode_review_export_contract.js
       - name: Run Task Episode review checker contract
         run: node training-collector/tests/task_episode_review_checker_contract.js
+      - name: Run human Strategy review CLI contract
+        run: node training-collector/tests/human_strategy_review_cli_contract.js
       - name: Run strategy dataset file builder contract
         run: node training-collector/tests/strategy_episode_dataset_cli_contract.js
