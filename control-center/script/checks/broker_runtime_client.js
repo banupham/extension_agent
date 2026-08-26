@@ -19,12 +19,16 @@ class MockWebSocket {
     if (msg.type !== 'command') return;
     queueMicrotask(() => {
       let result;
-      if (msg.payload.action === 'agentObserve') {
+      if (msg.payload.action === 'agentListTabs') {
+        result = { ok: true, tabs: [{ tabId: 7, active: true, title: 'Facebook', url: 'https://facebook.com/' }] };
+      } else if (msg.payload.action === 'agentObserveTabs') {
+        result = { ok: true, observations: [{ ok: true, tab: { tabId: 7 }, observation: { observationId: 'obs-7' } }] };
+      } else if (msg.payload.action === 'agentObserve') {
         result = { ok: true, observation: { observationId: 'obs-1', interactiveElements: [] } };
       } else if (msg.payload.action === 'agentExecutePlan') {
         result = { ok: true, result: { ok: true, stepCount: msg.payload.data.plan.steps.length } };
       } else {
-        result = { ok: true, runtimeVersion: '0.2.0' };
+        result = { ok: true, runtimeVersion: '0.2.1' };
       }
       this.onmessage?.({ data: JSON.stringify({ type: 'result', commandId: msg.commandId, result }) });
     });
@@ -43,6 +47,12 @@ class MockWebSocket {
     WebSocketImpl: MockWebSocket
   });
 
+  const tabs = await client.listTabs({ mode: 'matching', hostname: 'facebook.com' });
+  assert.strictEqual(tabs[0].tabId, 7);
+
+  const scoped = await client.observeTabs({ mode: 'visible' });
+  assert.strictEqual(scoped[0].observation.observationId, 'obs-7');
+
   const observation = await client.observe();
   assert.strictEqual(observation.observationId, 'obs-1');
 
@@ -57,7 +67,7 @@ class MockWebSocket {
   assert.strictEqual(execution.stepCount, 1);
 
   const status = await client.status();
-  assert.strictEqual(status.runtimeVersion, '0.2.0');
+  assert.strictEqual(status.runtimeVersion, '0.2.1');
 
   client.close();
   console.log('Manager broker runtime client contract: PASS');
