@@ -24,6 +24,7 @@ docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_SCROLLINTOVIEW_NATIVE.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_DRAG_BATCH.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_FORMS_BATCH.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_OBSERVATION_UI_BATCH.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MEDIA_BATCH.md
 ```
 
 ---
@@ -77,10 +78,17 @@ submit
 dismiss
 hoverAndObserve
 waitAndObserve
+play
+pause
+mute
+unmute
+setVolume
+seek
+changePlaybackRate
 stale-ref rejection after newer observation
 moving-target live-geometry rejection before pointer click
 drag destination live-geometry rejection before release
-form target-state rejection when observed checkbox/select state changes
+form/media target-state rejection when observed state changes
 post-action settled semantic observation for delayed dynamic UI
 Agent Cursor V0.1 pointer visualization + Observer isolation
 ```
@@ -105,6 +113,20 @@ waitAndObserve
 ```
 
 `waitAndObserve` was first native-confirmed unsupported. It is now an observation-only action with a zero-input plan and bounded semantic polling. A deliberate ~5-second delayed semantic-change gate exposed the original 800ms deadline as too short; the dedicated wait budget is now 6000ms and native retest PASSed before deadline.
+
+Media batch is **7/7 native PASS**:
+
+```text
+play
+pause
+mute
+unmute
+setVolume
+seek
+changePlaybackRate
+```
+
+`setVolume`, `seek`, and `changePlaybackRate` were first native-confirmed unsupported, then fixed together on `feat/agent-tab-context`, CI-passed, native re-tested, and selectively promoted to `main`. `setVolume` and `seek` use observed range state and held PAGE_CDP pointer travel; `changePlaybackRate` uses observed select-option semantics plus PAGE_CDP focus/keyboard selection. Naturalness remains a later Behavior-learning concern, not part of this functional gate.
 
 ---
 
@@ -200,14 +222,15 @@ Observation refs use TTL 4s and latest-observation rules. A newer observation in
 
 Target-dependent actions use narrow Runtime binding. Runtime re-reads live geometry and rejects `target_geometry_changed` instead of silently retargeting. Pointer actions re-check immediately before press where applicable. Drag additionally validates destination geometry before execution and immediately before release.
 
-Forms add narrow observed state binding:
+Observed state binding currently includes:
 
 ```text
 checkbox/radio → inputType + checked
 select         → selectedValue + selectedIndex + option metadata
+range          → rangeValue + rangeMin + rangeMax + rangeStep
 ```
 
-No text/password input values are exposed for this feature. If bound check/select state or option structure changes after OBSERVE, Runtime rejects `target_state_changed`.
+No text/password input values are exposed for these features. If bound check/select/range state changes after OBSERVE, Runtime rejects `target_state_changed`.
 
 ## Forms execution
 
@@ -218,6 +241,20 @@ setChecked
 
 selectOption
 → resolve requested semantic option from observed option metadata
+→ PAGE_CDP pointer acquire/focus
+→ Input.dispatchKeyEvent Home / ArrowDown / Enter
+```
+
+## Media execution
+
+```text
+setVolume / seek
+→ resolve requested value against observed range bounds
+→ internal current/desired track points from observed rect
+→ PAGE_CDP pointer acquire → down → held travel → up
+
+changePlaybackRate
+→ resolve requested option from observed select metadata
 → PAGE_CDP pointer acquire/focus
 → Input.dispatchKeyEvent Home / ArrowDown / Enter
 ```
@@ -261,7 +298,7 @@ Input.insertText       = text insertion semantics
 
 PAGE_CDP `Input.dispatchMouseEvent` is the source of truth for the debug cursor mirror. The overlay is telemetry only, `pointer-events:none`, isolated from Observer, and must never change execution timing.
 
-Repeated `moveTo` and other pointer tests show non-identical trajectories. This is functional diversity evidence, not natural-behavior quality PASS. Naturalness refinements remain Behavior-learning work.
+Repeated pointer/scroll/drag/range tests provide functional diversity evidence only. Naturalness refinements remain Behavior-learning work after functional coverage is closed.
 
 ---
 
@@ -273,32 +310,25 @@ Any future OS-control integration requires explicit user consent and an exclusiv
 
 ---
 
-# NEXT — Media batch
+# NEXT — multi-frame observation
 
-Run existing capabilities first on the fixed `8091` batch lab:
+Run the existing capability first on the fixed `8091` batch lab. The gate is to observe and target an interactive element inside an iframe without Strategy emitting selector/frame internals.
 
 ```text
-play
-pause
-mute
-unmute
-setVolume
-seek
-changePlaybackRate
+multi-frame observation / semantic target binding
 ```
 
-For every action:
+For the gate:
 
 ```text
-existing capability PASS → record evidence
+existing capability PASS → record evidence and continue
 existing capability FAIL → classify exact native gap
 only then fix on feat/agent-tab-context
 ```
 
-After Media, continue:
+After multi-frame, continue:
 
 ```text
-multi-frame observation
 tab lifecycle: switchTab / openNewTab / closeTab
 ```
 
@@ -311,7 +341,7 @@ No autonomous multi-step work yet.
 ```text
 focus primitive metadata cleanup
 physical-key-like text-entry variant only if a real task requires listener fidelity
-pointer/scroll/drag naturalness refinement through Behavior learning
+pointer/scroll/drag/range naturalness refinement through Behavior learning
 Browser UI/OS integration when an actual shell-control task requires it
 ```
 
