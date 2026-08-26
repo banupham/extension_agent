@@ -1,0 +1,47 @@
+{
+  "version": "0.1.0",
+  "name": "A5.3 Episode Budget + Compact Step History",
+  "input": "A5.2 control plus compact prior step history plus episode timing plus explicit budgets",
+  "defaultBudgets": {
+    "maxSteps": 8,
+    "maxDurationMs": 120000,
+    "maxConsecutiveFailures": 2,
+    "maxReplans": 6,
+    "maxStalledSteps": 3
+  },
+  "compactStepFields": [
+    "stepIndex",
+    "recordedAtMs",
+    "actionType",
+    "controlStatus",
+    "actionSucceeded",
+    "taskSucceeded",
+    "progress",
+    "progressDelta",
+    "reasonCode",
+    "errorCode",
+    "shouldReplan"
+  ],
+  "terminalPrecedence": [
+    "done",
+    "blocked",
+    "budget_exhausted",
+    "continue"
+  ],
+  "exhaustionReasonCodes": [
+    "budget_max_duration_reached",
+    "budget_max_steps_reached",
+    "budget_consecutive_failures_reached",
+    "budget_stalled_progress_reached",
+    "budget_max_replans_reached"
+  ],
+  "invariants": {
+    "choosesNextAgentAction": false,
+    "callsStrategy": false,
+    "dispatchesBrowserInput": false,
+    "enablesAutonomousMultiStep": false,
+    "storesSelectorCoordinateOrCdpPlan": false,
+    "doneOverridesBudgetExhaustion": true,
+    "blockedTerminatesImmediately": true
+  }
+}
