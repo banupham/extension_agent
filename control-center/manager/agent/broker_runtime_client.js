@@ -1,6 +1,6 @@
 'use strict';
 
-const CLIENT_VERSION = '0.1.1';
+const CLIENT_VERSION = '0.2.0';
 
 function resolveWebSocketImpl(options) {
   if (options?.WebSocketImpl) return options.WebSocketImpl;
@@ -80,10 +80,22 @@ function createBrokerRuntimeClient(options = {}) {
     });
   }
 
+  async function listTabs(scope = { mode: 'all' }) {
+    const result = await sendCommand({ action: 'agentListTabs', data: { scope } });
+    if (!result?.ok || !Array.isArray(result?.tabs)) throw new Error(result?.error || 'agent_list_tabs_failed');
+    return result.tabs;
+  }
+
   async function observe(tabId = null) {
     const result = await sendCommand({ action: 'agentObserve', tabId: Number.isInteger(Number(tabId)) ? Number(tabId) : undefined });
     if (!result?.ok || !result?.observation) throw new Error(result?.error || 'agent_observe_failed');
     return result.observation;
+  }
+
+  async function observeTabs(scope = { mode: 'visible' }) {
+    const result = await sendCommand({ action: 'agentObserveTabs', data: { scope } });
+    if (!result?.ok || !Array.isArray(result?.observations)) throw new Error(result?.error || 'agent_observe_tabs_failed');
+    return result.observations;
   }
 
   async function executePlan({ observationId, plan, tabId = null }) {
@@ -112,7 +124,9 @@ function createBrokerRuntimeClient(options = {}) {
     connect,
     close,
     sendCommand,
+    listTabs,
     observe,
+    observeTabs,
     executePlan,
     status
   };

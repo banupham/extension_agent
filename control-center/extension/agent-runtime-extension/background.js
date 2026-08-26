@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('target_registry.js', 'cdp_plan_dispatcher.js', 'broker_client.js');
+importScripts('target_registry.js', 'cdp_plan_dispatcher.js', 'broker_client.js', 'tab_context.js');
 
 const SCOPE = 'AGENT_RUNTIME_V02';
 const LEGACY_SCOPE = 'AGENT_RUNTIME_V01';
@@ -9,25 +9,11 @@ const TARGET_TTL_MS = 4000;
 const attachedTabs = new Set();
 const pointerByTab = new Map();
 const registry = AgentTargetRegistry.createRegistry({ ttlMs: TARGET_TTL_MS });
+const tabContext = AgentTabContext.createTabContext(chrome);
 let observationCounter = 0;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms || 0))));
-
-function isWebTab(tab) {
-  return Number.isInteger(Number(tab?.id)) && /^https?:/i.test(String(tab?.url || ''));
-}
-
-async function activeTab() {
-  const lastFocusedWindow = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }).catch(() => null);
-  if (Number.isInteger(Number(lastFocusedWindow?.id))) {
-    const tabs = await chrome.tabs.query({ active: true, windowId: Number(lastFocusedWindow.id) });
-    const preferred = tabs.find(isWebTab) || tabs[0];
-    if (preferred) return preferred;
-  }
-
-  const activeTabs = await chrome.tabs.query({ active: true });
-  return activeTabs.find(isWebTab) || activeTabs[0] || null;
-}
+const activeTab = () => tabContext.activeTab();
 
 async function attach(tabId) {
   if (attachedTabs.has(tabId)) return { attached: true, tabId };
@@ -128,6 +114,7 @@ async function observe(tabId) {
     observationId,
     capturedAt: Date.now(),
     expiresAt: registered.expiresAt,
+    tabId: Number(tabId),
     url: raw.url,
     title: raw.title,
     viewport: raw.viewport,
@@ -136,6 +123,22 @@ async function observe(tabId) {
     agentPointer: pointerByTab.get(tabId) || null,
     interactiveElements: registered.targets
   };
+}
+
+async function observeScopedTabs(scope = { mode: 'visible' }) {
+  const tabs = await tabContext.select(scope);
+  const maxTabs = Math.min(12, Math.max(1, Number(scope?.maxTabs || 8)));
+  const selected = tabs.slice(0, maxTabs);
+  const observations = [];
+  for (const tab of selected) {
+    try {
+      const observation = await observe(tab.id);
+      observations.push({ ok: true, tab: AgentTabContext.publicTab(tab), observation });
+    } catch (error) {
+      observations.push({ ok: false, tab: AgentTabContext.publicTab(tab), error: String(error?.message || error) });
+    }
+  }
+  return observations;
 }
 
 async function resolveTarget(tabId, action) {
@@ -265,14 +268,15 @@ async function executeNormalizedAction(tabId, action) {
 async function runtimeStatus(tabId) {
   return {
     ok: true,
-    runtimeVersion: '0.2.0',
-    architecture: 'task -> observer -> strategy -> behavior -> cdp-plan -> executor',
+    runtimeVersion: '0.2.1',
+    architecture: 'task -> browser-context -> observer -> strategy -> behavior -> cdp-plan -> executor',
     attached: attachedTabs.has(tabId),
     tabId,
     targetRegistry: registry.status(tabId),
+    tabContext: { version: '0.1.0', explicitTabPreferred: true, activeFallback: true },
     planExecution: { version: '0.1.0', allowlistedOnly: true },
     supportedActions: [
-      'agentObserve', 'agentExecutePlan', 'agentStatus',
+      'agentListTabs', 'agentObserveTabs', 'agentObserve', 'agentExecutePlan', 'agentStatus',
       'openUrl', 'reload', 'back', 'forward',
       'pressKey', 'typeText', 'moveTo', 'hover', 'click', 'doubleClick', 'focus',
       'scrollVertical', 'scrollHorizontal'
@@ -294,19 +298,27 @@ async function brokerMeta() {
   const tab = await activeTab();
   return {
     product: 'agent-runtime',
-    runtimeVersion: '0.2.0',
+    runtimeVersion: '0.2.1',
     extensionVersion: chrome.runtime.getManifest().version,
-    supportedActions: ['agentStatus', 'agentObserve', 'agentExecutePlan'],
+    supportedActions: ['agentStatus', 'agentListTabs', 'agentObserveTabs', 'agentObserve', 'agentExecutePlan'],
     activeTab: tab ? { id: tab.id, title: tab.title || '', url: tab.url || '' } : null
   };
 }
 
 async function handleBrokerCommand(payload) {
+  const action = payload?.action;
+  const data = payload?.data || {};
+
+  if (action === 'agentListTabs') {
+    return { ok: true, tabs: await tabContext.list(data.scope || { mode: 'all' }) };
+  }
+  if (action === 'agentObserveTabs') {
+    return { ok: true, observations: await observeScopedTabs(data.scope || { mode: 'visible' }) };
+  }
+
   const requestedTab = Number(payload?.tabId);
   const tab = Number.isInteger(requestedTab) ? { id: requestedTab } : await activeTab();
   if (!tab?.id) throw new Error('no_active_tab');
-  const action = payload?.action;
-  const data = payload?.data || {};
   if (action === 'agentStatus') return runtimeStatus(tab.id);
   if (action === 'agentObserve') return { ok: true, observation: await observe(tab.id) };
   if (action === 'agentExecutePlan') {
@@ -334,6 +346,8 @@ chrome.tabs.onRemoved.addListener(tabId => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (![SCOPE, LEGACY_SCOPE].includes(message?.scope)) return false;
   (async () => {
+    if (message.type === 'LIST_TABS') return { ok: true, tabs: await tabContext.list(message.scope || { mode: 'all' }) };
+    if (message.type === 'OBSERVE_TABS') return { ok: true, observations: await observeScopedTabs(message.scope || { mode: 'visible' }) };
     const tab = message.tabId ? { id: message.tabId } : await activeTab();
     if (!tab?.id) throw new Error('no_active_tab');
     if (message.type === 'STATUS') return runtimeStatus(tab.id);
