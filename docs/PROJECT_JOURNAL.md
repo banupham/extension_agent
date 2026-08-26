@@ -1,19 +1,19 @@
 # PROJECT JOURNAL — persistent engineering memory
 
-Mục đích: bộ nhớ kỹ thuật lâu dài cho `banupham/extension_agent` để cuộc trò chuyện mới có thể tiếp tục đúng mốc mà không phải điều tra lại kiến trúc, bug khó hoặc native evidence đã có.
+Mục đích: bộ nhớ kỹ thuật lâu dài cho `banupham/extension_agent` để phiên làm việc mới có thể tiếp tục đúng mốc mà không điều tra lại các bug/invariant đã biết.
 
 ```text
 STATUS.md
 → current milestone / next gate
 
 PROJECT_JOURNAL.md
-→ invariants / rationale / difficult regressions / native evidence
+→ invariants / difficult regressions / native evidence
 
 source trên main
 → implementation truth
 ```
 
-Nếu journal mâu thuẫn với source hiện tại trên `main`, source là implementation truth; sau đó cập nhật journal.
+Nếu journal mâu thuẫn source hiện tại trên `main`, source là implementation truth; sau đó cập nhật journal.
 
 ---
 
@@ -21,16 +21,16 @@ Nếu journal mâu thuẫn với source hiện tại trên `main`, source là im
 
 ```text
 1 đọc STATUS.md
-2 đọc/search PROJECT_JOURNAL.md theo component/problem
-3 fetch source/tests hiện tại trên main
+2 đọc/search PROJECT_JOURNAL.md
+3 fetch source/tests trên main
 4 test chức năng hiện có trên main trước
 5 PASS → ghi evidence và sang chức năng kế tiếp
-6 FAIL do implementation → chuyển sang nhánh thử nghiệm duy nhất
-7 sửa đúng boundary + contract/CI
-8 native browser re-test
-9 native PASS → merge main
-10 sync nhánh thử nghiệm lại từ main
-11 cập nhật STATUS/JOURNAL khi milestone/invariant thay đổi
+6 FAIL do implementation → dùng nhánh thử nghiệm duy nhất
+7 fix đúng boundary + contract/CI
+8 native re-test
+9 PASS → merge main
+10 sync nhánh thử nghiệm lại main
+11 update STATUS/JOURNAL khi milestone/invariant thay đổi
 ```
 
 Nhánh thử nghiệm duy nhất:
@@ -39,13 +39,13 @@ Nhánh thử nghiệm duy nhất:
 feat/agent-tab-context
 ```
 
-Không tạo branch mới cho từng bug. Không thêm capability/test-mode mới chỉ để dễ test.
+Không tạo branch mới cho từng bug. Không thêm capability/test-mode chỉ để dễ test.
 
-Repeated native function tests ưu tiên neutral/controlled pages; account-backed sites chỉ dùng smoke validation thưa sau khi capability đã hoạt động ở môi trường kiểm soát.
+Repeated native tests ưu tiên neutral/controlled pages; account-backed sites chỉ dùng smoke validation thưa.
 
 ---
 
-# 2. Product boundaries
+# 2. Product / execution boundaries
 
 ```text
 RECORDER
@@ -58,154 +58,51 @@ AGENT
 Task → Browser Context → Observer → Strategy → Agent Action → Behavior → CDP Plan → Executor
 ```
 
-Roles:
-
 ```text
 Strategy        = WHAT
 Behavior Policy = HOW naturally
 CDP Planner     = exact browser-native plan
 Executor        = dispatch only
-Browser Context = exact tab/frame execution identity
+Browser Context = exact tab/frame identity
 ```
 
-Scenario Mode và Agent Mode không gộp contract.
-
-Functional Agent PASS, Brain-quality PASS và natural-behavior PASS là ba milestone khác nhau.
-
----
-
-# 3. Collector stable baseline — V0.8
-
-Collector runtime `0.8.0`, raw schema `0.7.2`.
-
-Stable path:
+Hard invariant:
 
 ```text
-all-frame content capture
-→ RAW_BATCH + batchId
-→ background normalize + sessionSeq
-→ IndexedDB append/receipt dedupe
-→ localhost WebSocket mirror
-→ append-only server JSONL
-```
-
-Native gates already passed:
-
-```text
-continuous socket archive
-late-server replay
-no missing/duplicate seq
-multi-browser concurrent
-multi-tab / multi-frame
-SPA routes
-login-form observation
-credential privacy
-browser-close finalize
-session-end
-```
-
-Important architectural lesson from Agent tab debugging:
-
-```text
-Collector content-script event originates inside page
-→ Chrome sender.tab/sender.frameId supplies identity
-
-Agent broker command originates outside page
-→ no sender.tab identity
-→ Agent Runtime must explicitly resolve/hold browser context
-```
-
-Do not conflate Collector `activeTab()` helper with continuous raw capture architecture.
-
-Raw chronology:
-
-```text
-tsEpochMs  = primary global time
-pageSeq    = page-local order
-sourceSeq  = source-local order
-sessionSeq = persistence/integrity order only
-```
-
-Never sort human behavior trajectory by `sessionSeq`.
-
-Privacy boundary excludes raw password/cookie/token/Authorization/clipboard/payment/local-storage/session-storage secrets and printable human key content.
-
----
-
-# 4. A0–A3 preparation
-
-## A0 — Agent contract boundary COMPLETE
-
-Read first:
-
-```text
-control-center/AGENT_ACTION_CONTRACT.json
-control-center/manager/strategy/agent_action_contract.js
-control-center/manager/strategy/execution_behavior_contract.js
-docs/AGENT_ACTION_CDP_MAP.md
-```
-
-Invariant:
-
-```text
-Strategy does not emit selector / coordinate / CDP method.
+Strategy does not emit selector / coordinate / CDP packet.
 Behavior does not choose task intent.
 Executor does not choose strategy.
 ```
 
-## A1 — Action Window 0.1.4 COMPLETE
-
-```text
-BEFORE
-→ semantic action
-→ AFTER / mutation / route
-→ OUTCOME
-```
-
-Families include click, hover, scrollVertical/Horizontal, focus, typeText, pressKey, drag, toggle, dismiss, submit/selectOption candidates.
-
-## A2 — Behavior Feature 0.2.0 COMPLETE
-
-Derived groups include pointer path/speed/turn/correction, click hold/acquisition, hover approach+dwell+leave, vertical/horizontal wheel burst, keyboard hold/inter-key timing and target geometry.
-
-Drag remains sparse.
-
-## A3 — Empirical Behavior Baseline READY
-
-Baseline `0.1.0` stores aggregate robust quantiles only:
-
-```text
-p10 / p25 / p50 / p75 / p90
-```
-
-No literal human trajectory replay.
-
-Families:
-
-```text
-pointer-click
-pointer-hover
-scroll-vertical
-scroll-horizontal
-keyboard-text
-keyboard-key
-pointer-drag sparse fallback
-```
-
-Functional native tests may use conservative fallback behavior. That does not prove naturalness quality.
+Functional Agent PASS, Brain-quality PASS và natural-behavior PASS là ba milestone riêng.
 
 ---
 
-# 5. Agent Runtime V0.2 — browser context and observation registry
+# 3. Collector / A0–A3 stable context
 
-Read first:
+Collector V0.8 transport/capture gate đã PASS: continuous archive, late-server replay, no missing/duplicate seq, multi-browser, multi-tab/frame, SPA routes, login privacy, browser-close finalize.
+
+Important identity lesson:
 
 ```text
-control-center/extension/agent-runtime-extension/target_registry.js
-control-center/extension/agent-runtime-extension/tab_context.js
-control-center/extension/agent-runtime-extension/cdp_plan_dispatcher.js
-control-center/extension/agent-runtime-extension/background.js
+Collector content-script event
+→ sender.tab/sender.frameId supplies identity
+
+Agent broker command originates outside page
+→ no sender.tab
+→ Runtime must explicitly resolve browser context
 ```
+
+A0 Agent/Behavior boundary COMPLETE.
+A1 Action Window 0.1.4 COMPLETE.
+A2 Behavior Feature 0.2.0 COMPLETE.
+A3 empirical baseline contract READY.
+
+A3 uses aggregate robust quantiles only; no literal human trajectory replay. Functional tests may use conservative fallback and therefore do not prove naturalness.
+
+---
+
+# 4. Agent Runtime / browser context
 
 Observation identity:
 
@@ -217,60 +114,39 @@ observationId + targetRef
 → internal-only selector if available
 ```
 
-Public observation does not expose selector.
+Public observation hides selectors.
 
 Stale conditions:
 
 ```text
 new observation
 navigation/loading
-TTL expiry (currently 4 s)
+TTL expiry (4 s)
 debugger detach
 → old refs invalid
 ```
 
-Stale refs fail and require re-observation; never blind-reuse old coordinates.
+Stale refs must fail; never blind-reuse old coordinates.
 
-Known moving-target risk: current registry validates observation/ref/tab/url/interactability but does not robustly reread live geometry immediately before dispatch. When native evidence demonstrates movement, prefer reject → re-observe rather than silent Executor retarget.
+Known moving-target gap: current registry does not robustly reread live geometry immediately before dispatch. Preferred future behavior after evidence: reject → re-observe, not silent Executor retarget.
 
-Browser-context actions:
+Browser-context path native PASS:
 
 ```text
-agentStatus
 agentListTabs
-agentObserveTabs
-agentObserve
-agentExecutePlan
+switch/relist
+matching --host facebook.com
+--observe --tab facebook
+human keyword → exact tabId
 ```
 
-Scopes:
-
-```text
-active
-visible
-matching
-all
-```
-
-Human selectors such as `facebook`, hostname/title/url resolve deterministically to one internal tabId before OBSERVE. If ambiguous, reject rather than guess.
-
-Native context evidence:
-
-```text
-list tabs                         PASS
-switch active tab and relist      PASS
-matching --host facebook.com      PASS
-observe --tab facebook            PASS
-keyword → exact tabId             PASS
-```
-
-Broker note: one server listens on `127.0.0.1:3000`; multiple extension clients may share it and are routed by `agentId`. Stealth Executor and Agent Runtime are different broker clients/products, not competing TCP listeners.
+One broker listens on `127.0.0.1:3000`; multiple extension clients share it by `agentId`. Stealth Executor and Agent Runtime are separate clients/products.
 
 ---
 
-# 6. Unified CDP execution path
+# 5. Unified CDP execution path
 
-P0 functional validation must use one path:
+P0 functional validation uses one path only:
 
 ```text
 OBSERVE
@@ -282,11 +158,9 @@ OBSERVE
 → OBSERVE AFTER
 ```
 
-Do not mix direct DOM `.click()`, arbitrary `Runtime.evaluate`, Scenario/Stealth primitives or a second in-page executor into the same functional gate.
+Do not mix direct DOM `.click()`, arbitrary `Runtime.evaluate`, Scenario/Stealth primitives or a second in-page executor into the same gate.
 
-`chrome.tabs.*` is control-plane only.
-
-Dispatcher allowlist:
+Allowlist:
 
 ```text
 Input.dispatchMouseEvent
@@ -298,7 +172,7 @@ Page.getNavigationHistory
 Page.navigateToHistoryEntry
 ```
 
-Version compatibility regression already fixed:
+Plan-version regression already fixed:
 
 ```text
 planner emitted 0.1.1
@@ -306,83 +180,11 @@ runtime originally accepted 0.1.0 only
 → unsupported_cdp_plan_version
 ```
 
-Current:
-
-```text
-SUPPORTED_PLAN_VERSIONS = {0.1.0, 0.1.1}
-LATEST_PLAN_VERSION = 0.1.1
-```
+Current dispatcher accepts `0.1.0` and `0.1.1`; planner emits `0.1.1`.
 
 ---
 
-# 7. CDP Planner 0.1.1
-
-Pointer click:
-
-```text
-sample target point
-→ curved approach
-→ optional micro-correction
-→ dwell
-→ press
-→ hold
-→ release
-```
-
-DoubleClick:
-
-```text
-press/release clickCount=1
-→ inter-click gap
-→ press/release clickCount=2
-```
-
-Hover = pointer approach + optional dwell.
-
-Scroll vertical/horizontal = axis-specific multi-event `mouseWheel` burst.
-
-Typing currently uses per-character `Input.insertText` with timing; listener fidelity remains a native question.
-
-Known gaps:
-
-```text
-keyCombo modifiers incomplete
-moving-target geometry revalidation incomplete
-drag/slider sparse
-multi-frame Agent observation missing
-post-action semantic outcome incomplete on some overlays
-```
-
----
-
-# 8. A4 one-action bridge
-
-Manager path:
-
-```text
-control-center/manager/agent/broker_runtime_client.js
-control-center/manager/agent/one_action_bridge.js
-control-center/script/agent_one_action.js
-```
-
-Decision order:
-
-```text
-resolve browser context once
-→ OBSERVE
-→ Brain/harness decide one action
-→ map action
-→ sample behavior
-→ build CDP plan
-→ execute bound to tabId + observationId
-→ OBSERVE AFTER same tab
-```
-
-No autonomous multi-step loop yet.
-
----
-
-# 9. Native milestone — semantic basic click PASS
+# 6. Native milestone — semantic basic click PASS
 
 Command:
 
@@ -393,34 +195,21 @@ node script/agent_one_action.js --type click --label "Thông báo" --tab faceboo
 Evidence:
 
 ```text
-resolved Facebook tab
-selectedTarget.role = button
-selectedTarget.label = Thông báo
+semantic target selected correctly
 cdpPlanVersion = 0.1.1
 execution.ok = true
-observationInvalidated = true
-beforeObservationId != afterObservationId
+observation invalidated
+OBSERVE AFTER new observation
+human visual confirmation: notification panel opened
 ```
 
-Human visual confirmation: Facebook notification panel actually opened.
-
-Classification:
-
-```text
-basic semantic native click executor = PASS
-```
-
-Do not overclaim: notification-panel contents were not fully surfaced by OBSERVE AFTER; this is observer/outcome fidelity, not click failure. Brain reasoning, autonomous planning and naturalness were not tested by this pass.
+Post-click observer did not expose full notification contents; classify as observer/outcome fidelity, not click-executor failure.
 
 ---
 
-# 10. Native milestone — vertical page scroll PASS
+# 7. Native milestone — vertical scroll PASS
 
-Controlled page:
-
-```text
-https://en.wikipedia.org/wiki/Web_browser
-```
+Controlled page: `https://en.wikipedia.org/wiki/Web_browser`
 
 Command:
 
@@ -428,143 +217,136 @@ Command:
 node script/agent_one_action.js --type scrollVertical --direction 1 --host en.wikipedia.org --full
 ```
 
-Original existing function returned successful CDP dispatch but no meaningful visible movement.
-
-Two implementation problems were found:
+Original functional failure had two causes:
 
 ```text
-previous agentPointer could anchor generic wheel over a nested/control surface
-missing behavior metrics were coerced through Number(null) into zero-like values
+previous agentPointer could anchor generic wheel on nested/control surface
+missing metrics passed Number(null) → zero-like values
 ```
 
-Correct semantics:
+Fix:
 
 ```text
 generic page wheel anchor = viewport center
-missing/empty metric = null/absent
-planner fallback ≈ duration 220 ms / 4 events / 480 requested total delta
+missing metric stays null/absent
+fallback ≈ 220 ms / 4 wheel events / ~480 requested delta
 ```
 
-Native PASS evidence:
+Native evidence:
 
 ```text
 before.scroll.y = 0
 after.scroll.y  = 388
-same observed element moved by exactly 388 px
+same observed element moved exactly 388 px
 ```
 
-PR/CI:
-
-```text
-PR:          #5
-workflow:    runtime-syntax
-run:         32924626320
-result:      SUCCESS
-merge:       21018224496dad3208c04a0a324fdcf7748c218b
-```
-
-This proves functional scrolling only, not human-like scroll quality.
+PR #5 runtime-syntax SUCCESS. Functional PASS only, not naturalness.
 
 ---
 
-# 11. Native milestone — hover without click PASS
-
-Controlled page:
-
-```text
-https://en.wikipedia.org/wiki/Web_browser
-```
-
-Command:
+# 8. Native milestone — hover PASS
 
 ```bat
 node script/agent_one_action.js --type hover --label "Browser market" --host en.wikipedia.org --full
 ```
 
-Human-visible evidence:
+Human-visible evidence: Agent hover reached target; no click; no navigation.
 
-```text
-Agent hover position reached Browser market
-no click side effect
-no navigation
-page remained Web browser - Wikipedia
-```
-
-Classification:
-
-```text
-hover existing function = NATIVE PASS
-```
-
-CDP pointer input does not move the OS/native cursor, so a correct hover can be visually hard to verify when a target has no hover styling.
+Important observability fact: CDP pointer input does not move the OS cursor, so hover can be invisible when target styling has no hover state.
 
 ---
 
-# 12. Native milestone — horizontal page scroll PASS
+# 9. Native milestone — horizontal scroll PASS
 
-Controlled page:
-
-```text
-http://127.0.0.1:8088/
-title = Agent Horizontal Scroll Test
-```
-
-Command:
+Controlled page: `http://127.0.0.1:8088/`
 
 ```bat
 node script/agent_one_action.js --type scrollHorizontal --direction 1 --url-includes 127.0.0.1:8088 --full
 ```
 
-Mapped/behavior evidence:
+Evidence:
 
 ```text
-actionType = scrollHorizontal
 behaviorFamily = scroll-horizontal
-behavior.profile = conservative-fallback
-baselineVersion = null
+4 × mouseWheel
+viewport-center anchor = (683, 320.5)
+deltaX > 0, deltaY = 0
+execution.ok = true
+before.scroll = {x:0,y:0}
+after.scroll  = {x:388,y:0}
+human visual confirmation: horizontal track moved clearly
 ```
 
-CDP evidence:
+---
+
+# 10. Native milestone — doubleClick PASS
+
+Controlled page: `http://127.0.0.1:8089/`
+
+Command:
+
+```bat
+node script/agent_one_action.js --type doubleClick --label "Double Click Target" --url-includes 127.0.0.1:8089 --full
+```
+
+Before observation:
+
+```text
+ref = e0
+label = Double Click Target
+focusedRef = null
+```
+
+Exact native CDP sequence after pointer approach:
+
+```text
+mousePressed  clickCount=1
+→ 10 ms
+mouseReleased clickCount=1
+→ 90 ms inter-click gap
+mousePressed  clickCount=2
+→ 10 ms
+mouseReleased clickCount=2
+```
+
+Execution:
 
 ```text
 cdpPlanVersion = 0.1.1
-4 × Input.dispatchMouseEvent(mouseWheel)
-wheel anchor = viewport center = (683, 320.5)
-deltaX values ≈ 91.67, 148.33, 148.33, 91.67
-deltaY = 0 for every event
+stepCount = 15
+resultCount = 15
 execution.ok = true
-stepCount = 4
-resultCount = 4
 observationInvalidated = true
+beforeObservationId != afterObservationId
 ```
 
-Observer evidence:
+After observation:
 
 ```text
-before.scroll = {x: 0,   y: 0}
-after.scroll  = {x: 388, y: 0}
+same ref = e0
+label = Agent Double Click PASS
+focusedRef = e0
+agentPointer = target position
 ```
 
-Human visual confirmation: the horizontal test track visibly moved in the requested left-to-right scroll direction by roughly 2/3 of the visible test distance.
+Human visual confirmation: button text changed to `Agent Double Click PASS`.
 
 Classification:
 
 ```text
-horizontal scroll existing function = NATIVE PASS
+doubleClick existing function = NATIVE PASS
 ```
 
-The same fallback semantics fixed for vertical scroll also work for horizontal axis. This proves functional axis-specific wheel execution, not naturalness quality.
+Important distinction: fallback Behavior reported `holdMs=0`; Planner clamps each press hold to minimum 10 ms and uses 90 ms inter-click fallback. This proves functional browser doubleClick behavior, not timing naturalness.
 
 ---
 
-# 13. Scheduled observability tool — Agent Cursor Debug Overlay
+# 11. Scheduled observability tool — Agent Cursor Debug Overlay
 
-After the current functional matrix is complete, implement a visible debug cursor that mirrors the pointer events actually dispatched by Agent Runtime.
-
-Required boundary:
+After current functional matrix, implement a debug-only cursor mirroring actually dispatched pointer events.
 
 ```text
-CDP plan / Runtime dispatch = source of truth for browser input
+CDP plan / Runtime dispatch = source of truth
                  ↓ mirror only
 Agent Cursor overlay        = visualization / telemetry only
 ```
@@ -572,147 +354,86 @@ Agent Cursor overlay        = visualization / telemetry only
 Requirements:
 
 ```text
-consume exact dispatched mouse-event x/y and timing
-mirror mouseMoved / pressed / released / wheel state
-never generate browser input
-never choose or retarget an element
+mirror exact x/y + timing
+mirror moved/pressed/released/wheel states
+never generate input or choose/retarget target
 never alter Strategy / Behavior / CDP plan / registry
 pointer-events:none
-must not appear as an Observer interactive target
+must not appear as Observer target
 prefer isolated extension Shadow DOM
 ```
 
-This is scheduled **after functional matrix completion**. It is not a new execution capability and must not be used to decide whether current input succeeds.
-
 ---
 
-# 14. Current native matrix
+# 12. Current native matrix / next gate
 
 ```text
 tab inventory / matching          PASS
 human keyword tab resolve         PASS
 observe by keyword                PASS
 semantic target selection         PASS
-basic click dispatch 0.1.1        PASS
-visible click effect              PASS
-observation invalidation          PASS
-OBSERVE AFTER                     PASS
-vertical page scroll              PASS
-hover without click               PASS
-horizontal page scroll            PASS
+basic click                       PASS
+OBSERVE AFTER / invalidation      PASS
+vertical scroll                   PASS
+hover                             PASS
+horizontal scroll                 PASS
+doubleClick                       PASS
 
-NEXT existing function:
-doubleClick on controlled safe target
+NEXT:
+focus on controlled editable target
 
 THEN:
-focus
-typeText
+typeText with non-sensitive text
 back / forward
 
 AFTER FUNCTIONAL MATRIX:
 Agent Cursor Debug Overlay
 
-LATER invariant/evidence gates:
+LATER:
 stale-ref rejection via existing interfaces
 moving-target rejection/reobserve
 post-action semantic outcome fidelity
 keyboard listener fidelity
 ```
 
-Do not start autonomous multi-step tasks yet.
+No autonomous multi-step yet.
 
 ---
 
-# 15. Safety boundary
-
-CAPTCHA/human verification:
+# 13. Persistent architectural decisions
 
 ```text
-observe
-→ blocked / human_verification_required
-→ no automatic solve/bypass
-→ no blind retry loop
-```
-
-Human login demonstrations may contribute timing/semantic operation classes but never credential content.
-
----
-
-# 16. Architectural decisions
-
-```text
-D001 Scenario Mode and Agent Mode stay separate
-D002 Recorder and Training Collector are different products
-D003 Physical raw stays un-derived
-D004 DOM semantics are core; physical data supplements behavior
-D005 Correlate physical↔semantic near capture time
-D006 Mutation uses bursts
-D007 IndexedDB is browser-side raw persistence
-D008 Manual/download export is fallback only
-D009 RAW_BATCH retries are idempotent through receipts
-D010 Natural Execution is a separate layer
-D011 Hover may be semantic action with outcome
-D012 Raw and resolved targets coexist
-D013 sessionSeq is persistence order, not chronology
-D014 hover-preview is derived offline
-D015 CAPTCHA is Agent boundary condition
-D016 Frame identity is composite
-D017 all-frame Collector does not imply multi-frame Agent runtime
-D018 SPA route change requires semantic re-anchor
-D019 Stream silence must be observable
-D020 Socket mirror is post-persist transport
-D021 Socket resume uses server durable sequence
-D022 Server tolerates duplicates and rejects gaps
-D023 Socket disconnect is not immediate session end
-D024 Continuous JSONL is preferred development archive
-D025 Socket protocol requires integration CI
-D026 Agent has its own semantic Action Contract
 D027 CDP is Agent in-page execution standard
 D028 Agent execution = Action → Behavior → CDP Plan → Executor
 D029 Human demos define distributions/context, not literal replay
-D030 Derived cleanup never mutates raw Collector truth
-D031 A1 preserves safe physical facts required by A2
-D032 Native descriptor field names are contract facts
 D033 Stale targetRef triggers re-observation
-D034 Hover windows embed bounded pointer approach/leave
-D035 Strategy and Behavior eligibility are separate
-D036 A2 is deterministic derived feature layer
-D037 Sparse families remain explicitly sparse
 D038 Brain sees semantics, not internal selectors
 D039 Agent target refs are observation-bound
-D040 Agent Runtime connects directly to broker; no Scenario proxy
+D040 Agent Runtime connects directly to broker
 D041 External CDP plans are allowlisted
 D042 Brain decides only after OBSERVE and one action per loop
 D043 Focus reuses pointer-click HOW distribution
-D044 DoubleClick requires two native press/release cycles
-D045 Browser context is first-class; user selector resolves once to tabId
-D046 Multiple broker extension clients share port 3000 by agentId routing
+D044 DoubleClick requires two real press/release cycles
+D045 Browser context is first-class; human selector resolves once to exact tabId
+D046 Multiple broker clients share port 3000 by agentId routing
 D047 Dispatcher accepts planner 0.1.1 and retains 0.1.0 compatibility
-D048 Functional Agent, Brain quality and natural behavior are separate gates
-D049 Visible UI effect may validate executor even with incomplete semantic outcome capture
-D050 Native functional validation tests existing capabilities on main first
+D048 Functional Agent / Brain quality / natural behavior are separate gates
+D049 Visible UI effect can validate executor even with incomplete semantic outcome capture
+D050 Test existing capability on main before implementation changes
 D051 Implementation failures use one reusable experiment branch
-D052 P0 in-page functional validation uses one unified CDP path
+D052 P0 in-page validation uses one unified CDP path
 D053 Repeated tests prefer neutral/controlled pages
-D054 Missing empirical metrics remain absent/null; do not coerce null to numeric zero
-D055 Generic page scroll anchors at viewport center; nested/targeted scroll is separate
-D056 Horizontal page scroll uses the same conservative fallback semantics with deltaX only and is native validated
-D057 Agent Cursor is scheduled after the functional matrix and is mirror-only telemetry, never an input source
+D054 Missing empirical metrics remain null/absent, never accidental numeric zero
+D055 Generic page scroll anchors at viewport center
+D056 Horizontal scroll uses axis-specific deltaX and is native validated
+D057 Agent Cursor is scheduled after functional matrix and is mirror-only telemetry
+D058 DoubleClick two-cycle CDP sequence is browser-native validated with semantic outcome
 ```
 
 ---
 
-# 17. Maintenance rule
+# 14. Safety / maintenance
 
-Journal only difficult facts that a future session must not rediscover:
+CAPTCHA/human verification remains blocked; no automatic solve/bypass/blind retry. Never collect/train credentials, passwords, cookies, tokens, clipboard or payment secrets.
 
-```text
-what is already PASS?
-what command/evidence proved it?
-what is deliberately NOT claimed?
-what bug/regression was discovered?
-what invariant/fix resolved it?
-what is the next smallest native gate?
-```
-
-Do not log every commit.
+Journal only facts future sessions should not rediscover: what passed, exact evidence, what is not claimed, difficult bug root cause, invariant/fix, and next smallest native gate.
