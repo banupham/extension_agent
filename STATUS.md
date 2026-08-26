@@ -41,6 +41,7 @@ OBSERVE AFTER / invalidation             PASS
 vertical page scroll                     PASS
 hover without click                      PASS
 horizontal page scroll                   PASS
+doubleClick two-cycle native behavior    PASS
 ```
 
 Functional Agent PASS không đồng nghĩa Brain-quality PASS hoặc natural-behavior PASS.
@@ -97,7 +98,7 @@ Behavior does NOT choose task intent.
 Executor does NOT choose strategy.
 ```
 
-`tabId` là internal execution identity. Human-facing selector (keyword/hostname/title/url) được resolve một lần thành exact tabId trước OBSERVE và reuse cho EXECUTE + OBSERVE AFTER.
+`tabId` là internal execution identity. Human-facing selector (keyword/hostname/title/url) resolve một lần thành exact tabId trước OBSERVE và reuse cho EXECUTE + OBSERVE AFTER.
 
 CDP là standard in-page execution path. `chrome.tabs.*` chỉ là control-plane.
 
@@ -105,7 +106,7 @@ CDP là standard in-page execution path. `chrome.tabs.*` chỉ là control-plane
 
 # CDP / Runtime baseline
 
-Planner hiện tại:
+Planner:
 
 ```text
 cdpPlanVersion = 0.1.1
@@ -146,7 +147,6 @@ navigate / reload
 Known fidelity gaps:
 
 ```text
-doubleClick still needs native validation
 keyCombo modifiers incomplete
 Input.insertText listener fidelity not yet proven
 moving-target geometry revalidation not robust
@@ -185,7 +185,7 @@ beforeObservationId != afterObservationId
 human visual confirmation: notification panel opened
 ```
 
-Post-click observer chưa expose đầy đủ nội dung notification panel; đây là observer/outcome-fidelity issue, không phải click-executor failure.
+Post-click observer chưa expose đầy đủ notification-panel contents; classify separately as observer/outcome fidelity.
 
 ---
 
@@ -203,81 +203,42 @@ Command:
 node script/agent_one_action.js --type scrollVertical --direction 1 --host en.wikipedia.org --full
 ```
 
-Initial `main` functional failure có hai nguyên nhân:
+Initial implementation failure:
 
 ```text
-1. Missing empirical metrics bị Number(null) → 0-like values
-   → fallback scroll collapse gần như 1 px.
-
-2. Generic page scroll inherited prior pointer position
-   → wheel có thể nằm trên nested/control surface thay vì page body.
+missing empirical metrics: Number(null) → zero-like fallback
+previous agentPointer could anchor generic wheel over nested/control surface
 ```
 
 Fix merged PR #5:
 
 ```text
-missing metric remains null
-→ planner fallback activates
-→ fallback ≈ 4 wheel events / ~480 px requested burst
-
-generic page scroll
-→ wheel anchor = viewport center
+missing metric remains null → planner fallback activates
+generic page scroll → viewport-center wheel anchor
+fallback ≈ 4 wheel events / ~480 px requested burst
 ```
 
-Native PASS evidence:
+Native evidence:
 
 ```text
-after.scroll.y = 388
-same observed element e405:
-  before rect.y = 5500.015625
-  after  rect.y = 5112.015625
-  difference    = 388 px
+before.scroll.y = 0
+after.scroll.y  = 388
+same observed element moved exactly 388 px
 ```
 
-CI/merge:
-
-```text
-PR:          #5
-workflow:    runtime-syntax
-run:         32924626320
-result:      SUCCESS
-merge:       21018224496dad3208c04a0a324fdcf7748c218b
-```
-
-This proves functional scrolling, not human-like scroll quality.
+PR #5 / runtime-syntax run 32924626320 = SUCCESS.
 
 ---
 
-# Native evidence — hover without click PASS
-
-Controlled surface:
-
-```text
-https://en.wikipedia.org/wiki/Web_browser
-```
-
-Command:
+# Native evidence — hover PASS
 
 ```bat
 node script/agent_one_action.js --type hover --label "Browser market" --host en.wikipedia.org --full
 ```
 
-Human visual confirmation:
+Human visual confirmation: Agent pointer logic reached `Browser market`, with no click and no navigation.
 
-```text
-Agent pointer logic reached Browser market
-no click occurred
-no navigation occurred
-page remained Web browser - Wikipedia
-```
-
-Classification:
-
-```text
-hover existing function = NATIVE PASS
-```
-
-CDP mouse events do not move the OS/native cursor, so correct hover may be visually hard to verify on targets without hover styling.
+CDP mouse input does not move the OS cursor; a correct hover may be visually hard to see when target styling has no hover state.
 
 ---
 
@@ -296,46 +257,89 @@ Command:
 node script/agent_one_action.js --type scrollHorizontal --direction 1 --url-includes 127.0.0.1:8088 --full
 ```
 
-Plan evidence:
+Evidence:
 
 ```text
-actionType = scrollHorizontal
 behaviorFamily = scroll-horizontal
-behavior.profile = conservative-fallback
-cdpPlanVersion = 0.1.1
 4 × Input.dispatchMouseEvent(mouseWheel)
-wheel point = viewport center (683, 320.5)
-deltaX > 0 for all four events
-deltaY = 0 for all four events
+wheel anchor = viewport center = (683, 320.5)
+deltaX > 0, deltaY = 0
 execution.ok = true
-stepCount = resultCount = 4
-observationInvalidated = true
+before.scroll = {x:0, y:0}
+after.scroll  = {x:388, y:0}
+human visual confirmation: horizontal track moved clearly
 ```
 
-Observer evidence:
+---
+
+# Native evidence — doubleClick PASS
+
+Controlled surface:
 
 ```text
-before.scroll = {x: 0,   y: 0}
-after.scroll  = {x: 388, y: 0}
+http://127.0.0.1:8089/
+title = Agent Double Click PASS
 ```
 
-Human visual confirmation: controlled horizontal track moved left-to-right direction by roughly 2/3 of the visible test distance.
+Command:
+
+```bat
+node script/agent_one_action.js --type doubleClick --label "Double Click Target" --url-includes 127.0.0.1:8089 --full
+```
+
+Target / outcome:
+
+```text
+before:
+  ref = e0
+  label = Double Click Target
+  focusedRef = null
+
+after:
+  same ref = e0
+  label = Agent Double Click PASS
+  focusedRef = e0
+```
+
+CDP sequence:
+
+```text
+pointer approach mouseMoved events
+→ mousePressed  clickCount=1
+→ 10 ms
+→ mouseReleased clickCount=1
+→ 90 ms inter-click gap
+→ mousePressed  clickCount=2
+→ 10 ms
+→ mouseReleased clickCount=2
+```
+
+Execution evidence:
+
+```text
+cdpPlanVersion = 0.1.1
+stepCount = 15
+resultCount = 15
+execution.ok = true
+observationInvalidated = true
+beforeObservationId != afterObservationId
+```
+
+Human visual confirmation: button changed to `Agent Double Click PASS`.
 
 Classification:
 
 ```text
-horizontal scroll existing function = NATIVE PASS
+doubleClick existing function = NATIVE PASS
 ```
 
-This proves functional horizontal wheel execution only, not natural human scroll quality.
+Note: fallback Behavior reported `holdMs=0`, while Planner minimum clamp produced 10 ms press holds. Functional behavior is validated; naturalness/timing quality remains a later gate.
 
 ---
 
 # Scheduled after current functional matrix — Agent Cursor Debug Overlay
 
-After the existing P0/A4 function matrix is complete, add a debug-only visible Agent cursor to mirror actual dispatched pointer events.
-
-Boundary:
+After current P0/A4 function matrix, add a debug-only visible Agent cursor that mirrors actual pointer events dispatched by Runtime.
 
 ```text
 CDP plan / Runtime dispatch = input source of truth
@@ -343,24 +347,13 @@ CDP plan / Runtime dispatch = input source of truth
 Agent Cursor overlay        = visualization / telemetry only
 ```
 
-Requirements:
-
-```text
-mirror exact dispatched x/y + timing
-never generate input or choose targets
-never modify Strategy / Behavior / CDP plan
-pointer-events:none
-must not become an Observer target
-ideally isolated in extension Shadow DOM
-```
-
-This is scheduled observability tooling, not part of the current functional gate.
+Requirements: mirror exact x/y/timing, never generate input/retarget/modify Strategy or Behavior, `pointer-events:none`, must not become Observer target, prefer extension Shadow DOM.
 
 ---
 
 # NEXT — existing function only
 
-Start again from `main`.
+Start from `main`.
 
 ```text
 DONE:
@@ -369,14 +362,14 @@ observe semantic targets
 basic click
 OBSERVE AFTER / invalidation
 vertical scroll
-hover without click
+hover
 horizontal scroll
+doubleClick
 
 NEXT:
-doubleClick on a controlled safe target
+focus on a controlled editable target
 
 THEN:
-focus
 type non-sensitive text
 back / forward
 
@@ -411,13 +404,4 @@ modifier-aware keyCombo
 
 # Safety / privacy
 
-CAPTCHA/human verification:
-
-```text
-status=blocked
-reasonCode=human_verification_required
-no automatic solve/bypass
-no blind retry loop
-```
-
-Never collect/train credential/password/cookie/token/clipboard/payment-secret content.
+CAPTCHA/human verification remains blocked; no automatic solve/bypass or blind retry. Never collect/train credential/password/cookie/token/clipboard/payment-secret content.
