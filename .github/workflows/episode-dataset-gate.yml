@@ -7,11 +7,13 @@ on:
     paths:
       - 'control-center/EPISODE_OUTCOME_DATASET_CONTRACT.json'
       - 'control-center/manager/training/episode_outcome_dataset.js'
+      - 'control-center/manager/training/episode_dataset_export.js'
       - 'control-center/manager/strategy/contracts.js'
       - 'control-center/manager/strategy/agent_action_contract.js'
       - 'control-center/AGENT_ACTION_CONTRACT.json'
       - 'control-center/script/episode_outcome_dataset_gate.js'
       - 'control-center/script/checks/episode_outcome_dataset.js'
+      - 'control-center/script/checks/episode_dataset_export.js'
       - '.github/workflows/episode-dataset-gate.yml'
   workflow_dispatch:
 
@@ -26,9 +28,13 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check control-center/manager/training/episode_outcome_dataset.js
+          node --check control-center/manager/training/episode_dataset_export.js
           node --check control-center/script/episode_outcome_dataset_gate.js
           node --check control-center/script/checks/episode_outcome_dataset.js
+          node --check control-center/script/checks/episode_dataset_export.js
       - name: Validate dataset contract JSON
         run: node -e "JSON.parse(require('fs').readFileSync('control-center/EPISODE_OUTCOME_DATASET_CONTRACT.json','utf8'))"
       - name: Run episode/outcome dataset contract
         run: node control-center/script/checks/episode_outcome_dataset.js
+      - name: Run episode split/export contract
+        run: node control-center/script/checks/episode_dataset_export.js
