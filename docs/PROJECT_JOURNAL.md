@@ -1,6 +1,6 @@
 # PROJECT JOURNAL — persistent engineering memory
 
-Mục đích: bộ nhớ kỹ thuật lâu dài cho `banupham/extension_agent` để phiên làm việc mới có thể tiếp tục đúng mốc mà không điều tra lại các bug/invariant đã biết.
+Mục đích: bộ nhớ kỹ thuật lâu dài cho `banupham/extension_agent` để phiên làm việc mới tiếp tục đúng mốc mà không điều tra lại các bug/invariant đã biết.
 
 ```text
 STATUS.md
@@ -78,7 +78,7 @@ Functional Agent PASS, Brain-quality PASS và natural-behavior PASS là ba miles
 
 ---
 
-# 3. Collector / A0–A3 stable context
+# 3. Stable context before P0 native validation
 
 Collector V0.8 transport/capture gate đã PASS: continuous archive, late-server replay, no missing/duplicate seq, multi-browser, multi-tab/frame, SPA routes, login privacy, browser-close finalize.
 
@@ -140,7 +140,7 @@ matching --host facebook.com
 human keyword → exact tabId
 ```
 
-One broker listens on `127.0.0.1:3000`; multiple extension clients share it by `agentId`. Stealth Executor and Agent Runtime are separate clients/products.
+One broker listens on `127.0.0.1:3000`; multiple extension clients share it by `agentId`.
 
 ---
 
@@ -186,32 +186,19 @@ Current dispatcher accepts `0.1.0` and `0.1.1`; planner emits `0.1.1`.
 
 # 6. Native milestone — semantic basic click PASS
 
-Command:
-
 ```bat
 node script/agent_one_action.js --type click --label "Thông báo" --tab facebook
 ```
 
-Evidence:
+Evidence: semantic target correct, CDP 0.1.1, execution ok, observation invalidated + re-observed, human visual confirmation notification panel opened.
 
-```text
-semantic target selected correctly
-cdpPlanVersion = 0.1.1
-execution.ok = true
-observation invalidated
-OBSERVE AFTER new observation
-human visual confirmation: notification panel opened
-```
-
-Post-click observer did not expose full notification contents; classify as observer/outcome fidelity, not click-executor failure.
+Post-click observer did not expose full notification contents; observer/outcome fidelity is separate from click execution.
 
 ---
 
 # 7. Native milestone — vertical scroll PASS
 
 Controlled page: `https://en.wikipedia.org/wiki/Web_browser`
-
-Command:
 
 ```bat
 node script/agent_one_action.js --type scrollVertical --direction 1 --host en.wikipedia.org --full
@@ -252,7 +239,7 @@ node script/agent_one_action.js --type hover --label "Browser market" --host en.
 
 Human-visible evidence: Agent hover reached target; no click; no navigation.
 
-Important observability fact: CDP pointer input does not move the OS cursor, so hover can be invisible when target styling has no hover state.
+CDP pointer input does not move the OS cursor, so hover can be invisible when target styling has no hover state.
 
 ---
 
@@ -283,65 +270,111 @@ human visual confirmation: horizontal track moved clearly
 
 Controlled page: `http://127.0.0.1:8089/`
 
-Command:
-
 ```bat
 node script/agent_one_action.js --type doubleClick --label "Double Click Target" --url-includes 127.0.0.1:8089 --full
 ```
 
-Before observation:
-
-```text
-ref = e0
-label = Double Click Target
-focusedRef = null
-```
-
-Exact native CDP sequence after pointer approach:
+Exact native sequence after pointer approach:
 
 ```text
 mousePressed  clickCount=1
-→ 10 ms
 mouseReleased clickCount=1
 → 90 ms inter-click gap
 mousePressed  clickCount=2
-→ 10 ms
 mouseReleased clickCount=2
 ```
 
-Execution:
-
-```text
-cdpPlanVersion = 0.1.1
-stepCount = 15
-resultCount = 15
-execution.ok = true
-observationInvalidated = true
-beforeObservationId != afterObservationId
-```
-
-After observation:
-
-```text
-same ref = e0
-label = Agent Double Click PASS
-focusedRef = e0
-agentPointer = target position
-```
-
-Human visual confirmation: button text changed to `Agent Double Click PASS`.
-
-Classification:
-
-```text
-doubleClick existing function = NATIVE PASS
-```
-
-Important distinction: fallback Behavior reported `holdMs=0`; Planner clamps each press hold to minimum 10 ms and uses 90 ms inter-click fallback. This proves functional browser doubleClick behavior, not timing naturalness.
+After observation: same ref `e0`, label changed to `Agent Double Click PASS`, `focusedRef=e0`. Human visual confirmation matched. Functional PASS; timing naturalness remains later.
 
 ---
 
-# 11. Scheduled observability tool — Agent Cursor Debug Overlay
+# 11. Native milestone — focus PASS
+
+Controlled page: `http://127.0.0.1:8090/`
+
+```bat
+node script/agent_one_action.js --type focus --label "Focus Target" --url-includes 127.0.0.1:8090 --full
+```
+
+Evidence:
+
+```text
+input rect = x 68..588, y 68..149
+final click = (302.34, 80.12), inside hit-box
+before.focusedRef = null
+after.focusedRef  = e0
+label changed Focus Target → Focused Input
+human visual confirmation: FOCUS PASS
+```
+
+Functional gate requires valid interior hit + real focus. Exact click-point naturalness/safe-margin is later Behavior/robustness work.
+
+Contract drift discovered:
+
+```text
+mappedAction.cdpPrimitives = Runtime.callFunctionOn|DOM.focus
+actual CDP plan = Input.dispatchMouseEvent mouseMoved/pressed/released
+```
+
+Execution truth is the plan. Track mapping cleanup separately; it did not cause functional failure.
+
+---
+
+# 12. Native milestone — typeText PASS
+
+Controlled page reused focused input: `http://127.0.0.1:8090/`
+
+```bat
+node script/agent_one_action.js --type typeText --text "Agent typing PASS 123" --url-includes 127.0.0.1:8090 --full
+```
+
+Evidence:
+
+```text
+actionType = typeText
+behaviorFamily = keyboard-text
+behavior.profile = conservative-fallback
+cdpPlanVersion = 0.1.1
+21 characters → 21 Input.insertText steps
+first delay = 0 ms
+fallback inter-character delay = 80 ms
+execution.ok = true
+stepCount = resultCount = 21
+observationInvalidated = true
+before.focusedRef = e0
+after.focusedRef  = e0
+human visual confirmation: exact text "Agent typing PASS 123" appeared
+```
+
+Observer currently does not expose input value; label remained `Focused Input`. UI + execution evidence is sufficient for functional insertion PASS.
+
+Do not overclaim: `Input.insertText` does not prove physical keyboard listener fidelity. `keydown/keyup` semantics remain a separate later gate.
+
+---
+
+# 13. Navigation gap discovered before native back/forward gate
+
+Action Contract / metadata already include:
+
+```text
+back    → Page.getNavigationHistory + Page.navigateToHistoryEntry
+forward → Page.getNavigationHistory + Page.navigateToHistoryEntry
+```
+
+But current `control-center/manager/execution/cdp_plan.js` `buildCdpPlan()` only has explicit navigation cases for:
+
+```text
+navigate
+reload
+```
+
+There is no `back` or `forward` plan case on current `main`, so source predicts `cdp_plan_unsupported:back|forward` before Runtime dispatch.
+
+Per project rule, do not fix preemptively: native-confirm `back` on `main`; if it fails as predicted, that is an implementation failure and the fix belongs on reusable branch `feat/agent-tab-context`.
+
+---
+
+# 14. Scheduled observability tool — Agent Cursor Debug Overlay
 
 After current functional matrix, implement a debug-only cursor mirroring actually dispatched pointer events.
 
@@ -351,21 +384,11 @@ CDP plan / Runtime dispatch = source of truth
 Agent Cursor overlay        = visualization / telemetry only
 ```
 
-Requirements:
-
-```text
-mirror exact x/y + timing
-mirror moved/pressed/released/wheel states
-never generate input or choose/retarget target
-never alter Strategy / Behavior / CDP plan / registry
-pointer-events:none
-must not appear as Observer target
-prefer isolated extension Shadow DOM
-```
+Requirements: mirror exact x/y + timing and moved/pressed/released/wheel states; never generate input, choose/retarget targets, or alter Strategy/Behavior/CDP/registry; `pointer-events:none`; must not appear as Observer target; prefer isolated extension Shadow DOM.
 
 ---
 
-# 12. Current native matrix / next gate
+# 15. Current native matrix / next gate
 
 ```text
 tab inventory / matching          PASS
@@ -378,13 +401,15 @@ vertical scroll                   PASS
 hover                             PASS
 horizontal scroll                 PASS
 doubleClick                       PASS
+focus                             PASS
+typeText                          PASS
 
 NEXT:
-focus on controlled editable target
+back on controlled local history surface
+→ native-confirm current main behavior
 
 THEN:
-typeText with non-sensitive text
-back / forward
+forward
 
 AFTER FUNCTIONAL MATRIX:
 Agent Cursor Debug Overlay
@@ -394,13 +419,14 @@ stale-ref rejection via existing interfaces
 moving-target rejection/reobserve
 post-action semantic outcome fidelity
 keyboard listener fidelity
+focus primitive metadata cleanup
 ```
 
 No autonomous multi-step yet.
 
 ---
 
-# 13. Persistent architectural decisions
+# 16. Persistent architectural decisions
 
 ```text
 D027 CDP is Agent in-page execution standard
@@ -409,13 +435,11 @@ D029 Human demos define distributions/context, not literal replay
 D033 Stale targetRef triggers re-observation
 D038 Brain sees semantics, not internal selectors
 D039 Agent target refs are observation-bound
-D040 Agent Runtime connects directly to broker
 D041 External CDP plans are allowlisted
 D042 Brain decides only after OBSERVE and one action per loop
 D043 Focus reuses pointer-click HOW distribution
 D044 DoubleClick requires two real press/release cycles
 D045 Browser context is first-class; human selector resolves once to exact tabId
-D046 Multiple broker clients share port 3000 by agentId routing
 D047 Dispatcher accepts planner 0.1.1 and retains 0.1.0 compatibility
 D048 Functional Agent / Brain quality / natural behavior are separate gates
 D049 Visible UI effect can validate executor even with incomplete semantic outcome capture
@@ -427,12 +451,15 @@ D054 Missing empirical metrics remain null/absent, never accidental numeric zero
 D055 Generic page scroll anchors at viewport center
 D056 Horizontal scroll uses axis-specific deltaX and is native validated
 D057 Agent Cursor is scheduled after functional matrix and is mirror-only telemetry
-D058 DoubleClick two-cycle CDP sequence is browser-native validated with semantic outcome
+D058 DoubleClick two-cycle sequence is browser-native validated with semantic outcome
+D059 Focus functional correctness requires valid interior pointer hit + focusedRef transition; natural point quality is separate
+D060 typeText per-character Input.insertText is functionally native validated; physical-key listener fidelity is separate
+D061 back/forward contract exists but current planner support must be native-confirmed before repair
 ```
 
 ---
 
-# 14. Safety / maintenance
+# 17. Safety / maintenance
 
 CAPTCHA/human verification remains blocked; no automatic solve/bypass/blind retry. Never collect/train credentials, passwords, cookies, tokens, clipboard or payment secrets.
 
