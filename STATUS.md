@@ -25,6 +25,7 @@ docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_DRAG_BATCH.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_FORMS_BATCH.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_OBSERVATION_UI_BATCH.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MEDIA_BATCH.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MULTIFRAME_BATCH.md
 ```
 
 ---
@@ -85,6 +86,8 @@ unmute
 setVolume
 seek
 changePlaybackRate
+same-origin iframe observation / semantic target binding
+same-origin iframe PAGE_CDP click
 stale-ref rejection after newer observation
 moving-target live-geometry rejection before pointer click
 drag destination live-geometry rejection before release
@@ -128,6 +131,15 @@ changePlaybackRate
 
 `setVolume`, `seek`, and `changePlaybackRate` were first native-confirmed unsupported, then fixed together on `feat/agent-tab-context`, CI-passed, native re-tested, and selectively promoted to `main`. `setVolume` and `seek` use observed range state and held PAGE_CDP pointer travel; `changePlaybackRate` uses observed select-option semantics plus PAGE_CDP focus/keyboard selection. Naturalness remains a later Behavior-learning concern, not part of this functional gate.
 
+Multi-frame same-origin batch is **2/2 native PASS**:
+
+```text
+observe Frame Action Target inside child iframe
+click observation-bound Frame Action Target through PAGE_CDP
+```
+
+The existing top-document-only Observer first native-failed to discover the iframe target. The repair recursively observes visible same-origin frames, binds frame path internally, converts child rects to top-viewport coordinates, and re-resolves the bound frame for live geometry guards. Cross-origin/OOPIF support is not claimed by this gate.
+
 ---
 
 # Development / branch rule
@@ -151,7 +163,7 @@ feat/agent-tab-context
 
 Do not merge the whole experimental branch blindly. Selectively promote only native-proven code/tests. Browser UI/OS experiments remain deferred.
 
-Controlled local tests reuse one fixed surface:
+Controlled local webpage tests reuse one fixed surface:
 
 ```text
 http://127.0.0.1:8091
@@ -228,6 +240,7 @@ Observed state binding currently includes:
 checkbox/radio → inputType + checked
 select         → selectedValue + selectedIndex + option metadata
 range          → rangeValue + rangeMin + rangeMax + rangeStep
+same-origin frame → internal framePath + top-viewport observed rect
 ```
 
 No text/password input values are exposed for these features. If bound check/select/range state changes after OBSERVE, Runtime rejects `target_state_changed`.
@@ -259,7 +272,7 @@ changePlaybackRate
 → Input.dispatchKeyEvent Home / ArrowDown / Enter
 ```
 
-Strategy still emits no selector, coordinate, or raw CDP packet.
+Strategy still emits no selector, coordinate, frame path, or raw CDP packet.
 
 ## Settled post-action observation
 
@@ -304,41 +317,40 @@ Repeated pointer/scroll/drag/range tests provide functional diversity evidence o
 
 # Browser UI / OS control — DEFERRED
 
-Experimental evidence retained on `feat/agent-tab-context` includes Win32/Windows-UIA browser-shell control probes. Do not integrate BROWSER_UI_OS into Runtime during this PAGE_CDP functional phase.
+Experimental evidence retained on `feat/agent-tab-context` includes Win32/Windows-UIA browser-shell control probes. Do not integrate BROWSER_UI_OS into Runtime during this functional phase.
 
 Any future OS-control integration requires explicit user consent and an exclusive desktop-input lease.
 
 ---
 
-# NEXT — multi-frame observation
+# NEXT — tab lifecycle batch
 
-Run the existing capability first on the fixed `8091` batch lab. The gate is to observe and target an interactive element inside an iframe without Strategy emitting selector/frame internals.
+Run existing capabilities first:
 
 ```text
-multi-frame observation / semantic target binding
+switchTab
+openNewTab
+closeTab
 ```
 
-For the gate:
+These are browser-control-plane actions and should use `chrome.tabs.*`, not PAGE_CDP input and not Browser UI/OS.
+
+For every action:
 
 ```text
-existing capability PASS → record evidence and continue
+existing capability PASS → record evidence
 existing capability FAIL → classify exact native gap
 only then fix on feat/agent-tab-context
 ```
 
-After multi-frame, continue:
-
-```text
-tab lifecycle: switchTab / openNewTab / closeTab
-```
-
-No autonomous multi-step work yet.
+After tab lifecycle functional coverage is closed, stop and review the matrix before starting A5 / Goal Checker + Replan. No autonomous multi-step work yet.
 
 ---
 
 # Known later fidelity / robustness gates
 
 ```text
+cross-origin/OOPIF frame observation when a real task requires it
 focus primitive metadata cleanup
 physical-key-like text-entry variant only if a real task requires listener fidelity
 pointer/scroll/drag/range naturalness refinement through Behavior learning
