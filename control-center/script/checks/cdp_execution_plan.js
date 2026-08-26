@@ -16,7 +16,7 @@ const pointerBehavior = validateExecutionBehavior({
 });
 
 const clickPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'click', targetRef: 'e17' }), behavior: pointerBehavior, target, context: { pointerStart: { x: 10, y: 20 }, rng } });
-assert.strictEqual(clickPlan.cdpPlanVersion, '0.1.1');
+assert.strictEqual(clickPlan.cdpPlanVersion, '0.1.2');
 assert.ok(clickPlan.steps.length > 4);
 assert.strictEqual(clickPlan.steps.at(-2).params.type, 'mousePressed');
 assert.strictEqual(clickPlan.steps.at(-1).params.type, 'mouseReleased');
@@ -72,6 +72,21 @@ assert.strictEqual(typePlan.steps.length, 3);
 assert.strictEqual(typePlan.steps.map(x => x.params.text).join(''), 'abc');
 assert.strictEqual(typePlan.steps[0].delayMs, 50);
 assert.strictEqual(typePlan.steps[1].delayMs, 80);
+
+const navigationBehavior = { profile: 'navigation-native', metadata: { behaviorFamily: 'navigation' } };
+const backPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'back' }), behavior: navigationBehavior });
+assert.strictEqual(backPlan.cdpPlanVersion, '0.1.2');
+assert.strictEqual(backPlan.actionType, 'back');
+assert.deepStrictEqual(backPlan.steps.map(step => step.method), [
+  'Page.getNavigationHistory',
+  'Page.navigateToHistoryEntry'
+]);
+assert.strictEqual(backPlan.steps[1].historyOffset, -1);
+assert.strictEqual(backPlan.steps[1].postDelayMs, 120);
+
+const forwardPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'forward' }), behavior: navigationBehavior });
+assert.strictEqual(forwardPlan.actionType, 'forward');
+assert.strictEqual(forwardPlan.steps[1].historyOffset, 1);
 
 assert.ok(!JSON.stringify(clickPlan).includes('selector'));
 console.log('CDP execution planner contract: PASS');
