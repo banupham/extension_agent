@@ -428,97 +428,42 @@ Command:
 node script/agent_one_action.js --type scrollVertical --direction 1 --host en.wikipedia.org --full
 ```
 
-## 10.1 First native failure
+Original existing function returned successful CDP dispatch but no meaningful visible movement.
 
-The original existing function returned successful CDP dispatch but produced no meaningful visible page movement.
-
-First investigation found generic page scroll used previous `agentPointer` as wheel coordinate. This could anchor wheel over a nested/control surface. Planner changed so generic page scroll uses `viewportCenter`; targeted/nested scrolling remains a separate concern.
-
-Native retest still showed no meaningful movement, proving that was not the only root cause.
-
-## 10.2 Root cause
-
-Without generated empirical baseline, Behavior Policy emitted missing scroll metrics as `null`.
-
-Old numeric helper semantics did:
+Two implementation problems were found:
 
 ```text
-Number(null) = 0
+previous agentPointer could anchor generic wheel over a nested/control surface
+missing behavior metrics were coerced through Number(null) into zero-like values
 ```
 
-This accidentally converted “metric absent” into real zero-like values before planner fallback logic.
-
-Functional effect was approximately:
+Correct semantics:
 
 ```text
-duration → minimum bound
-eventCount → 1
-absoluteDelta → ~1 px
+generic page wheel anchor = viewport center
+missing/empty metric = null/absent
+planner fallback ≈ duration 220 ms / 4 events / 480 requested total delta
 ```
 
-CDP could legitimately report success while the page appeared stationary.
-
-Fix semantics:
+Native PASS evidence:
 
 ```text
-missing/empty behavior metric
-→ remain null
-→ planner recognizes absent value
-→ conservative fallback activates
+before.scroll.y = 0
+after.scroll.y  = 388
+same observed element moved by exactly 388 px
 ```
-
-Fallback scroll plan approximately:
-
-```text
-durationMs = 220
-eventCount = 4
-absoluteDelta = 480 requested total burst
-wheel anchor = viewport center
-```
-
-True numeric zero remains valid data; only null/empty means missing.
-
-## 10.3 Native PASS evidence
-
-After fix Wikipedia visibly moved.
-
-OBSERVE AFTER:
-
-```text
-scroll.x = 0
-scroll.y = 388
-```
-
-Independent geometry evidence from same semantic element `e405`:
-
-```text
-before rect.y = 5500.015625
-after  rect.y = 5112.015625
-difference     = 388 px
-```
-
-The matching 388 px values prove real document scroll rather than only successful command dispatch.
-
-Classification:
-
-```text
-vertical scroll existing function = NATIVE PASS
-```
-
-This is functional correctness only; it does not claim natural human scroll quality.
 
 PR/CI:
 
 ```text
 PR:          #5
-head:        f23e9bfb45d28ad3ad6d0e22f65e39874cf8b906
 workflow:    runtime-syntax
 run:         32924626320
 result:      SUCCESS
 merge:       21018224496dad3208c04a0a324fdcf7748c218b
 ```
 
-Regression coverage now checks fallback scroll magnitude and viewport-center anchoring.
+This proves functional scrolling only, not human-like scroll quality.
 
 ---
 
@@ -536,13 +481,13 @@ Command:
 node script/agent_one_action.js --type hover --label "Browser market" --host en.wikipedia.org --full
 ```
 
-Native human-visible evidence:
+Human-visible evidence:
 
 ```text
 Agent hover position reached Browser market
-no mouse press/release side effect observed
-no navigation occurred
-Wikipedia page remained on Web browser article
+no click side effect
+no navigation
+page remained Web browser - Wikipedia
 ```
 
 Classification:
@@ -551,32 +496,97 @@ Classification:
 hover existing function = NATIVE PASS
 ```
 
-Important observability note: CDP `Input.dispatchMouseEvent` does not move the OS/native mouse cursor. Therefore a correct hover can be visually hard to verify when the target does not expose CSS/UI hover state.
-
-A future **Agent Cursor debug overlay** is technically appropriate if scheduled, but it must obey this boundary:
-
-```text
-CDP plan / Runtime dispatch = source of truth for input
-                 ↓ mirror only
-Agent Cursor overlay = visualization/telemetry only
-```
-
-Requirements if implemented later:
-
-```text
-- consume exact dispatched mouse-event x/y and timing;
-- never generate input or choose target;
-- pointer-events:none;
-- no influence on Strategy, Behavior, target registry or CDP plan;
-- ideally render each actually-dispatched mouseMoved/pressed/released/wheel step rather than run an independent animation;
-- optional click/ripple/trail visuals are debug presentation only.
-```
-
-Do not add this visualization as part of the current P0 function matrix unless explicitly scheduled; current focus remains validation of existing Agent functions.
+CDP pointer input does not move the OS/native cursor, so a correct hover can be visually hard to verify when a target has no hover styling.
 
 ---
 
-# 12. Current native matrix
+# 12. Native milestone — horizontal page scroll PASS
+
+Controlled page:
+
+```text
+http://127.0.0.1:8088/
+title = Agent Horizontal Scroll Test
+```
+
+Command:
+
+```bat
+node script/agent_one_action.js --type scrollHorizontal --direction 1 --url-includes 127.0.0.1:8088 --full
+```
+
+Mapped/behavior evidence:
+
+```text
+actionType = scrollHorizontal
+behaviorFamily = scroll-horizontal
+behavior.profile = conservative-fallback
+baselineVersion = null
+```
+
+CDP evidence:
+
+```text
+cdpPlanVersion = 0.1.1
+4 × Input.dispatchMouseEvent(mouseWheel)
+wheel anchor = viewport center = (683, 320.5)
+deltaX values ≈ 91.67, 148.33, 148.33, 91.67
+deltaY = 0 for every event
+execution.ok = true
+stepCount = 4
+resultCount = 4
+observationInvalidated = true
+```
+
+Observer evidence:
+
+```text
+before.scroll = {x: 0,   y: 0}
+after.scroll  = {x: 388, y: 0}
+```
+
+Human visual confirmation: the horizontal test track visibly moved in the requested left-to-right scroll direction by roughly 2/3 of the visible test distance.
+
+Classification:
+
+```text
+horizontal scroll existing function = NATIVE PASS
+```
+
+The same fallback semantics fixed for vertical scroll also work for horizontal axis. This proves functional axis-specific wheel execution, not naturalness quality.
+
+---
+
+# 13. Scheduled observability tool — Agent Cursor Debug Overlay
+
+After the current functional matrix is complete, implement a visible debug cursor that mirrors the pointer events actually dispatched by Agent Runtime.
+
+Required boundary:
+
+```text
+CDP plan / Runtime dispatch = source of truth for browser input
+                 ↓ mirror only
+Agent Cursor overlay        = visualization / telemetry only
+```
+
+Requirements:
+
+```text
+consume exact dispatched mouse-event x/y and timing
+mirror mouseMoved / pressed / released / wheel state
+never generate browser input
+never choose or retarget an element
+never alter Strategy / Behavior / CDP plan / registry
+pointer-events:none
+must not appear as an Observer interactive target
+prefer isolated extension Shadow DOM
+```
+
+This is scheduled **after functional matrix completion**. It is not a new execution capability and must not be used to decide whether current input succeeds.
+
+---
+
+# 14. Current native matrix
 
 ```text
 tab inventory / matching          PASS
@@ -589,15 +599,18 @@ observation invalidation          PASS
 OBSERVE AFTER                     PASS
 vertical page scroll              PASS
 hover without click               PASS
+horizontal page scroll            PASS
 
 NEXT existing function:
-horizontal scroll on controlled horizontal surface
+doubleClick on controlled safe target
 
 THEN:
-doubleClick
 focus
 typeText
 back / forward
+
+AFTER FUNCTIONAL MATRIX:
+Agent Cursor Debug Overlay
 
 LATER invariant/evidence gates:
 stale-ref rejection via existing interfaces
@@ -610,7 +623,7 @@ Do not start autonomous multi-step tasks yet.
 
 ---
 
-# 13. Safety boundary
+# 15. Safety boundary
 
 CAPTCHA/human verification:
 
@@ -625,7 +638,7 @@ Human login demonstrations may contribute timing/semantic operation classes but 
 
 ---
 
-# 14. Architectural decisions
+# 16. Architectural decisions
 
 ```text
 D001 Scenario Mode and Agent Mode stay separate
@@ -681,14 +694,15 @@ D050 Native functional validation tests existing capabilities on main first
 D051 Implementation failures use one reusable experiment branch
 D052 P0 in-page functional validation uses one unified CDP path
 D053 Repeated tests prefer neutral/controlled pages
-D054 Missing empirical metrics must remain absent/null; do not coerce null to numeric zero
+D054 Missing empirical metrics remain absent/null; do not coerce null to numeric zero
 D055 Generic page scroll anchors at viewport center; nested/targeted scroll is separate
-D056 Any future visible Agent Cursor is debug telemetry only and mirrors actual dispatched mouse events; it never becomes an input/execution source
+D056 Horizontal page scroll uses the same conservative fallback semantics with deltaX only and is native validated
+D057 Agent Cursor is scheduled after the functional matrix and is mirror-only telemetry, never an input source
 ```
 
 ---
 
-# 15. Maintenance rule
+# 17. Maintenance rule
 
 Journal only difficult facts that a future session must not rediscover:
 
