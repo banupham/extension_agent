@@ -4,7 +4,17 @@ const { mapAgentAction } = require('../strategy/agent_action_contract.js');
 const { sampledBehavior } = require('../behavior/empirical_policy.js');
 const { buildCdpPlan } = require('../execution/cdp_plan.js');
 
-const BRIDGE_VERSION = '0.2.0';
+const BRIDGE_VERSION = '0.2.1';
+const DEFAULT_POST_ACTION_SETTLE = Object.freeze({
+  pollMs: 80,
+  minWindowMs: 400,
+  maxWindowMs: 800,
+  stableSamples: 2
+});
+const SETTLE_ACTION_TYPES = new Set([
+  'click', 'doubleClick', 'hover', 'moveTo', 'focus',
+  'pressKey', 'keyCombo', 'typeText'
+]);
 
 function findTarget(observation, targetRef) {
   if (!targetRef) return null;
@@ -22,6 +32,103 @@ function pointerStartFor(observation, previousPointer = null) {
     return { x: width / 2, y: height / 2 };
   }
   return { x: 400, y: 300 };
+}
+
+function semanticObservationFingerprint(observation) {
+  const elements = Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : [];
+  return JSON.stringify({
+    url: String(observation?.url || ''),
+    title: String(observation?.title || ''),
+    focusedRef: observation?.focusedRef || null,
+    scroll: {
+      x: Number(observation?.scroll?.x || 0),
+      y: Number(observation?.scroll?.y || 0)
+    },
+    elements: elements.map(element => ({
+      tag: element?.tag || null,
+      role: element?.role || null,
+      label: String(element?.label || ''),
+      editable: !!element?.editable,
+      enabled: element?.enabled !== false,
+      visible: element?.visible !== false
+    }))
+  });
+}
+
+function settlePolicy(options, mappedAction) {
+  const requested = options?.postActionSettle;
+  if (requested === false || requested?.enabled === false) return null;
+  if (!SETTLE_ACTION_TYPES.has(mappedAction?.type)) return null;
+  const source = requested && typeof requested === 'object' ? requested : {};
+  const positive = (value, fallback) => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+  const pollMs = positive(source.pollMs, DEFAULT_POST_ACTION_SETTLE.pollMs);
+  const minWindowMs = positive(source.minWindowMs, DEFAULT_POST_ACTION_SETTLE.minWindowMs);
+  const maxWindowMs = Math.max(minWindowMs, positive(source.maxWindowMs, DEFAULT_POST_ACTION_SETTLE.maxWindowMs));
+  const stableSamples = Math.max(2, Math.round(positive(source.stableSamples, DEFAULT_POST_ACTION_SETTLE.stableSamples)));
+  return { pollMs, minWindowMs, maxWindowMs, stableSamples };
+}
+
+async function observeAfterAction(runtime, mappedAction, options = {}) {
+  const policy = settlePolicy(options, mappedAction);
+  const sleep = typeof options?.settleSleep === 'function'
+    ? options.settleSleep
+    : ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  let observation = await runtime.observe();
+  if (!policy) {
+    return {
+      observation,
+      metadata: { mode: 'immediate', samples: 1, waitedMs: 0, semanticChanged: false, deadlineReached: false }
+    };
+  }
+
+  let signature = semanticObservationFingerprint(observation);
+  let stableSamples = 1;
+  let samples = 1;
+  let waitedMs = 0;
+  let semanticChanged = false;
+
+  while (waitedMs < policy.maxWindowMs) {
+    const waitMs = Math.min(policy.pollMs, policy.maxWindowMs - waitedMs);
+    if (waitMs <= 0) break;
+    await sleep(waitMs);
+    waitedMs += waitMs;
+
+    const next = await runtime.observe();
+    const nextSignature = semanticObservationFingerprint(next);
+    samples += 1;
+    if (nextSignature === signature) {
+      stableSamples += 1;
+    } else {
+      semanticChanged = true;
+      stableSamples = 1;
+      signature = nextSignature;
+    }
+    observation = next;
+
+    if (waitedMs >= policy.minWindowMs && stableSamples >= policy.stableSamples) {
+      return {
+        observation,
+        metadata: {
+          mode: 'settled', samples, waitedMs, semanticChanged,
+          stableSamples, deadlineReached: false,
+          policy
+        }
+      };
+    }
+  }
+
+  return {
+    observation,
+    metadata: {
+      mode: 'settled', samples, waitedMs, semanticChanged,
+      stableSamples, deadlineReached: true,
+      policy
+    }
+  };
 }
 
 async function decideOneAction(options, observation) {
@@ -67,6 +174,7 @@ async function runOneAction(options) {
       execution: null,
       before,
       after: null,
+      postActionObservation: null,
       invariant: {
         oneActionOnly: true,
         actionExecuted: false,
@@ -104,7 +212,8 @@ async function runOneAction(options) {
     plan: cdpPlan
   });
 
-  const after = await runtime.observe();
+  const settled = await observeAfterAction(runtime, mappedAction, options);
+  const after = settled.observation;
 
   return {
     bridgeVersion: BRIDGE_VERSION,
@@ -117,6 +226,7 @@ async function runOneAction(options) {
     execution,
     before,
     after,
+    postActionObservation: settled.metadata,
     invariant: {
       oneActionOnly: true,
       actionExecuted: true,
@@ -127,4 +237,15 @@ async function runOneAction(options) {
   };
 }
 
-module.exports = { BRIDGE_VERSION, findTarget, pointerStartFor, decideOneAction, runOneAction };
+module.exports = {
+  BRIDGE_VERSION,
+  DEFAULT_POST_ACTION_SETTLE,
+  SETTLE_ACTION_TYPES,
+  findTarget,
+  pointerStartFor,
+  semanticObservationFingerprint,
+  settlePolicy,
+  observeAfterAction,
+  decideOneAction,
+  runOneAction
+};
