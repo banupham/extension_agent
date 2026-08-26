@@ -5,8 +5,8 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.AgentCdpPlanDispatcher = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function factory() {
-  const SUPPORTED_PLAN_VERSIONS = new Set(['0.1.0', '0.1.1']);
-  const LATEST_PLAN_VERSION = '0.1.1';
+  const SUPPORTED_PLAN_VERSIONS = new Set(['0.1.0', '0.1.1', '0.1.2']);
+  const LATEST_PLAN_VERSION = '0.1.2';
   const ALLOWED_METHODS = new Set([
     'Input.dispatchMouseEvent',
     'Input.dispatchKeyEvent',
@@ -23,37 +23,82 @@
     return n;
   }
 
+  function normalizeHistoryOffset(value) {
+    if (value == null) return null;
+    const offset = Number(value);
+    if (!Number.isInteger(offset) || ![-1, 1].includes(offset)) throw new Error('invalid_history_offset');
+    return offset;
+  }
+
   function validatePlan(plan) {
     if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('invalid_cdp_plan');
     if (!SUPPORTED_PLAN_VERSIONS.has(plan.cdpPlanVersion)) throw new Error('unsupported_cdp_plan_version');
     if (!Array.isArray(plan.steps) || plan.steps.length === 0 || plan.steps.length > 500) throw new Error('invalid_cdp_plan_steps');
+
+    const steps = plan.steps.map((step, index) => {
+      const method = typeof step?.method === 'string' ? step.method : '';
+      if (!ALLOWED_METHODS.has(method)) throw new Error(`cdp_method_not_allowed:${method || index}`);
+      const params = step?.params && typeof step.params === 'object' && !Array.isArray(step.params) ? step.params : {};
+      const historyOffset = normalizeHistoryOffset(step?.historyOffset);
+
+      if (historyOffset != null) {
+        if (plan.cdpPlanVersion !== '0.1.2') throw new Error('history_binding_requires_plan_0.1.2');
+        if (method !== 'Page.navigateToHistoryEntry') throw new Error('history_binding_method_invalid');
+        if (Object.prototype.hasOwnProperty.call(params, 'entryId')) throw new Error('history_binding_entry_id_conflict');
+        const previousMethod = index > 0 && typeof plan.steps[index - 1]?.method === 'string' ? plan.steps[index - 1].method : '';
+        if (previousMethod !== 'Page.getNavigationHistory') throw new Error('history_binding_source_invalid');
+      }
+
+      return {
+        delayMs: finiteDelay(step.delayMs),
+        postDelayMs: finiteDelay(step.postDelayMs),
+        method,
+        params,
+        historyOffset
+      };
+    });
+
     return {
       cdpPlanVersion: plan.cdpPlanVersion,
       actionType: typeof plan.actionType === 'string' ? plan.actionType : null,
       targetRef: typeof plan.targetRef === 'string' ? plan.targetRef : null,
-      steps: plan.steps.map((step, index) => {
-        const method = typeof step?.method === 'string' ? step.method : '';
-        if (!ALLOWED_METHODS.has(method)) throw new Error(`cdp_method_not_allowed:${method || index}`);
-        const params = step?.params && typeof step.params === 'object' && !Array.isArray(step.params) ? step.params : {};
-        return {
-          delayMs: finiteDelay(step.delayMs),
-          postDelayMs: finiteDelay(step.postDelayMs),
-          method,
-          params
-        };
-      })
+      steps
     };
+  }
+
+  function paramsForStep(step, previous) {
+    if (step.historyOffset == null) return step.params;
+    if (previous?.method !== 'Page.getNavigationHistory') throw new Error('history_binding_source_missing');
+
+    const history = previous.result || {};
+    const entries = Array.isArray(history.entries) ? history.entries : [];
+    const currentIndex = Number(history.currentIndex);
+    if (!Number.isInteger(currentIndex)) throw new Error('history_navigation_state_invalid');
+
+    const targetIndex = currentIndex + step.historyOffset;
+    const entry = entries[targetIndex];
+    if (entry?.id == null) {
+      throw new Error(step.historyOffset < 0 ? 'history_back_unavailable' : 'history_forward_unavailable');
+    }
+
+    return { ...step.params, entryId: entry.id };
   }
 
   async function dispatchPlan(plan, sendCommand, sleep) {
     if (typeof sendCommand !== 'function' || typeof sleep !== 'function') throw new Error('dispatcher_dependencies_required');
     const normalized = validatePlan(plan);
     const results = [];
+    let previous = null;
+
     for (const step of normalized.steps) {
       if (step.delayMs) await sleep(step.delayMs);
-      results.push(await sendCommand(step.method, step.params));
+      const params = paramsForStep(step, previous);
+      const result = await sendCommand(step.method, params);
+      results.push(result);
+      previous = { method: step.method, result };
       if (step.postDelayMs) await sleep(step.postDelayMs);
     }
+
     return {
       ok: true,
       cdpPlanVersion: normalized.cdpPlanVersion,
@@ -63,5 +108,12 @@
     };
   }
 
-  return { SUPPORTED_PLAN_VERSIONS, LATEST_PLAN_VERSION, ALLOWED_METHODS, validatePlan, dispatchPlan };
+  return {
+    SUPPORTED_PLAN_VERSIONS,
+    LATEST_PLAN_VERSION,
+    ALLOWED_METHODS,
+    validatePlan,
+    paramsForStep,
+    dispatchPlan
+  };
 });
