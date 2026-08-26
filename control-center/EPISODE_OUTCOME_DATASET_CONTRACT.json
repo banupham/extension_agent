@@ -1,0 +1,106 @@
+{
+  "contractVersion": "0.1.0",
+  "name": "agent-episode-outcome-dataset",
+  "purpose": "Validate privacy-safe, outcome-labeled Agent episodes before any Strategy/Brain training or held-out evaluation.",
+  "recordShape": {
+    "required": [
+      "contractVersion",
+      "episodeId",
+      "source",
+      "task",
+      "steps",
+      "terminalResult",
+      "split",
+      "splitGroup",
+      "privacy",
+      "trainingEligibility"
+    ],
+    "stepRequired": [
+      "stepIndex",
+      "observation",
+      "decision",
+      "action",
+      "outcome",
+      "control",
+      "budget",
+      "progress"
+    ]
+  },
+  "semanticBoundary": {
+    "strategyInput": ["Task", "Observation", "compact prior step history"],
+    "strategyLabel": "Decision with semantic Agent Action only",
+    "postActionLabels": ["Outcome", "Control", "Episode Budget", "Progress"],
+    "terminalLabel": "terminalResult",
+    "forbidSelectorCoordinateOrRawCdp": true,
+    "tabIdIsTrainingFeature": false,
+    "behaviorTrajectoryIsStrategyFeature": false,
+    "privateReasoningStored": false
+  },
+  "sourceKinds": [
+    "human-demonstration",
+    "approved-controller",
+    "agent-runtime",
+    "controlled-native",
+    "test-fixture"
+  ],
+  "trainingPolicy": {
+    "eligibleLabelSources": ["human-demonstration", "approved-controller"],
+    "agentRuntimeSelfLabelsEligibleByDefault": false,
+    "controlledNativeEligibleByDefault": false,
+    "testFixtureEligible": false,
+    "requiresVerifiedOutcome": true,
+    "requiresTerminalEpisode": true,
+    "requiresPrivacyRedacted": true,
+    "requiresNoForbiddenFields": true,
+    "requiresAssignedTrainSplit": true,
+    "heldOutEvaluationRequiredBeforeTraining": true
+  },
+  "splits": ["unassigned", "train", "validation", "test"],
+  "splitInvariant": "One splitGroup must never appear in more than one assigned split.",
+  "terminalStatuses": ["done", "blocked", "failed"],
+  "labelConsistency": [
+    "control.status=done implies outcome.taskSucceeded=true",
+    "outcome.taskSucceeded=true implies control.status=done and control.terminal=true",
+    "control.status=blocked implies control.terminal=true",
+    "budget.terminal=true with unsuccessful task implies terminalResult.status=failed unless blocked",
+    "progress.delta equals progress.after - progress.before within numeric tolerance",
+    "executed step decision.status must be act and decision.action must equal the semantic action label"
+  ],
+  "privacy": {
+    "requiresObservationPrivacyRedacted": true,
+    "forbiddenKeys": [
+      "selector",
+      "selectors",
+      "coordinate",
+      "coordinates",
+      "x",
+      "y",
+      "cdpPlan",
+      "cdpPacket",
+      "cdpMethod",
+      "rawCdp",
+      "tabId",
+      "password",
+      "cookie",
+      "cookies",
+      "authorization",
+      "token",
+      "accessToken",
+      "refreshToken",
+      "clipboard",
+      "paymentSecret",
+      "privateReasoning",
+      "chainOfThought"
+    ],
+    "urlPolicy": "training records must not contain URL query values or fragments",
+    "credentialsOrSecretsAllowed": false
+  },
+  "usageGate": [
+    "contract and validator CI PASS",
+    "controlled native episode label-consistency PASS",
+    "representative dataset privacy/quality PASS",
+    "leakage-safe train/validation/test split PASS",
+    "held-out evaluation baseline PASS",
+    "only then export trainingEligible=true train records to a training job"
+  ]
+}
