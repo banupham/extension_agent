@@ -56,6 +56,7 @@ reload
 back history-CDP
 forward history-CDP
 stale-ref rejection after newer observation
+moving-target live-geometry rejection before pointer click
 ```
 
 Functional Agent PASS != Brain-quality PASS != natural-behavior PASS.
@@ -198,11 +199,45 @@ browser remained NOT CLICKED
 
 Registry protection is therefore native-validated for the "newer observation makes older targetRef stale" case.
 
+`moving-target` native evidence:
+
+```text
+initial implementation:
+OBSERVE target at x=40
+→ target moved live to x=380 without a new observation
+→ execution.ok=true
+→ old x=40 was clicked
+→ OLD POSITION TRAP fired
+```
+
+This native-confirmed failure was fixed on the reusable experimental branch and the isolated fix was ported to `main` after CI + native PASS.
+
+Current Runtime behavior:
+
+```text
+resolve observation-bound target
+→ read live element geometry immediately before target-dependent dispatch
+→ compare observed/live rect with 2px tolerance
+→ re-check before mousePressed
+→ if geometry changed: target_geometry_changed
+→ invalidate observation
+→ REJECT; do not silent-retarget
+```
+
+Native re-test:
+
+```text
+target moved x=40 → x=380
+expected = target_geometry_changed
+actual   = target_geometry_changed
+browser remained TARGET MOVED TO B
+neither old-position trap nor moved target was clicked
+```
+
 Known later fidelity/robustness gates:
 
 ```text
 Input.insertText physical-key/listener fidelity
-moving-target geometry revalidation / reject + reobserve
 post-action semantic outcome fidelity
 focus primitive metadata cleanup
 multi-frame Agent observation
@@ -239,8 +274,8 @@ Do not build Agent Cursor yet.
 Immediate native sequence on `main`:
 
 ```text
-1 moving-target geometry evidence / rejection behavior
-2 post-action observer outcome fidelity
+1 post-action observer outcome fidelity
+2 remaining keyboard/input fidelity and metadata cleanup gates as useful
 3 Agent Cursor Debug Overlay when PAGE_CDP pointer observability becomes useful
 ```
 
@@ -266,7 +301,6 @@ selectOption / setChecked / submit / dismiss
 tab lifecycle through Agent bridge
 hoverAndObserve / waitAndObserve policy
 multi-frame targets
-robust moving-target revalidation
 pointer naturalness refinement
 BROWSER_UI_OS Runtime/Native-Host integration
 ```
