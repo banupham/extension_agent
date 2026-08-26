@@ -41,26 +41,14 @@ const hoverPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'h
 assert.strictEqual(hoverPlan.steps.at(-1).postDelayMs, 400);
 
 const scrollBehavior = validateExecutionBehavior({ actionType: 'scrollHorizontal', scroll: { axis: 'horizontal', constraints: { durationMs: 240, eventCount: 4, absoluteDelta: 320, correctionRatio: 0.1 } }, metadata: { behaviorFamily: 'scroll-horizontal' } });
-const scrollPlan = Planner.buildCdpPlan({
-  mappedAction: mapAgentAction({ type: 'scrollHorizontal', args: { direction: -1 } }),
-  behavior: scrollBehavior,
-  context: { pointerStart: { x: 500, y: 400 }, viewportCenter: { x: 600, y: 350 } }
-});
+const scrollPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'scrollHorizontal', args: { direction: -1 } }), behavior: scrollBehavior, context: { pointerStart: { x: 500, y: 400 }, viewportCenter: { x: 600, y: 350 } } });
 assert.strictEqual(scrollPlan.steps.length, 5);
 assert.ok(scrollPlan.steps.slice(0, 4).every(step => step.params.deltaX < 0));
 assert.ok(scrollPlan.steps.every(step => step.params.x === 600 && step.params.y === 350));
 assert.strictEqual(scrollPlan.steps.at(-1).behaviorPhase, 'scroll-correction');
 
-const fallbackScrollBehavior = validateExecutionBehavior({
-  actionType: 'scrollVertical',
-  scroll: { axis: 'vertical', constraints: { durationMs: null, eventCount: null, absoluteDelta: null, correctionRatio: null } },
-  metadata: { behaviorFamily: 'scroll-vertical' }
-});
-const fallbackScrollPlan = Planner.buildCdpPlan({
-  mappedAction: mapAgentAction({ type: 'scrollVertical', args: { direction: 1 } }),
-  behavior: fallbackScrollBehavior,
-  context: { pointerStart: { x: 999, y: 111 }, viewportCenter: { x: 640, y: 320 } }
-});
+const fallbackScrollBehavior = validateExecutionBehavior({ actionType: 'scrollVertical', scroll: { axis: 'vertical', constraints: { durationMs: null, eventCount: null, absoluteDelta: null, correctionRatio: null } }, metadata: { behaviorFamily: 'scroll-vertical' } });
+const fallbackScrollPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'scrollVertical', args: { direction: 1 } }), behavior: fallbackScrollBehavior, context: { pointerStart: { x: 999, y: 111 }, viewportCenter: { x: 640, y: 320 } } });
 assert.strictEqual(fallbackScrollPlan.steps.length, 4);
 assert.ok(fallbackScrollPlan.steps.every(step => step.params.x === 640 && step.params.y === 320));
 assert.ok(fallbackScrollPlan.steps.every(step => step.params.deltaY > 0 && step.params.deltaX === 0));
@@ -73,14 +61,31 @@ assert.strictEqual(typePlan.steps.map(x => x.params.text).join(''), 'abc');
 assert.strictEqual(typePlan.steps[0].delayMs, 50);
 assert.strictEqual(typePlan.steps[1].delayMs, 80);
 
+const keyBehavior = validateExecutionBehavior({ actionType: 'keyCombo', keyboard: { constraints: { holdMedianMs: 70 } }, metadata: { behaviorFamily: 'keyboard-key' } });
+const altLeftPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'keyCombo', args: { key: 'Alt+ArrowLeft' } }), behavior: keyBehavior });
+assert.strictEqual(altLeftPlan.actionType, 'keyCombo');
+assert.strictEqual(altLeftPlan.steps.length, 4);
+assert.deepStrictEqual(altLeftPlan.steps.map(step => [step.params.type, step.params.key]), [
+  ['rawKeyDown', 'Alt'], ['rawKeyDown', 'ArrowLeft'], ['keyUp', 'ArrowLeft'], ['keyUp', 'Alt']
+]);
+assert.strictEqual(altLeftPlan.steps[0].params.modifiers, Planner.MODIFIER_BITS.Alt);
+assert.strictEqual(altLeftPlan.steps[1].params.modifiers, Planner.MODIFIER_BITS.Alt);
+assert.strictEqual(altLeftPlan.steps[1].params.windowsVirtualKeyCode, 37);
+assert.strictEqual(altLeftPlan.steps[1].params.isSystemKey, true);
+assert.strictEqual(altLeftPlan.steps[2].delayMs, 70);
+assert.strictEqual(altLeftPlan.steps[3].params.modifiers, 0);
+
+const ctrlShiftTab = Planner.parseKeyCombo('Ctrl+Shift+Tab');
+assert.deepStrictEqual(ctrlShiftTab.modifiers, ['Control', 'Shift']);
+assert.strictEqual(ctrlShiftTab.modifierMask, Planner.MODIFIER_BITS.Control | Planner.MODIFIER_BITS.Shift);
+assert.strictEqual(ctrlShiftTab.key, 'Tab');
+assert.throws(() => Planner.parseKeyCombo('Hyper+K'), /unsupported_key_modifier:Hyper/);
+
 const navigationBehavior = { profile: 'navigation-native', metadata: { behaviorFamily: 'navigation' } };
 const backPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'back' }), behavior: navigationBehavior });
 assert.strictEqual(backPlan.cdpPlanVersion, '0.1.2');
 assert.strictEqual(backPlan.actionType, 'back');
-assert.deepStrictEqual(backPlan.steps.map(step => step.method), [
-  'Page.getNavigationHistory',
-  'Page.navigateToHistoryEntry'
-]);
+assert.deepStrictEqual(backPlan.steps.map(step => step.method), ['Page.getNavigationHistory', 'Page.navigateToHistoryEntry']);
 assert.strictEqual(backPlan.steps[1].historyOffset, -1);
 assert.strictEqual(backPlan.steps[1].postDelayMs, 120);
 
