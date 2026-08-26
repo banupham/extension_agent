@@ -61,13 +61,72 @@ pressKey functional CDP execution = PASS
 physical-key naturalness/listener fidelity beyond this simple page listener = separate later gate
 ```
 
+## navigate — NATIVE PASS
+
+Controlled command:
+
+```bat
+node script/agent_one_action.js --type navigate --url "http://127.0.0.1:8091/target" --url-includes 127.0.0.1:8091 --full
+```
+
+Native evidence:
+
+```text
+mappedAction.type = navigate
+behaviorFamily = navigation
+CDP primitive = Page.navigate
+
+plan:
+Page.navigate { url: http://127.0.0.1:8091/target }
+
+execution.ok = true
+cdpPlanVersion = 0.1.2
+stepCount = 1
+resultCount = 1
+observationInvalidated = true
+
+before.url   = http://127.0.0.1:8091/
+before.title = Navigate Start
+
+after.url    = http://127.0.0.1:8091/target
+after.title  = NAVIGATE PASS
+
+oneActionOnly = true
+reObservedAfterExecution = true
+selectorUsedByStrategy = false
+literalTrajectoryReplay = false
+```
+
+Additional sparse smoke test:
+
+```bat
+node script/agent_one_action.js --type navigate --url "https://pixelscan.dev/bot" --url-includes 127.0.0.1:8091 --full
+```
+
+Observed:
+
+```text
+execution.ok = true
+Page.navigate dispatched successfully
+before.url = http://127.0.0.1:8091/target
+after.url  = https://pixelscan.dev/bot
+after.title = ""
+```
+
+Classification:
+
+```text
+external HTTPS navigation = PASS as navigation smoke evidence only
+NOT evidence of stealth / bot-detection bypass / platform acceptance
+empty immediate after-title = external load/observer timing evidence, not a Page.navigate functional failure
+```
+
 ## Next native sequence
 
 ```text
-1 navigate
-2 reload
-3 stale-ref / moving-target / observer outcome gates
-4 Agent Cursor Debug Overlay only when pointer observability becomes useful
+1 reload
+2 stale-ref / moving-target / observer outcome gates
+3 Agent Cursor Debug Overlay only when pointer observability becomes useful
 ```
 
 No autonomous multi-step work yet.
