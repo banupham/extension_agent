@@ -20,17 +20,22 @@ on:
       - 'control-center/script/checks/episode_dataset_export.js'
       - 'control-center/script/checks/human_strategy_episode_adapter.js'
       - 'training-collector/core/episode_builder.js'
+      - 'training-collector/core/episode_capture_gate.js'
       - 'training-collector/core/strategy_episode_view.js'
       - 'training-collector/core/task_episode_review_export.js'
+      - 'training-collector/background.js'
       - 'training-collector/content.js'
       - 'training-collector/manifest.json'
       - 'training-collector/popup.html'
+      - 'training-collector/popup.js'
       - 'training-collector/popup_episode_export.js'
       - 'training-collector/tools/build_strategy_episode_dataset.js'
       - 'training-collector/tools/check_task_episode_review.js'
       - 'training-collector/tools/make_strategy_review_template.js'
       - 'training-collector/tools/adapt_task_episode_review.js'
       - 'training-collector/tests/architecture_contract.js'
+      - 'training-collector/tests/episode_capture_gate_contract.js'
+      - 'training-collector/tests/episode_capture_integration_contract.js'
       - 'training-collector/tests/strategy_episode_view_contract.js'
       - 'training-collector/tests/task_episode_review_export_contract.js'
       - 'training-collector/tests/task_episode_review_checker_contract.js'
@@ -58,15 +63,20 @@ jobs:
           node --check control-center/script/checks/episode_dataset_export.js
           node --check control-center/script/checks/human_strategy_episode_adapter.js
           node --check training-collector/core/episode_builder.js
+          node --check training-collector/core/episode_capture_gate.js
           node --check training-collector/core/strategy_episode_view.js
           node --check training-collector/core/task_episode_review_export.js
+          node --check training-collector/background.js
           node --check training-collector/content.js
+          node --check training-collector/popup.js
           node --check training-collector/popup_episode_export.js
           node --check training-collector/tools/build_strategy_episode_dataset.js
           node --check training-collector/tools/check_task_episode_review.js
           node --check training-collector/tools/make_strategy_review_template.js
           node --check training-collector/tools/adapt_task_episode_review.js
           node --check training-collector/tests/architecture_contract.js
+          node --check training-collector/tests/episode_capture_gate_contract.js
+          node --check training-collector/tests/episode_capture_integration_contract.js
           node --check training-collector/tests/strategy_episode_view_contract.js
           node --check training-collector/tests/task_episode_review_export_contract.js
           node --check training-collector/tests/task_episode_review_checker_contract.js
@@ -83,6 +93,10 @@ jobs:
         run: node control-center/script/checks/episode_dataset_export.js
       - name: Run human Strategy episode adapter contract
         run: node control-center/script/checks/human_strategy_episode_adapter.js
+      - name: Run Task Episode capture fail-closed gate contract
+        run: node training-collector/tests/episode_capture_gate_contract.js
+      - name: Run Task Episode capture integration contract
+        run: node training-collector/tests/episode_capture_integration_contract.js
       - name: Run Strategy episode observation view contract
         run: node training-collector/tests/strategy_episode_view_contract.js
       - name: Run Task Episode architecture contract
