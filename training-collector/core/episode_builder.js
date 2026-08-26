@@ -5,8 +5,9 @@
 
   function createEpisode({ task = {}, tabId = null, initialObservation = null, now = new Date().toISOString() } = {}) {
     return {
-      schemaVersion: '0.5.0',
+      schemaVersion: '0.6.0',
       stateEncoding: 'initial-full-then-diff',
+      strategyObservationEncoding: 'full-per-transition-v1',
       episodeId: `ep-${Date.now()}`,
       task: {
         instruction: String(task.instruction || '').trim(),
@@ -20,12 +21,14 @@
       transitions: [],
       finalOutcome: null,
       privacy: {
-        policyVersion: '0.2.0',
+        policyVersion: '0.3.0',
         rawTextValuesStored: false,
         passwordValuesStored: false,
         cookiesStored: false,
         storageSecretsStored: false,
-        authorizationDataStored: false
+        authorizationDataStored: false,
+        strategyObservationSelectorsStored: false,
+        strategyObservationTabIdStored: false
       }
     };
   }
@@ -41,9 +44,11 @@
       endedAtMs: null,
       stateBefore: payload.stateBefore || null,
       stateBeforeDiff: payload.stateBeforeDiff || null,
+      strategyObservationBefore: payload.strategyObservationBefore || null,
       action: payload.action || null,
       stateAfter: null,
       stateAfterDiff: null,
+      strategyObservationAfter: null,
       outcome: { actionSucceeded: null, partial: true }
     });
     return episode;
@@ -56,6 +61,7 @@
     item.endedAtMs = Number(payload.endedAtMs || item.startedAtMs || 0);
     item.stateAfter = payload.stateAfter || null;
     item.stateAfterDiff = payload.stateAfterDiff || null;
+    item.strategyObservationAfter = payload.strategyObservationAfter || null;
     item.outcome = {
       actionSucceeded: payload.actionSucceeded !== false,
       partial: false,
