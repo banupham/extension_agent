@@ -121,12 +121,72 @@ NOT evidence of stealth / bot-detection bypass / platform acceptance
 empty immediate after-title = external load/observer timing evidence, not a Page.navigate functional failure
 ```
 
+## reload — NATIVE PASS
+
+Command:
+
+```bat
+node script/agent_one_action.js --type reload --url-includes 127.0.0.1:8091 --full
+```
+
+Controlled page state:
+
+```text
+before title = Reload 1
+reload request increments server-side counter
+after title  = Reload 2
+```
+
+Native evidence:
+
+```text
+mappedAction.type = reload
+behaviorFamily = navigation
+CDP primitive = Page.reload
+
+plan:
+Page.reload { ignoreCache:false }
+
+execution.ok = true
+cdpPlanVersion = 0.1.2
+stepCount = 1
+resultCount = 1
+observationInvalidated = true
+
+before.url   = http://127.0.0.1:8091/reload
+before.title = Reload 1
+after.url    = http://127.0.0.1:8091/reload
+after.title  = Reload 2
+
+oneActionOnly = true
+actionExecuted = true
+reObservedAfterExecution = true
+selectorUsedByStrategy = false
+literalTrajectoryReplay = false
+```
+
+Classification:
+
+```text
+reload functional CDP execution = PASS
+OBSERVE AFTER also captured the post-reload document state correctly in this controlled test
+```
+
+## Direct P0 CDP action validation status
+
+```text
+pressKey  PASS
+navigate  PASS
+reload    PASS
+```
+
 ## Next native sequence
 
 ```text
-1 reload
-2 stale-ref / moving-target / observer outcome gates
-3 Agent Cursor Debug Overlay only when pointer observability becomes useful
+1 stale-ref rejection — new observation invalidates old observation-bound targetRef
+2 moving-target geometry evidence / rejection behavior
+3 post-action observer outcome fidelity
+4 Agent Cursor Debug Overlay only when pointer observability becomes useful
 ```
 
 No autonomous multi-step work yet.
