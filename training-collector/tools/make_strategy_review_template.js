@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const REVIEW_CONTRACT = require('../../control-center/HUMAN_STRATEGY_REVIEW_CONTRACT.json');
 
 function loadReviewExport(filePath) {
   const value = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -11,11 +12,18 @@ function loadReviewExport(filePath) {
   return value;
 }
 
+function stateSummary(observation = {}) {
+  return {
+    url: typeof observation.url === 'string' ? observation.url : '',
+    focusedElementRef: typeof observation.focusedElement?.ref === 'string' ? observation.focusedElement.ref : null,
+    interactiveElementCount: Array.isArray(observation.interactiveElements) ? observation.interactiveElements.length : 0
+  };
+}
+
 function evidenceForTransition(transition = {}) {
   const raw = transition.rawAction && typeof transition.rawAction === 'object' ? transition.rawAction : {};
-  const before = transition.strategyObservationBefore && typeof transition.strategyObservationBefore === 'object'
-    ? transition.strategyObservationBefore
-    : {};
+  const before = transition.strategyObservationBefore && typeof transition.strategyObservationBefore === 'object' ? transition.strategyObservationBefore : {};
+  const after = transition.strategyObservationAfter && typeof transition.strategyObservationAfter === 'object' ? transition.strategyObservationAfter : {};
   const targetRef = typeof raw.targetRef === 'string' ? raw.targetRef : null;
   const target = targetRef && Array.isArray(before.interactiveElements)
     ? before.interactiveElements.find(element => element?.ref === targetRef) || null
@@ -25,6 +33,8 @@ function evidenceForTransition(transition = {}) {
     rawTargetRef: targetRef,
     rawOperation: typeof raw.operation === 'string' ? raw.operation : null,
     observedActionSucceeded: transition.outcome?.actionSucceeded === true,
+    before: stateSummary(before),
+    after: stateSummary(after),
     targetSummary: target ? {
       ref: target.ref || null,
       role: target.role || null,
@@ -42,7 +52,7 @@ function buildAnnotationTemplate(reviewExport) {
   const transitions = Array.isArray(reviewExport.transitions) ? reviewExport.transitions : [];
   if (!transitions.length) throw new Error('review export has no transitions');
   return {
-    contractVersion: '0.1.0',
+    contractVersion: REVIEW_CONTRACT.contractVersion,
     episodeId: reviewExport.episodeId || null,
     splitGroup: 'REVIEW_REQUIRED',
     review: {
@@ -56,6 +66,8 @@ function buildAnnotationTemplate(reviewExport) {
     steps: transitions.map(transition => ({
       transitionId: transition.transitionId || null,
       evidence: evidenceForTransition(transition),
+      include: null,
+      exclusionReason: null,
       action: null,
       outcome: null,
       blocker: null,
@@ -91,6 +103,7 @@ function main(argv = process.argv.slice(2)) {
     console.log(JSON.stringify({
       ok: true,
       result: 'PASS',
+      reviewContractVersion: template.contractVersion,
       episodeId: template.episodeId,
       transitionCount: template.steps.length,
       verified: false,
@@ -107,6 +120,7 @@ if (require.main === module) main();
 
 module.exports = {
   loadReviewExport,
+  stateSummary,
   evidenceForTransition,
   buildAnnotationTemplate,
   defaultOutputPath,
