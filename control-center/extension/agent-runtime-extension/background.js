@@ -52,9 +52,11 @@ async function currentUrl(tabId) {
 
 async function observe(tabId) {
   const expression = `(() => {
+    const interactiveSelector = 'a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]';
     const visible = el => {
       const r = el.getBoundingClientRect();
-      const s = getComputedStyle(el);
+      const view = el.ownerDocument?.defaultView || window;
+      const s = view.getComputedStyle(el);
       return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
     };
     const safeSelector = el => {
@@ -76,46 +78,81 @@ async function observe(tabId) {
       disabled: !!option.disabled,
       selected: !!option.selected
     }));
-    const selector = 'a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]';
-    const nodes = [...document.querySelectorAll(selector)].filter(visible).slice(0, 500);
-    const active = document.activeElement;
+    const interactiveElements = [];
     let focusedRef = null;
-    const interactiveElements = nodes.map((el, i) => {
-      const r = el.getBoundingClientRect();
-      const tag = el.tagName.toLowerCase();
-      const inputType = tag === 'input' ? String(el.type || '').toLowerCase() : null;
-      const checkable = tag === 'input' && ['checkbox', 'radio'].includes(inputType);
-      const isSelect = tag === 'select';
-      const isRange = tag === 'input' && inputType === 'range';
-      const ref = 'e' + i;
-      if (el === active) focusedRef = ref;
-      return {
-        ref,
-        tag,
-        role: el.getAttribute('role') || null,
-        label: label(el),
-        editable: el.isContentEditable || ['input','textarea','select'].includes(tag),
-        enabled: !el.matches(':disabled'),
-        visible: true,
-        inputType,
-        checked: checkable ? !!el.checked : null,
-        selectedValue: isSelect ? String(el.value ?? '') : null,
-        selectedIndex: isSelect ? Number(el.selectedIndex) : null,
-        options: isSelect ? optionState(el) : [],
-        rangeValue: isRange ? Number(el.value) : null,
-        rangeMin: isRange ? Number(el.min || '0') : null,
-        rangeMax: isRange ? Number(el.max || '100') : null,
-        rangeStep: isRange ? (el.step === 'any' ? 'any' : Number(el.step || '1')) : null,
-        selector: safeSelector(el),
-        rect: { x: r.x, y: r.y, width: r.width, height: r.height }
-      };
-    });
+    let framesVisited = 0;
+    let framesSkipped = 0;
+
+    const walk = (doc, offsetX, offsetY, framePath, depth) => {
+      if (!doc || depth > 8 || interactiveElements.length >= 500) return;
+      let frameUrl = null;
+      try { frameUrl = String(doc.location?.href || ''); } catch (_) {}
+      const active = doc.activeElement;
+      const nodes = [...doc.querySelectorAll(interactiveSelector)].filter(visible);
+      for (const el of nodes) {
+        if (interactiveElements.length >= 500) break;
+        const r = el.getBoundingClientRect();
+        const tag = el.tagName.toLowerCase();
+        const inputType = tag === 'input' ? String(el.type || '').toLowerCase() : null;
+        const checkable = tag === 'input' && ['checkbox', 'radio'].includes(inputType);
+        const isSelect = tag === 'select';
+        const isRange = tag === 'input' && inputType === 'range';
+        const ref = 'e' + interactiveElements.length;
+        if (el === active) focusedRef = ref;
+        interactiveElements.push({
+          ref,
+          framePath: [...framePath],
+          frameDepth: depth,
+          frameUrl,
+          tag,
+          role: el.getAttribute('role') || null,
+          label: label(el),
+          editable: el.isContentEditable || ['input','textarea','select'].includes(tag),
+          enabled: !el.matches(':disabled'),
+          visible: true,
+          inputType,
+          checked: checkable ? !!el.checked : null,
+          selectedValue: isSelect ? String(el.value ?? '') : null,
+          selectedIndex: isSelect ? Number(el.selectedIndex) : null,
+          options: isSelect ? optionState(el) : [],
+          rangeValue: isRange ? Number(el.value) : null,
+          rangeMin: isRange ? Number(el.min || '0') : null,
+          rangeMax: isRange ? Number(el.max || '100') : null,
+          rangeStep: isRange ? (el.step === 'any' ? 'any' : Number(el.step || '1')) : null,
+          selector: safeSelector(el),
+          rect: { x: offsetX + r.x, y: offsetY + r.y, width: r.width, height: r.height }
+        });
+      }
+
+      const frames = [...doc.querySelectorAll('iframe,frame')];
+      frames.forEach((owner, index) => {
+        if (depth >= 8 || interactiveElements.length >= 500 || !visible(owner)) return;
+        try {
+          const child = owner.contentDocument;
+          if (!child) { framesSkipped += 1; return; }
+          const r = owner.getBoundingClientRect();
+          framesVisited += 1;
+          walk(
+            child,
+            offsetX + r.x + Number(owner.clientLeft || 0),
+            offsetY + r.y + Number(owner.clientTop || 0),
+            [...framePath, index],
+            depth + 1
+          );
+        } catch (_) {
+          framesSkipped += 1;
+        }
+      });
+    };
+
+    walk(document, 0, 0, [], 0);
     return {
       schemaVersion: '0.2.0',
       url: location.href,
       title: document.title,
       viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
       scroll: { x: scrollX, y: scrollY },
+      frameSummary: { visited: framesVisited, skipped: framesSkipped },
       focusedRef,
       interactiveElements
     };
@@ -140,6 +177,7 @@ async function observe(tabId) {
     title: raw.title,
     viewport: raw.viewport,
     scroll: raw.scroll,
+    frameSummary: raw.frameSummary || { visited: 0, skipped: 0 },
     focusedRef: raw.focusedRef || null,
     agentPointer: pointerByTab.get(tabId) || null,
     interactiveElements: registered.targets
@@ -199,14 +237,15 @@ function targetFormStateChanged(target, live) {
 
 async function readLiveTarget(tabId, target) {
   const interactiveSelector = 'a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]';
-  const locator = target?.selector
-    ? `document.querySelector(${JSON.stringify(target.selector)})`
-    : `document.elementFromPoint(${Number(target?.rect?.centerX)}, ${Number(target?.rect?.centerY)})`;
-  const climbToInteractive = target?.selector
-    ? ''
-    : `if (el && !el.matches(interactive)) el = el.closest(interactive);`;
+  const framePath = Array.isArray(target?.framePath) ? target.framePath : [];
+  const selector = typeof target?.selector === 'string' ? target.selector : null;
+  const topX = Number(target?.rect?.centerX);
+  const topY = Number(target?.rect?.centerY);
   const expression = `(() => {
     const interactive = ${JSON.stringify(interactiveSelector)};
+    const framePath = ${JSON.stringify(framePath)};
+    const targetSelector = ${JSON.stringify(selector)};
+    const topPoint = { x:${topX}, y:${topY} };
     const label = el => {
       const raw = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.innerText || '';
       return String(raw).replace(/\\s+/g, ' ').trim().slice(0, 160);
@@ -218,11 +257,34 @@ async function readLiveTarget(tabId, target) {
       disabled: !!option.disabled,
       selected: !!option.selected
     }));
-    let el = ${locator};
-    ${climbToInteractive}
+    let doc = document;
+    let offsetX = 0;
+    let offsetY = 0;
+    try {
+      for (const frameIndex of framePath) {
+        const frames = [...doc.querySelectorAll('iframe,frame')];
+        const owner = frames[Number(frameIndex)];
+        if (!owner) return { ok:false, reason:'frame_missing' };
+        const r = owner.getBoundingClientRect();
+        const child = owner.contentDocument;
+        if (!child) return { ok:false, reason:'frame_unavailable' };
+        offsetX += r.x + Number(owner.clientLeft || 0);
+        offsetY += r.y + Number(owner.clientTop || 0);
+        doc = child;
+      }
+    } catch (_) {
+      return { ok:false, reason:'frame_unavailable' };
+    }
+    let frameUrl = null;
+    try { frameUrl = String(doc.location?.href || ''); } catch (_) {}
+    let el = targetSelector
+      ? doc.querySelector(targetSelector)
+      : doc.elementFromPoint(topPoint.x - offsetX, topPoint.y - offsetY);
+    if (el && !targetSelector && !el.matches(interactive)) el = el.closest(interactive);
     if (!el) return { ok:false, reason:'missing' };
     const r = el.getBoundingClientRect();
-    const s = getComputedStyle(el);
+    const view = el.ownerDocument?.defaultView || window;
+    const s = view.getComputedStyle(el);
     const tag = el.tagName.toLowerCase();
     const inputType = tag === 'input' ? String(el.type || '').toLowerCase() : null;
     const checkable = tag === 'input' && ['checkbox', 'radio'].includes(inputType);
@@ -231,6 +293,8 @@ async function readLiveTarget(tabId, target) {
     const visible = r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
     return {
       ok:true,
+      frameDepth:framePath.length,
+      frameUrl,
       tag,
       role:el.getAttribute('role') || null,
       label:label(el),
@@ -245,7 +309,7 @@ async function readLiveTarget(tabId, target) {
       rangeMin:isRange ? Number(el.min || '0') : null,
       rangeMax:isRange ? Number(el.max || '100') : null,
       rangeStep:isRange ? (el.step === 'any' ? 'any' : Number(el.step || '1')) : null,
-      rect:{ x:r.x, y:r.y, width:r.width, height:r.height }
+      rect:{ x:offsetX + r.x, y:offsetY + r.y, width:r.width, height:r.height }
     };
   })()`;
   const result = await command(tabId, 'Runtime.evaluate', { expression, returnByValue: true });
@@ -256,6 +320,9 @@ async function assertTargetGeometryCurrent(tabId, target) {
   const live = await readLiveTarget(tabId, target);
   if (!live?.ok || !live.visible || !live.enabled || !live.rect) {
     throw new Error(`target_geometry_unavailable:${live?.reason || 'not_interactable'}`);
+  }
+  if (target?.frameUrl && live?.frameUrl && target.frameUrl !== live.frameUrl) {
+    throw new Error('target_frame_changed');
   }
   if (!target?.selector) {
     const identityChanged =
@@ -388,7 +455,7 @@ async function executeNormalizedAction(tabId, action) {
     case 'focus': {
       const target = await resolveTarget(tabId, action);
       await guardTargetGeometry(tabId, target);
-      if (target.selector) {
+      if (target.selector && (!target.framePath || target.framePath.length === 0)) {
         const selector = JSON.stringify(target.selector);
         const result = await command(tabId, 'Runtime.evaluate', {
           expression: `(() => { const el = document.querySelector(${selector}); if (!el) return false; el.focus(); return document.activeElement === el; })()`,

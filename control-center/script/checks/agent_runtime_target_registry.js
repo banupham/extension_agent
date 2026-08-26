@@ -3,7 +3,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { createRegistry, geometryChanged } = require('../../extension/agent-runtime-extension/target_registry.js');
+const { createRegistry, geometryChanged, normalizeFramePath } = require('../../extension/agent-runtime-extension/target_registry.js');
 
 let now = 1000;
 const registry = createRegistry({ ttlMs: 4000, now: () => now });
@@ -22,12 +22,15 @@ const first = registry.register({
 
 assert.strictEqual(first.targets.length, 1);
 assert.strictEqual(first.targets[0].ref, 'e17');
+assert.strictEqual(first.targets[0].frameDepth, 0);
 assert.strictEqual(Object.prototype.hasOwnProperty.call(first.targets[0], 'selector'), false);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(first.targets[0], 'framePath'), false);
 
 const resolved = registry.resolve({
   observationId: 'obs-1', tabId: 7, targetRef: 'e17', currentUrl: 'https://example.test/a'
 });
 assert.strictEqual(resolved.selector, '#private-selector');
+assert.deepStrictEqual(resolved.framePath, []);
 assert.strictEqual(resolved.rect.centerX, 140);
 assert.strictEqual(resolved.rect.centerY, 65);
 
@@ -48,6 +51,25 @@ assert.strictEqual(
   true
 );
 assert.strictEqual(geometryChanged(null, { x: 1, y: 1, width: 10, height: 10 }), true);
+assert.deepStrictEqual(normalizeFramePath([0, '2', -1, 'x', 3]), [0, 2, 3]);
+
+registry.register({
+  observationId: 'obs-frame',
+  tabId: 8,
+  url: 'https://example.test/root',
+  targets: [{
+    ref: 'e5', tag: 'button', label: 'Frame Action Target', selector: '#frameTarget',
+    framePath: [0, 1], frameDepth: 2, frameUrl: 'https://example.test/nested',
+    rect: { x: 410, y: 520, width: 120, height: 30 }
+  }]
+});
+const framePublic = registry.status(8);
+assert.strictEqual(framePublic.targetCount, 1);
+const frameResolved = registry.resolve({ observationId: 'obs-frame', tabId: 8, targetRef: 'e5', currentUrl: 'https://example.test/root' });
+assert.deepStrictEqual(frameResolved.framePath, [0, 1]);
+assert.strictEqual(frameResolved.frameDepth, 2);
+assert.strictEqual(frameResolved.frameUrl, 'https://example.test/nested');
+assert.strictEqual(frameResolved.rect.centerX, 470);
 
 registry.register({
   observationId: 'obs-2',
@@ -80,6 +102,15 @@ assert.match(runtimeSource, /targetRef: normalized\.destinationRef/);
 assert.match(runtimeSource, /guardTargetGeometry\(tabId, guardedDestination\)/);
 assert.match(runtimeSource, /params\?\.type === 'mouseReleased'/);
 
+// Same-origin iframe baseline: Observer recursively discovers child-frame targets,
+// converts their rectangles to top-viewport coordinates, and live guard resolves
+// the same private frame path before pointer execution.
+assert.match(runtimeSource, /querySelectorAll\('iframe,frame'\)/);
+assert.match(runtimeSource, /framePath: \[\.\.\.framePath\]/);
+assert.match(runtimeSource, /owner\.contentDocument/);
+assert.match(runtimeSource, /offsetX \+ r\.x \+ Number\(owner\.clientLeft/);
+assert.match(runtimeSource, /target_frame_changed/);
+
 // Agent Cursor Debug Overlay contract: telemetry only, never an input source.
 const manifest = JSON.parse(fs.readFileSync(path.join(extensionRoot, 'manifest.json'), 'utf8'));
 const scripts = manifest.content_scripts || [];
@@ -107,4 +138,4 @@ assert.doesNotMatch(mirrorSource, /await\s+chromeApi\.tabs\.sendMessage/);
 assert.match(wrapperSource, /AgentCursorMirror\.install\(chrome\)/);
 assert.match(wrapperSource, /importScripts\('background\.js'\)/);
 
-console.log('Agent Runtime target registry + cursor debug contract: PASS');
+console.log('Agent Runtime target registry + iframe binding + cursor debug contract: PASS');

@@ -41,6 +41,11 @@
     }));
   }
 
+  function normalizeFramePath(framePath) {
+    if (!Array.isArray(framePath)) return [];
+    return framePath.slice(0, 16).map(value => Number(value)).filter(Number.isInteger).filter(value => value >= 0);
+  }
+
   function geometryChanged(observedRect, liveRect, tolerancePx = 2) {
     const observed = normalizeRect(observedRect);
     const live = normalizeRect(liveRect);
@@ -58,6 +63,7 @@
       editable: !!target.editable,
       enabled: target.enabled !== false,
       visible: target.visible !== false,
+      frameDepth: Number.isInteger(Number(target.frameDepth)) ? Number(target.frameDepth) : 0,
       inputType: target.inputType || null,
       checked: typeof target.checked === 'boolean' ? target.checked : null,
       selectedValue: target.selectedValue == null ? null : String(target.selectedValue),
@@ -90,10 +96,14 @@
         const ref = typeof raw?.ref === 'string' && raw.ref ? raw.ref : null;
         if (!ref) continue;
         const rect = normalizeRect(raw.rect);
+        const framePath = normalizeFramePath(raw.framePath);
         map.set(ref, {
           ref,
           tabId: Number(tabId),
           frameId: Number.isInteger(Number(raw.frameId)) ? Number(raw.frameId) : Number(frameId || 0),
+          framePath,
+          frameDepth: Number.isInteger(Number(raw.frameDepth)) ? Number(raw.frameDepth) : framePath.length,
+          frameUrl: typeof raw.frameUrl === 'string' ? raw.frameUrl : null,
           tag: raw.tag || null,
           role: raw.role || null,
           label: raw.label || null,
@@ -136,7 +146,7 @@
       if (!target) throw new Error('target_ref_not_found');
       if (!target.visible || !target.enabled) throw new Error('target_not_interactable');
       if (!target.rect) throw new Error('target_rect_unavailable');
-      return { ...target, observationId, observationCreatedAt: record.createdAt };
+      return { ...target, framePath: [...target.framePath], observationId, observationCreatedAt: record.createdAt };
     }
 
     function invalidateTab(tabId) {
@@ -159,5 +169,5 @@
     return { register, resolve, invalidateTab, status, publicTarget };
   }
 
-  return { createRegistry, normalizeRect, normalizeOptions, geometryChanged, publicTarget };
+  return { createRegistry, normalizeRect, normalizeOptions, normalizeFramePath, geometryChanged, publicTarget };
 });
