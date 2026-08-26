@@ -37,6 +37,16 @@ function loadBaseline(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
+function scopeFromArgs(args, defaultMode = 'all') {
+  const mode = String(args['tabs-scope'] || args['observe-tabs'] || defaultMode);
+  const scope = { mode };
+  if (args.host) scope.hostname = String(args.host);
+  if (args['url-includes']) scope.urlIncludes = String(args['url-includes']);
+  if (args['title-includes']) scope.titleIncludes = String(args['title-includes']);
+  if (args['max-tabs']) scope.maxTabs = Number(args['max-tabs']);
+  return scope;
+}
+
 function chooseTarget(observation, args) {
   const targets = Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : [];
   if (args.ref) return targets.find(x => x.ref === args.ref) || null;
@@ -75,6 +85,18 @@ async function main(argv = process.argv.slice(2)) {
   });
 
   try {
+    if (args.tabs) {
+      const tabs = await runtime.listTabs(scopeFromArgs(args, 'all'));
+      console.log(JSON.stringify({ agentId, tabs }, null, 2));
+      return;
+    }
+
+    if (args['observe-tabs']) {
+      const observations = await runtime.observeTabs(scopeFromArgs(args, String(args['observe-tabs'] || 'visible')));
+      console.log(JSON.stringify({ agentId, observations }, null, 2));
+      return;
+    }
+
     if (args.observe) {
       const observation = await runtime.observe(args.tab ? Number(args.tab) : null);
       console.log(JSON.stringify({ agentId, observation }, null, 2));
@@ -127,4 +149,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, normalizeText, chooseTarget, actionFromArgs, discoverRuntimeAgent };
+module.exports = { parseArgs, normalizeText, scopeFromArgs, chooseTarget, actionFromArgs, discoverRuntimeAgent };
