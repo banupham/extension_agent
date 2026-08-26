@@ -52,6 +52,7 @@ focus
 typeText
 pressKey
 navigate
+reload
 back history-CDP
 forward history-CDP
 ```
@@ -172,9 +173,22 @@ after.url/title  = /target / NAVIGATE PASS
 
 Additional external HTTPS smoke navigation to `https://pixelscan.dev/bot` also reached the requested URL with `execution.ok = true`. This is navigation evidence only; it is NOT evidence of stealth, bot-detection bypass, or platform acceptance. The immediate after-observation title was empty on that external page, so external page-load/observer timing remains separate from navigation execution correctness.
 
-Existing but not yet native-validated on the agreed main/CDP matrix:
+`reload` native evidence on `main`:
 
 ```text
+Page.reload { ignoreCache:false }
+execution.ok = true
+stepCount = resultCount = 1
+observationInvalidated = true
+before.url/title = /reload / Reload 1
+after.url/title  = /reload / Reload 2
+```
+
+All previously implemented P0 CDP actions scheduled for direct native validation are now functionally PASS:
+
+```text
+pressKey
+navigate
 reload
 ```
 
@@ -220,9 +234,10 @@ Do not build Agent Cursor yet.
 Immediate native sequence on `main`:
 
 ```text
-1 reload
-2 stale-ref / moving-target / observer outcome gates
-3 Agent Cursor Debug Overlay when PAGE_CDP pointer observability becomes useful
+1 stale-ref rejection — new observation invalidates old targetRef/observationId
+2 moving-target geometry evidence / rejection behavior
+3 post-action observer outcome fidelity
+4 Agent Cursor Debug Overlay when PAGE_CDP pointer observability becomes useful
 ```
 
 Agent Cursor remains mirror-only telemetry:
