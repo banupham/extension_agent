@@ -23,7 +23,7 @@ function observation(id) {
     scroll: { x: 0, y: 0 },
     focusedElement: null,
     interactiveElements: [{
-      ref: 'e3', tag: 'button', role: 'button', label: 'Submit Target',
+      ref: 'e4', tag: 'button', role: null, label: 'Submit Target',
       editable: false, enabled: true, rendered: true, inViewport: true,
       interactable: true, visible: true,
       rect: { x: 100, y: 100, width: 120, height: 40 }
@@ -44,7 +44,7 @@ const review = {
     status: 'complete',
     startedAtMs: 1000,
     endedAtMs: 1100,
-    rawAction: { actionVersion: '0.1.0', kind: 'click', targetRef: 'e3', t: 1050 },
+    rawAction: { actionVersion: '0.1.0', kind: 'click', targetRef: 'e4', t: 1050 },
     strategyObservationBefore: observation('before'),
     strategyObservationAfter: observation('after'),
     outcome: { actionSucceeded: true, partial: false }
@@ -65,13 +65,16 @@ const review = {
 };
 
 const template = buildAnnotationTemplate(review);
-assert.equal(template.contractVersion, '0.1.0');
+assert.equal(template.contractVersion, '0.1.1');
 assert.equal(template.review.semanticLabelsVerified, false);
+assert.equal(template.steps[0].include, null);
 assert.equal(template.steps[0].action, null);
 assert.equal(template.steps[0].outcome, null);
 assert.equal(template.steps[0].evidence.rawActionKind, 'click');
-assert.equal(template.steps[0].evidence.rawTargetRef, 'e3');
+assert.equal(template.steps[0].evidence.rawTargetRef, 'e4');
 assert.equal(template.steps[0].evidence.targetSummary.label, 'Submit Target');
+assert.equal(template.steps[0].evidence.before.interactiveElementCount, 1);
+assert.equal(template.steps[0].evidence.after.interactiveElementCount, 1);
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'strategy-review-cli-'));
 const reviewPath = path.join(dir, 'demo.task-episode-review.json');
@@ -87,12 +90,13 @@ verified.review = {
   credentialsExcluded: true,
   secretsExcluded: true
 };
+verified.steps[0].include = true;
 verified.steps[0].action = {
   contractVersion: '0.1.0',
-  type: 'submit',
-  targetRef: 'e3',
+  type: 'click',
+  targetRef: 'e4',
   args: {},
-  intent: null,
+  intent: 'click Submit Target',
   expectedOutcome: {}
 };
 verified.steps[0].outcome = {
@@ -105,8 +109,9 @@ verified.steps[0].outcome = {
 fs.writeFileSync(annotationPath, JSON.stringify(verified, null, 2));
 
 const adapted = adaptFiles(reviewPath, annotationPath);
+assert.equal(adapted.adapterVersion, '0.1.1');
 assert.equal(adapted.record.source.kind, 'human-demonstration');
-assert.equal(adapted.record.steps[0].action.type, 'submit');
+assert.equal(adapted.record.steps[0].action.type, 'click');
 assert.equal(adapted.record.terminalResult.status, 'done');
 assert.equal(adapted.record.split, 'unassigned');
 assert.equal(adapted.record.trainingEligibility.eligible, false);
