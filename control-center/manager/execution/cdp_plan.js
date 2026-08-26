@@ -2,6 +2,35 @@
 
 const PLAN_VERSION = '0.1.2';
 
+const MODIFIER_BITS = Object.freeze({ Alt: 1, Control: 2, Meta: 4, Shift: 8 });
+const MODIFIER_ALIASES = Object.freeze({
+  alt: 'Alt', option: 'Alt',
+  ctrl: 'Control', control: 'Control',
+  meta: 'Meta', cmd: 'Meta', command: 'Meta', win: 'Meta', windows: 'Meta',
+  shift: 'Shift'
+});
+const KEY_DESCRIPTIONS = Object.freeze({
+  ArrowLeft: { code: 'ArrowLeft', windowsVirtualKeyCode: 37 },
+  ArrowUp: { code: 'ArrowUp', windowsVirtualKeyCode: 38 },
+  ArrowRight: { code: 'ArrowRight', windowsVirtualKeyCode: 39 },
+  ArrowDown: { code: 'ArrowDown', windowsVirtualKeyCode: 40 },
+  Enter: { code: 'Enter', windowsVirtualKeyCode: 13 },
+  Tab: { code: 'Tab', windowsVirtualKeyCode: 9 },
+  Escape: { code: 'Escape', windowsVirtualKeyCode: 27 },
+  Backspace: { code: 'Backspace', windowsVirtualKeyCode: 8 },
+  Delete: { code: 'Delete', windowsVirtualKeyCode: 46 },
+  Home: { code: 'Home', windowsVirtualKeyCode: 36 },
+  End: { code: 'End', windowsVirtualKeyCode: 35 },
+  PageUp: { code: 'PageUp', windowsVirtualKeyCode: 33 },
+  PageDown: { code: 'PageDown', windowsVirtualKeyCode: 34 }
+});
+const MODIFIER_DESCRIPTIONS = Object.freeze({
+  Alt: { code: 'AltLeft', windowsVirtualKeyCode: 18, location: 1 },
+  Control: { code: 'ControlLeft', windowsVirtualKeyCode: 17, location: 1 },
+  Meta: { code: 'MetaLeft', windowsVirtualKeyCode: 91, location: 1 },
+  Shift: { code: 'ShiftLeft', windowsVirtualKeyCode: 16, location: 1 }
+});
+
 function finite(value, fallback = null) {
   if (value == null || value === '') return fallback;
   const n = Number(value);
@@ -130,8 +159,6 @@ function scrollPlan(mappedAction, behavior, context = {}) {
   const absoluteDelta = Math.max(1, finite(constraints.absoluteDelta, 480));
   const correctionRatio = clamp(finite(constraints.correctionRatio, 0), 0, 0.35);
   const direction = finite(mappedAction.args?.direction, 1) < 0 ? -1 : 1;
-  // Generic page scroll must not inherit a stale pointer position from a prior page/action.
-  // Anchor wheel events at the current viewport center; targeted/nested scrolling is a separate action.
   const point = context.viewportCenter || context.pointerStart || { x: 400, y: 300 };
   const weights = Array.from({ length: eventCount }, (_, i) => Math.sin(Math.PI * (i + 1) / (eventCount + 1)));
   const sum = weights.reduce((a, b) => a + b, 0) || 1;
@@ -165,6 +192,108 @@ function scrollPlan(mappedAction, behavior, context = {}) {
   return steps;
 }
 
+function canonicalModifier(token) {
+  return MODIFIER_ALIASES[String(token || '').trim().toLowerCase()] || null;
+}
+
+function keyDescription(key) {
+  const normalized = String(key || '').trim();
+  const known = KEY_DESCRIPTIONS[normalized];
+  if (!known) return { key: normalized };
+  return {
+    key: normalized,
+    code: known.code,
+    windowsVirtualKeyCode: known.windowsVirtualKeyCode,
+    nativeVirtualKeyCode: known.windowsVirtualKeyCode
+  };
+}
+
+function modifierDescription(modifier) {
+  const known = MODIFIER_DESCRIPTIONS[modifier];
+  if (!known) throw new Error(`unsupported_key_modifier:${modifier}`);
+  return {
+    key: modifier,
+    code: known.code,
+    windowsVirtualKeyCode: known.windowsVirtualKeyCode,
+    nativeVirtualKeyCode: known.windowsVirtualKeyCode,
+    location: known.location
+  };
+}
+
+function parseKeyCombo(value) {
+  const parts = String(value || '').split('+').map(part => part.trim()).filter(Boolean);
+  if (parts.length < 2) throw new Error('key_combo_requires_modifier_and_key');
+  const key = parts.pop();
+  const modifiers = [];
+  let modifierMask = 0;
+  for (const part of parts) {
+    const modifier = canonicalModifier(part);
+    if (!modifier) throw new Error(`unsupported_key_modifier:${part}`);
+    if (modifiers.includes(modifier)) continue;
+    modifiers.push(modifier);
+    modifierMask |= MODIFIER_BITS[modifier];
+  }
+  return { key, modifiers, modifierMask };
+}
+
+function keyComboPlan(rawCombo, hold) {
+  const combo = parseKeyCombo(rawCombo);
+  const steps = [];
+  let activeMask = 0;
+
+  for (const modifier of combo.modifiers) {
+    activeMask |= MODIFIER_BITS[modifier];
+    steps.push({
+      delayMs: 0,
+      method: 'Input.dispatchKeyEvent',
+      params: {
+        type: 'rawKeyDown',
+        ...modifierDescription(modifier),
+        modifiers: activeMask,
+        isSystemKey: (activeMask & MODIFIER_BITS.Alt) !== 0
+      }
+    });
+  }
+
+  const primary = keyDescription(combo.key);
+  steps.push({
+    delayMs: 0,
+    method: 'Input.dispatchKeyEvent',
+    params: {
+      type: 'rawKeyDown',
+      ...primary,
+      modifiers: combo.modifierMask,
+      isSystemKey: (combo.modifierMask & MODIFIER_BITS.Alt) !== 0
+    }
+  });
+  steps.push({
+    delayMs: hold,
+    method: 'Input.dispatchKeyEvent',
+    params: {
+      type: 'keyUp',
+      ...primary,
+      modifiers: combo.modifierMask,
+      isSystemKey: (combo.modifierMask & MODIFIER_BITS.Alt) !== 0
+    }
+  });
+
+  for (const modifier of [...combo.modifiers].reverse()) {
+    activeMask &= ~MODIFIER_BITS[modifier];
+    steps.push({
+      delayMs: 0,
+      method: 'Input.dispatchKeyEvent',
+      params: {
+        type: 'keyUp',
+        ...modifierDescription(modifier),
+        modifiers: activeMask,
+        isSystemKey: (activeMask & MODIFIER_BITS.Alt) !== 0
+      }
+    });
+  }
+
+  return steps;
+}
+
 function keyboardPlan(mappedAction, behavior) {
   const text = String(mappedAction.args?.text ?? '');
   const key = String(mappedAction.args?.key ?? '');
@@ -178,12 +307,16 @@ function keyboardPlan(mappedAction, behavior) {
       params: { text: char }
     }));
   }
-  if (mappedAction.type === 'pressKey' || mappedAction.type === 'keyCombo') {
+  if (mappedAction.type === 'pressKey') {
     if (!key) return [];
     return [
       { delayMs: 0, method: 'Input.dispatchKeyEvent', params: { type: 'keyDown', key } },
       { delayMs: hold, method: 'Input.dispatchKeyEvent', params: { type: 'keyUp', key } }
     ];
+  }
+  if (mappedAction.type === 'keyCombo') {
+    if (!key) return [];
+    return keyComboPlan(key, hold);
   }
   return [];
 }
@@ -226,11 +359,17 @@ function buildCdpPlan({ mappedAction, behavior, target = null, context = {} }) {
 
 module.exports = {
   PLAN_VERSION,
+  MODIFIER_BITS,
   targetPoint,
   pointerPath,
   clickPlan,
   hoverPlan,
   scrollPlan,
+  canonicalModifier,
+  keyDescription,
+  modifierDescription,
+  parseKeyCombo,
+  keyComboPlan,
   keyboardPlan,
   navigationHistoryPlan,
   buildCdpPlan
