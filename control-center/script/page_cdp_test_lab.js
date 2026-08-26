@@ -33,7 +33,8 @@ function frameHtml() {
 function mainHtml(url) {
   const waitCase = url.searchParams.get('case') === 'wait';
   const tabCase = String(url.searchParams.get('tab') || '').trim().toLowerCase();
-  const initialTitle = ['alpha', 'beta', 'disposable'].includes(tabCase)
+  const browserUiTabCase = ['alpha', 'beta', 'disposable'].includes(tabCase);
+  const initialTitle = browserUiTabCase
     ? `UI TAB ${tabCase.toUpperCase()}`
     : 'PAGE_CDP Batch Lab';
   return `<!doctype html>
@@ -112,7 +113,11 @@ function mainHtml(url) {
 
   <script>
     const state = document.getElementById('state');
-    function mark(text){ state.textContent=text; document.title=text; }
+    const preserveBrowserUiTabTitle = ${browserUiTabCase ? 'true' : 'false'};
+    function mark(text){
+      state.textContent=text;
+      if (!preserveBrowserUiTabTitle) document.title=text;
+    }
 
     document.getElementById('setChecked').addEventListener('change', e => {
       mark(e.target.checked ? 'SETCHECKED PASS' : 'SETCHECKED FALSE');
@@ -149,7 +154,7 @@ function mainHtml(url) {
     document.getElementById('rate').addEventListener('change',e=>mark(e.target.value==='2'?'PLAYBACKRATE PASS':'PLAYBACKRATE '+e.target.value));
 
     if (${waitCase ? 'true' : 'false'}) {
-      document.title='WAITANDOBSERVE ARMED';
+      if (!preserveBrowserUiTabTitle) document.title='WAITANDOBSERVE ARMED';
       setTimeout(() => {
         const b=document.createElement('button');
         b.id='waitReady'; b.setAttribute('aria-label','Wait Ready'); b.textContent='Wait Ready';
