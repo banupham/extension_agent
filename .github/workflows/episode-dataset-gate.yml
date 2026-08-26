@@ -14,6 +14,9 @@ on:
       - 'control-center/script/episode_outcome_dataset_gate.js'
       - 'control-center/script/checks/episode_outcome_dataset.js'
       - 'control-center/script/checks/episode_dataset_export.js'
+      - 'training-collector/tools/build_strategy_episode_dataset.js'
+      - 'training-collector/tests/strategy_episode_dataset_cli_contract.js'
+      - 'training-collector/.gitignore'
       - '.github/workflows/episode-dataset-gate.yml'
   workflow_dispatch:
 
@@ -32,9 +35,13 @@ jobs:
           node --check control-center/script/episode_outcome_dataset_gate.js
           node --check control-center/script/checks/episode_outcome_dataset.js
           node --check control-center/script/checks/episode_dataset_export.js
+          node --check training-collector/tools/build_strategy_episode_dataset.js
+          node --check training-collector/tests/strategy_episode_dataset_cli_contract.js
       - name: Validate dataset contract JSON
         run: node -e "JSON.parse(require('fs').readFileSync('control-center/EPISODE_OUTCOME_DATASET_CONTRACT.json','utf8'))"
       - name: Run episode/outcome dataset contract
         run: node control-center/script/checks/episode_outcome_dataset.js
       - name: Run episode split/export contract
         run: node control-center/script/checks/episode_dataset_export.js
+      - name: Run strategy dataset file builder contract
+        run: node training-collector/tests/strategy_episode_dataset_cli_contract.js
