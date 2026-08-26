@@ -1,6 +1,6 @@
 # PROJECT JOURNAL — persistent engineering memory
 
-Mục đích: bộ nhớ kỹ thuật lâu dài cho `banupham/extension_agent` để cuộc trò chuyện mới có thể tiếp tục đúng mốc mà không suy đoán lại kiến trúc hoặc các bug đã điều tra.
+Mục đích: bộ nhớ kỹ thuật lâu dài cho `banupham/extension_agent` để cuộc trò chuyện mới có thể tiếp tục đúng mốc mà không phải điều tra lại kiến trúc, bug khó hoặc native evidence đã có.
 
 ```text
 STATUS.md
@@ -132,7 +132,7 @@ Privacy boundary excludes raw password/cookie/token/Authorization/clipboard/paym
 
 ---
 
-# 4. A0–A3 training/execution preparation
+# 4. A0–A3 preparation
 
 ## A0 — Agent contract boundary COMPLETE
 
@@ -432,13 +432,13 @@ node script/agent_one_action.js --type scrollVertical --direction 1 --host en.wi
 
 The original existing function returned successful CDP dispatch but produced no meaningful visible page movement.
 
-First investigation found generic page scroll used the previous `agentPointer` as wheel coordinate. This could anchor the wheel over a nested/control surface. Planner was changed so generic page scroll uses `viewportCenter`; targeted/nested scrolling remains a separate concern.
+First investigation found generic page scroll used previous `agentPointer` as wheel coordinate. This could anchor wheel over a nested/control surface. Planner changed so generic page scroll uses `viewportCenter`; targeted/nested scrolling remains a separate concern.
 
-Native retest still showed no meaningful movement, so that was not the only root cause.
+Native retest still showed no meaningful movement, proving that was not the only root cause.
 
 ## 10.2 Root cause
 
-Without a generated empirical baseline, Behavior Policy emitted missing scroll metrics as `null`.
+Without generated empirical baseline, Behavior Policy emitted missing scroll metrics as `null`.
 
 Old numeric helper semantics did:
 
@@ -448,7 +448,7 @@ Number(null) = 0
 
 This accidentally converted “metric absent” into real zero-like values before planner fallback logic.
 
-Resulting functional effect was approximately:
+Functional effect was approximately:
 
 ```text
 duration → minimum bound
@@ -463,11 +463,11 @@ Fix semantics:
 ```text
 missing/empty behavior metric
 → remain null
-→ planner recognizes value as absent
+→ planner recognizes absent value
 → conservative fallback activates
 ```
 
-Fallback scroll plan is approximately:
+Fallback scroll plan approximately:
 
 ```text
 durationMs = 220
@@ -476,11 +476,11 @@ absoluteDelta = 480 requested total burst
 wheel anchor = viewport center
 ```
 
-This preserves true numeric zero when it is actual data; it only treats null/empty as missing.
+True numeric zero remains valid data; only null/empty means missing.
 
 ## 10.3 Native PASS evidence
 
-After the fix the Wikipedia page visibly moved.
+After fix Wikipedia visibly moved.
 
 OBSERVE AFTER:
 
@@ -489,7 +489,7 @@ scroll.x = 0
 scroll.y = 388
 ```
 
-Independent geometry evidence from the same semantic element `e405`:
+Independent geometry evidence from same semantic element `e405`:
 
 ```text
 before rect.y = 5500.015625
@@ -518,11 +518,65 @@ result:      SUCCESS
 merge:       21018224496dad3208c04a0a324fdcf7748c218b
 ```
 
-Regression coverage now checks both fallback scroll magnitude and viewport-center anchoring.
+Regression coverage now checks fallback scroll magnitude and viewport-center anchoring.
 
 ---
 
-# 11. Current native matrix
+# 11. Native milestone — hover without click PASS
+
+Controlled page:
+
+```text
+https://en.wikipedia.org/wiki/Web_browser
+```
+
+Command:
+
+```bat
+node script/agent_one_action.js --type hover --label "Browser market" --host en.wikipedia.org --full
+```
+
+Native human-visible evidence:
+
+```text
+Agent hover position reached Browser market
+no mouse press/release side effect observed
+no navigation occurred
+Wikipedia page remained on Web browser article
+```
+
+Classification:
+
+```text
+hover existing function = NATIVE PASS
+```
+
+Important observability note: CDP `Input.dispatchMouseEvent` does not move the OS/native mouse cursor. Therefore a correct hover can be visually hard to verify when the target does not expose CSS/UI hover state.
+
+A future **Agent Cursor debug overlay** is technically appropriate if scheduled, but it must obey this boundary:
+
+```text
+CDP plan / Runtime dispatch = source of truth for input
+                 ↓ mirror only
+Agent Cursor overlay = visualization/telemetry only
+```
+
+Requirements if implemented later:
+
+```text
+- consume exact dispatched mouse-event x/y and timing;
+- never generate input or choose target;
+- pointer-events:none;
+- no influence on Strategy, Behavior, target registry or CDP plan;
+- ideally render each actually-dispatched mouseMoved/pressed/released/wheel step rather than run an independent animation;
+- optional click/ripple/trail visuals are debug presentation only.
+```
+
+Do not add this visualization as part of the current P0 function matrix unless explicitly scheduled; current focus remains validation of existing Agent functions.
+
+---
+
+# 12. Current native matrix
 
 ```text
 tab inventory / matching          PASS
@@ -534,12 +588,12 @@ visible click effect              PASS
 observation invalidation          PASS
 OBSERVE AFTER                     PASS
 vertical page scroll              PASS
+hover without click               PASS
 
 NEXT existing function:
-hover without click
+horizontal scroll on controlled horizontal surface
 
 THEN:
-horizontal scroll
 doubleClick
 focus
 typeText
@@ -556,7 +610,7 @@ Do not start autonomous multi-step tasks yet.
 
 ---
 
-# 12. Safety boundary
+# 13. Safety boundary
 
 CAPTCHA/human verification:
 
@@ -571,7 +625,7 @@ Human login demonstrations may contribute timing/semantic operation classes but 
 
 ---
 
-# 13. Architectural decisions
+# 14. Architectural decisions
 
 ```text
 D001 Scenario Mode and Agent Mode stay separate
@@ -628,12 +682,13 @@ D051 Implementation failures use one reusable experiment branch
 D052 P0 in-page functional validation uses one unified CDP path
 D053 Repeated tests prefer neutral/controlled pages
 D054 Missing empirical metrics must remain absent/null; do not coerce null to numeric zero
-D055 Generic page scroll anchors at viewport center; nested/targeted scroll is a separate problem
+D055 Generic page scroll anchors at viewport center; nested/targeted scroll is separate
+D056 Any future visible Agent Cursor is debug telemetry only and mirrors actual dispatched mouse events; it never becomes an input/execution source
 ```
 
 ---
 
-# 14. Maintenance rule
+# 15. Maintenance rule
 
 Journal only difficult facts that a future session must not rediscover:
 
