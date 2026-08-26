@@ -4,7 +4,7 @@
 
 GitHub `banupham/extension_agent` is the implementation source of truth.
 
-Before code changes:
+Before implementation changes:
 
 ```text
 STATUS.md
@@ -12,74 +12,79 @@ STATUS.md
 → current source/tests on main
 ```
 
-Recent focused evidence includes:
+Recent A5 evidence:
 
 ```text
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CDP_NATIVE.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_AGENT_CURSOR.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_KEYBOARD_FIDELITY.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CLEAR_NATIVE.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MOVETO_NATIVE.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_SCROLLINTOVIEW_NATIVE.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_DRAG_BATCH.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_FORMS_BATCH.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_OBSERVATION_UI_BATCH.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MEDIA_BATCH.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MULTIFRAME_BATCH.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_TAB_LIFECYCLE_BATCH.md
+docs/A5_NATIVE_VALIDATION_2026-08-26.md
 ```
+
+Older focused native evidence remains under `docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_*`.
 
 ---
 
-# CURRENT FOCUS — functional matrix closed; Browser UI/OS shell re-test next
+# CURRENT FOCUS — A5.4 explicit one-step replan orchestration
 
 ```text
-A0 Agent/Behavior contracts        COMPLETE
-A1 Action Window 0.1.4             COMPLETE
-A2 Behavior Feature 0.2.0          COMPLETE
-A3 Empirical baseline contract     READY
-P0 Agent Runtime                   SCOPED FUNCTION MATRIX NATIVE PASS
-A4 One-action bridge               SCOPED FUNCTION MATRIX NATIVE PASS
-A5 Goal Checker + Replan           NOT STARTED
-Autonomous multi-step              NOT STARTED
+A0 Agent/Behavior contracts             COMPLETE
+A1 Action Window 0.1.4                  COMPLETE
+A2 Behavior Feature 0.2.0               COMPLETE
+A3 Empirical baseline contract          READY
+P0 Agent Runtime                        SCOPED FUNCTION MATRIX NATIVE PASS
+A4 One-action bridge                    SCOPED FUNCTION MATRIX NATIVE PASS
+A5.1 Semantic Goal Checker              COMPLETE / NATIVE PASS
+A5.2 Outcome → control status           COMPLETE / NATIVE PASS
+A5.3 Step history + episode budgets     COMPLETE / CONTRACT PASS
+A5.4 Explicit one-step replan           NEXT / NOT STARTED
+Autonomous multi-step                   NOT STARTED
 ```
 
-Collector V0.8 transport/capture gate is complete and only needs stability/regression support.
+Collector V0.8 transport/capture remains complete and only needs stability/regression support.
 
 Functional Agent PASS != Brain-quality PASS != natural-behavior PASS.
 
-## Native-PASS functional matrix
+---
+
+# Scoped functional executor state
+
+The semantic Agent Action Contract remains 35 actions:
 
 ```text
-tab inventory / matching
-human keyword → exact tabId
-OBSERVE semantic targets
-basic click + visible effect
-OBSERVE AFTER / invalidation
-vertical scroll
-horizontal scroll
-scrollIntoView
+navigation 7
+navigate
+back
+forward
+reload
+switchTab
+openNewTab
+closeTab
+
+pointer 5
+click
+doubleClick
 hover
 moveTo
-doubleClick
-drag with semantic source + destination refs
+drag
+
+scroll 3
+scrollVertical
+scrollHorizontal
+scrollIntoView
+
+keyboard 6
 focus
 typeText
 replaceText
 clear
 pressKey
-modifier-aware keyCombo at PAGE_CDP/page-listener level
-navigate
-reload
-back history-CDP
-forward history-CDP
-setChecked
+keyCombo
+
+forms 4
 selectOption
+setChecked
 toggle
 submit
-dismiss
-hoverAndObserve
-waitAndObserve
+
+media 7
 play
 pause
 mute
@@ -87,107 +92,240 @@ unmute
 setVolume
 seek
 changePlaybackRate
-switchTab
-openNewTab
-closeTab
-same-origin iframe observation / semantic target binding
-same-origin iframe PAGE_CDP click
+
+observation/ui 3
+hoverAndObserve
+waitAndObserve
+dismiss
+```
+
+Scoped PAGE_CDP/browser-native functional coverage is closed at 35/35.
+
+Native functional evidence also includes:
+
+```text
+semantic OBSERVE and observation-bound target refs
+post-action settled re-observation
 stale-ref rejection after newer observation
-moving-target live-geometry rejection before pointer click
-drag destination live-geometry rejection before release
-form/media target-state rejection when observed state changes
-post-action settled semantic observation for delayed dynamic UI
-Agent Cursor V0.1 pointer visualization + Observer isolation
+same-origin iframe observation + PAGE_CDP click
+nested same-origin iframe depth 2 observation + visible cursor click
+moving-target guard on existing guarded pointer/drag paths
+form/media observed-state binding
+Agent Cursor V0.1 visualization
+browser-native tab lifecycle switch/open/close
 ```
 
-Forms batch is **4/4 native PASS**:
+Forms 4/4, Observation/UI 3/3, Media 7/7 and browser-native tab lifecycle 3/3 are native PASS.
 
-```text
-setChecked
-selectOption
-toggle
-submit
-```
-
-`setChecked` and `selectOption` were first native-confirmed unsupported, then fixed on `feat/agent-tab-context`, CI-passed, native re-tested, and selectively promoted to `main`. Their PAGE_CDP pointer phases were also visually confirmed through Agent Cursor after reloading the Runtime extension.
-
-Observation / UI batch is **3/3 native PASS**:
-
-```text
-dismiss
-hoverAndObserve
-waitAndObserve
-```
-
-`waitAndObserve` was first native-confirmed unsupported. It is now an observation-only action with a zero-input plan and bounded semantic polling. A deliberate ~5-second delayed semantic-change gate exposed the original 800ms deadline as too short; the dedicated wait budget is now 6000ms and native retest PASSed before deadline.
-
-Media batch is **7/7 native PASS**:
-
-```text
-play
-pause
-mute
-unmute
-setVolume
-seek
-changePlaybackRate
-```
-
-`setVolume`, `seek`, and `changePlaybackRate` were first native-confirmed unsupported, then fixed together on `feat/agent-tab-context`, CI-passed, native re-tested, and selectively promoted to `main`. `setVolume` and `seek` use observed range state and held PAGE_CDP pointer travel; `changePlaybackRate` uses observed select-option semantics plus PAGE_CDP focus/keyboard selection. Naturalness remains a later Behavior-learning concern, not part of this functional gate.
-
-Multi-frame same-origin batch is **2/2 native PASS**:
-
-```text
-observe Frame Action Target inside child iframe
-click observation-bound Frame Action Target through PAGE_CDP
-```
-
-The existing top-document-only Observer first native-failed to discover the iframe target. The repair recursively observes visible same-origin frames, binds frame path internally, converts child rects to top-viewport coordinates, and re-resolves the bound frame for live geometry guards. Cross-origin/OOPIF support is not claimed by this gate.
-
-Tab lifecycle batch is **3/3 native PASS**:
-
-```text
-switchTab
-openNewTab
-closeTab
-```
-
-All three first native-failed with `cdp_plan_unsupported:*`. They now use a browser-action envelope and `chrome.tabs.update/create/remove`; `cdpPlan = null`. Browser Context resolves the internal `tabId`; Strategy does not emit tab IDs or execution primitives. Post-action evidence is tab inventory before/after, and `closeTab` does not attempt to page-observe a tab after removal. Selective promotion to `main` commit `32190277ef9610bdf51aa4a0a855d639ce8068ea` passed main CI run `32972700448`.
+Cross-origin/OOPIF frame support is not claimed.
 
 ---
 
-# Development / branch rule
+# A5 — Goal Checker + Replan control
 
-Test existing functionality on `main` first.
+## A5.1 Semantic Goal Checker — COMPLETE
 
-```text
-main
-→ native test existing function
-→ PASS: record evidence and continue
-→ FAIL due implementation: use reusable experiment branch
-→ fix + contract/CI + native re-test
-→ merge only native-PASS fix
-```
-
-Reusable experiment branch:
+Contract/source:
 
 ```text
-feat/agent-tab-context
+control-center/GOAL_CHECKER_CONTRACT.json
+control-center/manager/goal/goal_checker.js
+control-center/script/checks/goal_checker.js
+control-center/script/goal_checker_gate.js
 ```
 
-Do not merge the whole experimental branch blindly. Selectively promote only native-proven code/tests. Browser UI/OS experiments remain isolated until explicitly promoted.
-
-Controlled local webpage tests reuse one fixed surface:
+Input/output:
 
 ```text
-http://127.0.0.1:8091
+Task.successCriteria
++ BEFORE semantic evidence
++ execution result
++ AFTER semantic evidence
+→ Outcome
 ```
 
-Batch test mode is allowed for speed, but each gate remains one semantic Agent Action followed by execution + observation. This is not autonomous multi-step.
+Outcome keeps action success separate from task success:
+
+```text
+actionSucceeded
+taskSucceeded
+progress
+evidence
+errorCode
+metadata.progressBefore
+metadata.progressDelta
+```
+
+Supported success-criterion families:
+
+```text
+page        → url/title equals/includes
+pageSignal  → semantic pageSignals equals
+element     → semantic label/role/tag + state expectations
+browserTab  → semantic title/url + exists/active
+```
+
+Goal criteria do not use selector, coordinate, frame path, tabId, raw CDP/browser packets, password/cookie/token/clipboard or printable private input values.
+
+Native controlled evidence:
+
+```text
+moveTo Submit Target
+→ execution succeeded
+→ title goal remained unmatched
+→ actionSucceeded=true
+→ taskSucceeded=false
+→ progressDelta=0
+
+submit Submit Target
+→ execution succeeded
+→ title changed PAGE_CDP Batch Lab → SUBMIT PASS
+→ beforeMatched=false
+→ afterMatched=true
+→ actionSucceeded=true
+→ taskSucceeded=true
+→ progressDelta=1
+```
+
+This proves `execution.ok` alone does not imply task completion.
+
+## A5.2 Outcome Controller — COMPLETE
+
+Contract/source:
+
+```text
+control-center/OUTCOME_CONTROL_CONTRACT.json
+control-center/manager/goal/outcome_controller.js
+control-center/script/checks/outcome_controller.js
+control-center/script/outcome_control_gate.js
+```
+
+Control statuses:
+
+```text
+done
+  terminal=true
+  shouldReplan=false
+
+continue
+  terminal=false
+  shouldReplan=true
+
+failed
+  terminal=false at A5.2
+  shouldReplan=true
+
+blocked
+  terminal=true
+  shouldReplan=false
+```
+
+Precedence:
+
+```text
+goal satisfied
+→ explicit blocker
+→ step/outcome failure
+→ continue
+```
+
+Native controlled evidence:
+
+```text
+moveTo → continue / shouldReplan=true
+submit → done / terminal=true / shouldReplan=false
+```
+
+The `done` native gate requires a real semantic `beforeMatched=false → afterMatched=true` transition.
+
+## A5.3 Step History + Episode Budget Guard — COMPLETE
+
+Contract/source:
+
+```text
+control-center/EPISODE_BUDGET_CONTRACT.json
+control-center/manager/goal/episode_budget.js
+control-center/script/checks/episode_budget.js
+```
+
+Default budget families:
+
+```text
+maxSteps                 8
+maxDurationMs            120000
+maxConsecutiveFailures   2
+maxReplans               6
+maxStalledSteps          3
+```
+
+Compact history fields only:
+
+```text
+stepIndex
+recordedAtMs
+actionType
+controlStatus
+actionSucceeded
+taskSucceeded
+progress
+progressDelta
+reasonCode
+errorCode
+shouldReplan
+```
+
+No selector, coordinate, CDP plan, browser packet, full observation, credential data or private reasoning is stored in A5.3 history.
+
+Budget semantics:
+
+```text
+done    → terminal success; budget does not override achieved goal
+blocked → terminal immediately
+budget exhaustion → terminal failed
+otherwise → continue; at most one next replan may be permitted
+```
+
+Exhaustion reason codes:
+
+```text
+budget_max_duration_reached
+budget_max_steps_reached
+budget_consecutive_failures_reached
+budget_stalled_progress_reached
+budget_max_replans_reached
+```
+
+Contract coverage includes every exhaustion path plus failure/stall counter resets after successful progress.
+
+## NEXT — A5.4 explicit one-step replan
+
+A5.4 is allowed to orchestrate one bounded next Strategy decision only after A5.3 returns:
+
+```text
+terminal=false
+shouldReplan=true
+```
+
+Target shape:
+
+```text
+Task
+→ OBSERVE
+→ Strategy chooses ONE semantic Agent Action
+→ Behavior/Execution
+→ execute
+→ settled OBSERVE AFTER
+→ A5.1 Goal Checker
+→ A5.2 Outcome Controller
+→ A5.3 Episode Budget Guard
+→ if permitted: ONE explicit replan decision
+```
+
+A5.4 must not become an unbounded autonomous loop. A broader autonomous multi-step mode remains a later milestone after bounded replan evidence and episode/outcome dataset validation.
 
 ---
 
-# Current execution boundary
+# Architecture boundary
 
 ```text
 TASK
@@ -195,12 +333,15 @@ TASK
 → OBSERVER
 → STRATEGY / BRAIN
 → AGENT ACTION CONTRACT        = WHAT
-→ EXECUTION BEHAVIOR CONTRACT = HOW naturally / allowed variant
+→ EXECUTION BEHAVIOR CONTRACT = HOW / allowed variant
 → PAGE_CDP PLAN or BROWSER ACTION ENVELOPE
-→ AGENT RUNTIME EXTENSION      = dispatch + narrow runtime binding
+→ AGENT RUNTIME EXTENSION      = dispatch + narrow binding
 → CHROME
-→ SETTLED PAGE OBSERVE or BROWSER-CONTEXT OBSERVE AFTER
-→ GOAL CHECK / REPLAN
+→ SETTLED OBSERVE AFTER / BROWSER CONTEXT AFTER
+→ GOAL CHECK
+→ OUTCOME CONTROL
+→ EPISODE BUDGET
+→ bounded REPLAN
 ```
 
 Hard invariant:
@@ -209,15 +350,17 @@ Hard invariant:
 Strategy does NOT emit selector / coordinate / CDP packet.
 Behavior does NOT choose task intent.
 Executor does NOT choose strategy.
+Goal Checker does NOT choose next action.
+Episode Budget does NOT call Strategy.
 ```
 
 `tabId` remains internal execution identity.
 
 ---
 
-# CDP / Runtime baseline
+# Runtime / observation baseline
 
-Runtime dispatcher accepts PAGE_CDP plans:
+Runtime dispatcher accepts PAGE_CDP plan versions:
 
 ```text
 0.1.0
@@ -226,9 +369,7 @@ Runtime dispatcher accepts PAGE_CDP plans:
 0.1.3
 ```
 
-`0.1.3` is currently required by semantic drag and observation-only `waitAndObserve`. Other existing planners may still emit compatible earlier versions.
-
-Allowlisted EXECUTE_PLAN methods remain:
+Allowlisted execution methods remain:
 
 ```text
 Input.dispatchMouseEvent
@@ -240,153 +381,146 @@ Page.getNavigationHistory
 Page.navigateToHistoryEntry
 ```
 
-No arbitrary raw-CDP tunnel from Brain.
-
-## Browser-native tab lifecycle
+Browser-native tab lifecycle remains:
 
 ```text
-switchTab   → chrome.tabs.update(tabId, {active:true})
-openNewTab  → chrome.tabs.create({url, active:true, windowId})
-closeTab    → chrome.tabs.remove(tabId)
+switchTab  → chrome.tabs.update
+openNewTab → chrome.tabs.create
+closeTab   → chrome.tabs.remove
 ```
 
-These do not use `EXECUTE_PLAN`, PAGE_CDP input, or Browser UI/OS. The one-action bridge records `beforeBrowserContext` and `afterBrowserContext`; the browser action is one semantic action and `cdpPlan = null`.
+No arbitrary raw-CDP tunnel from Strategy/Brain.
 
-## Observation-bound target safety
-
-Observation refs use TTL 4s and latest-observation rules. A newer observation invalidates the old one.
-
-Target-dependent actions use narrow Runtime binding. Runtime re-reads live geometry and rejects `target_geometry_changed` instead of silently retargeting. Pointer actions re-check immediately before press where applicable. Drag additionally validates destination geometry before execution and immediately before release.
-
-Observed state binding currently includes:
+Ordinary post-action semantic settling:
 
 ```text
-checkbox/radio → inputType + checked
-select         → selectedValue + selectedIndex + option metadata
-range          → rangeValue + rangeMin + rangeMax + rangeStep
-same-origin frame → internal framePath + top-viewport observed rect
-```
-
-No text/password input values are exposed for these features. If bound check/select/range state changes after OBSERVE, Runtime rejects `target_state_changed`.
-
-## Forms execution
-
-```text
-setChecked
-→ if state already equals requested value: no toggle
-→ otherwise observation-bound PAGE_CDP click
-
-selectOption
-→ resolve requested semantic option from observed option metadata
-→ PAGE_CDP pointer acquire/focus
-→ Input.dispatchKeyEvent Home / ArrowDown / Enter
-```
-
-## Media execution
-
-```text
-setVolume / seek
-→ resolve requested value against observed range bounds
-→ internal current/desired track points from observed rect
-→ PAGE_CDP pointer acquire → down → held travel → up
-
-changePlaybackRate
-→ resolve requested option from observed select metadata
-→ PAGE_CDP pointer acquire/focus
-→ Input.dispatchKeyEvent Home / ArrowDown / Enter
-```
-
-Strategy still emits no selector, coordinate, frame path, raw CDP packet, or browser API packet.
-
-## Settled post-action observation
-
-Ordinary one-action bridge `0.2.1` semantic settling remains:
-
-```text
-poll every 80ms
-minimum window 400ms
+poll 80 ms
+minimum 400 ms
 semantic stability >= 2 samples
-maximum deadline 800ms
+maximum 800 ms
 ```
 
-`waitAndObserve` is intentionally different because waiting is the semantic action itself:
+`waitAndObserve` remains observation-only with a dedicated 6000 ms bounded settle window.
 
-```text
-plan steps = []
-poll every 80ms
-minimum window 400ms
-require semantic change
-semantic stability >= 2 samples
-maximum deadline 6000ms
-```
-
-The 6000ms budget is execution policy below Strategy; the Agent Action does not encode test-page timing.
-
-## Keyboard/input fidelity
-
-```text
-Input.dispatchKeyEvent = key-like listener semantics
-Input.insertText       = text insertion semantics
-```
-
-`typeText` via `Input.insertText` provides `beforeinput/input`, not physical-key listener fidelity. Physical-key-like typing remains a future execution variant only if a real task requires it.
-
-## Agent Cursor V0.1
-
-PAGE_CDP `Input.dispatchMouseEvent` is the source of truth for the debug cursor mirror. The overlay is telemetry only, `pointer-events:none`, isolated from Observer, and must never change execution timing.
-
-Repeated pointer/scroll/drag/range tests provide functional diversity evidence only. Naturalness refinements remain Behavior-learning work after functional coverage is closed.
+Agent Cursor mirrors actual PAGE_CDP pointer dispatch only; it is telemetry and never generates input or affects Observer/Strategy.
 
 ---
 
-# Browser UI / OS control — EXPERIMENTAL, RE-TEST NEXT
+# Experimental branch-only evidence
 
-Experimental evidence retained on `feat/agent-tab-context` includes Win32/Windows-UIA browser-shell control probes. It remains a separate execution surface and is not integrated into ordinary Runtime execution.
+Reusable experimental branch remains:
 
-Previous exploratory evidence included browser Back/Forward via Win32 SendInput and UIA-discovered physical-style pointer interaction. The next gate is to re-test this surface after closing the scoped semantic action matrix.
+```text
+feat/agent-tab-context
+```
 
-Any test that sends real OS mouse/keyboard input requires explicit user consent immediately before input is sent and an exclusive desktop-input lease. Browser UI functional correctness and naturalness are separate gates; naturalness should be refined through Behavior learning rather than hand-tuned per functional test.
+Do not merge the whole branch blindly.
+
+## Browser UI / OS
+
+Windows UIA + Win32 SendInput experiments are native PASS for previously tested shell controls, including Back/Forward and tab-strip `switchTab/openNewTab/closeTab`. They remain experimental and are not integrated into ordinary Runtime/main execution.
+
+Any future OS-input execution still requires an explicit desktop-input design/consent boundary.
+
+## `follow-live` target tracking
+
+Experimental Behavior/Execution variant:
+
+```text
+targetTracking=fixed       → existing baseline behavior
+targetTracking=follow-live → live pointer correction while target moves
+```
+
+Native visual spike evidence on the experimental branch:
+
+```text
+submit + follow-live          PASS
+hoverAndObserve + follow-live PASS
+```
+
+This variant is intentionally not promoted into `main` yet. Semantic actions remain `submit` and `hoverAndObserve`; tracking is HOW, not WHAT.
+
+The earlier generic stale-geometry guard expansion for `replaceText`, `clear`, `submit`, `hoverAndObserve` was not retained on the experimental branch after visual testing. Do not claim those four actions have the same generic moving-target rejection invariant as the already-guarded pointer/state paths.
 
 ---
 
-# NEXT — Browser UI/OS shell-control re-test
+# Development / branch rule
 
-Start from the preserved experimental artifacts on `feat/agent-tab-context` and verify existing functionality before changing implementation.
-
-Initial re-test scope:
+Use only:
 
 ```text
-browser Back / Forward shell controls
-UIA semantic discovery of browser toolbar controls
-physical-style mouse trajectory → down → hold → up
+main
+feat/agent-tab-context
 ```
 
-Rules:
+Workflow:
 
 ```text
-no PAGE_CDP pretending to hit browser chrome
-no teleport+click
-no Runtime integration before evidence
-explicit consent immediately before OS input
-one exclusive desktop-input owner
+main existing functionality
+→ native/contract test first
+→ PASS: record evidence and continue
+→ implementation failure: use reusable experimental branch
+→ fix + contract/CI + native re-test
+→ selectively promote only native/contract-proven files
 ```
 
-After Browser UI/OS re-test, review the evidence and architecture before deciding whether to integrate that surface or proceed to A5 / Goal Checker + Replan. Autonomous multi-step remains out of scope.
+Controlled local webpage tests reuse:
+
+```text
+http://127.0.0.1:8091
+```
+
+No extra local test ports should be introduced without a real requirement.
 
 ---
 
-# Known later fidelity / robustness gates
+# Training position
+
+Behavior data pipeline already exists:
+
+```text
+human demonstrations
+→ Collector raw
+→ A1 Action Windows
+→ A2 Behavior Features
+→ A3 empirical/context-conditioned baseline
+```
+
+Naturalness remains a Behavior-learning milestone, not a functional executor gate.
+
+Strategy/Brain training should wait until bounded replan produces reliable episode records with:
+
+```text
+Task
+Observation
+Decision
+Action
+Outcome
+Progress
+terminal result
+```
+
+After A5.4 bounded replan validation, the next training-oriented gate is episode/outcome dataset validation and held-out evaluation before broader autonomous execution.
+
+---
+
+# Deferred / on-demand gates
+
+These do not block A5.4:
 
 ```text
 cross-origin/OOPIF frame observation when a real task requires it
 focus primitive metadata cleanup
-physical-key-like text-entry variant only if a real task requires listener fidelity
-pointer/scroll/drag/range naturalness refinement through Behavior learning
-Browser UI/OS integration only after the shell-control re-test and explicit design review
+physical-key-like typeText variant when listener fidelity is required
+pointer/scroll/drag/range naturalness through Behavior learning
+follow-live expansion to additional pointer actions only with real evidence
+Browser UI/OS Runtime integration only after explicit design review
 ```
 
 ---
 
 # Safety / privacy
 
-CAPTCHA/human verification remains blocked; no automatic solve/bypass/blind retry. Never collect/train credential/password/cookie/token/clipboard/payment-secret content.
+CAPTCHA/human verification remains blocked; no automatic solve/bypass/blind retry.
+
+Never collect or train on credential/password/cookie/token/clipboard/payment-secret content.
