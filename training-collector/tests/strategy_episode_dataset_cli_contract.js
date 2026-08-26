@@ -107,6 +107,15 @@ function main() {
     assert.equal(loaded.records.length, 3);
     assert.equal(loaded.files.length, 1);
 
+    const prettyInput = path.join(temp, 'pretty-episode.json');
+    fs.writeFileSync(prettyInput, JSON.stringify(records[0], null, 2) + '\n', 'utf8');
+    const prettyParsed = parseJsonRecords(fs.readFileSync(prettyInput, 'utf8'), prettyInput);
+    assert.equal(prettyParsed.length, 1);
+    assert.equal(prettyParsed[0].episodeId, 'ep-a');
+    const prettyLoaded = readRecords(prettyInput);
+    assert.equal(prettyLoaded.records.length, 1);
+    assert.equal(prettyLoaded.records[0].episodeId, 'ep-a');
+
     const result = buildDatasetFromRecords(loaded.records, {
       seed: 'cli-contract-seed',
       createdAt: '2026-08-27T00:00:00.000Z'
