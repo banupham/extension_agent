@@ -5,6 +5,9 @@
   const POINTER_EVENT_TYPES = new Set(['mouseMoved', 'mousePressed', 'mouseReleased']);
   const trackingByTab = new Map();
   const installState = { installed: false, installError: null };
+  let installedChrome = null;
+  let restoreSendCommand = null;
+  let activeWrapper = null;
 
   function finite(value, fallback = null) {
     const n = Number(value);
@@ -40,26 +43,6 @@
     };
   }
 
-  function begin(tabId, target) {
-    const id = Number(tabId);
-    if (!Number.isInteger(id) || id <= 0) throw new Error('follow_live_tracking_tab_required');
-    const normalizedTarget = normalizeTarget(target);
-    const state = {
-      mode: TRACKING_MODE,
-      tabId: id,
-      target: normalizedTarget,
-      originDistance: null,
-      lastProgress: 0,
-      samples: 0,
-      correctionCount: 0,
-      maxDeltaPx: 0,
-      lastLiveRect: null,
-      startedAt: Date.now()
-    };
-    trackingByTab.set(id, state);
-    return summary(state);
-  }
-
   function summary(state) {
     if (!state) return null;
     return {
@@ -73,13 +56,6 @@
       lastLiveRect: state.lastLiveRect ? { ...state.lastLiveRect } : null,
       elapsedMs: Math.max(0, Date.now() - state.startedAt)
     };
-  }
-
-  function end(tabId) {
-    const id = Number(tabId);
-    const state = trackingByTab.get(id) || null;
-    trackingByTab.delete(id);
-    return summary(state);
   }
 
   function stateFor(tabId) {
@@ -132,10 +108,11 @@
         const s = getComputedStyle(el);
         return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
       };
-      const wanted = ${JSON.stringify({ tag: '__TAG__', role: '__ROLE__', label: '__LABEL__' })};
-      wanted.tag = ${JSON.stringify(wanted.tag)};
-      wanted.role = ${JSON.stringify(wanted.role)};
-      wanted.label = ${JSON.stringify(wanted.label)};
+      const wanted = {
+        tag: ${JSON.stringify(wanted.tag)},
+        role: ${JSON.stringify(wanted.role)},
+        label: ${JSON.stringify(wanted.label)}
+      };
       const candidates = [...document.querySelectorAll(interactive)].filter(el => {
         if (!visible(el) || el.matches(':disabled')) return false;
         const tag = normalize(el.tagName);
@@ -162,14 +139,11 @@
     return live.rect;
   }
 
-  function install(chromeApi) {
-    if (installState.installed) return { ...installState };
-    const debuggerApi = chromeApi?.debugger;
+  function activateWrapper() {
+    if (!installedChrome || activeWrapper) return;
+    const debuggerApi = installedChrome.debugger;
     const original = debuggerApi?.sendCommand;
-    if (typeof original !== 'function') {
-      installState.installError = 'debugger_sendCommand_unavailable';
-      return { ...installState };
-    }
+    if (typeof original !== 'function') throw new Error('debugger_sendCommand_unavailable');
     const bound = original.bind(debuggerApi);
     const wrapped = async function followLiveTrackedSendCommand(targetHandle, method, params = {}) {
       const tabId = Number(targetHandle?.tabId);
@@ -182,17 +156,66 @@
       const corrected = correctedPointerParams(state, params, liveRect);
       return bound(targetHandle, method, corrected);
     };
-    try {
-      debuggerApi.sendCommand = wrapped;
-      if (debuggerApi.sendCommand !== wrapped) {
-        installState.installError = 'debugger_sendCommand_not_writable';
-        return { ...installState };
-      }
-      installState.installed = true;
-      installState.installError = null;
-    } catch (error) {
-      installState.installError = String(error?.message || error);
+    debuggerApi.sendCommand = wrapped;
+    if (debuggerApi.sendCommand !== wrapped) throw new Error('debugger_sendCommand_not_writable');
+    restoreSendCommand = original;
+    activeWrapper = wrapped;
+  }
+
+  function restoreWrapperIfIdle() {
+    if (trackingByTab.size || !installedChrome || !activeWrapper) return;
+    const debuggerApi = installedChrome.debugger;
+    if (debuggerApi?.sendCommand === activeWrapper && typeof restoreSendCommand === 'function') {
+      debuggerApi.sendCommand = restoreSendCommand;
     }
+    restoreSendCommand = null;
+    activeWrapper = null;
+  }
+
+  function begin(tabId, target) {
+    const id = Number(tabId);
+    if (!Number.isInteger(id) || id <= 0) throw new Error('follow_live_tracking_tab_required');
+    if (trackingByTab.has(id)) throw new Error('follow_live_tracking_already_active');
+    const normalizedTarget = normalizeTarget(target);
+    const state = {
+      mode: TRACKING_MODE,
+      tabId: id,
+      target: normalizedTarget,
+      originDistance: null,
+      lastProgress: 0,
+      samples: 0,
+      correctionCount: 0,
+      maxDeltaPx: 0,
+      lastLiveRect: null,
+      startedAt: Date.now()
+    };
+    trackingByTab.set(id, state);
+    try {
+      activateWrapper();
+    } catch (error) {
+      trackingByTab.delete(id);
+      throw error;
+    }
+    return summary(state);
+  }
+
+  function end(tabId) {
+    const id = Number(tabId);
+    const state = trackingByTab.get(id) || null;
+    trackingByTab.delete(id);
+    restoreWrapperIfIdle();
+    return summary(state);
+  }
+
+  function install(chromeApi) {
+    if (installState.installed) return { ...installState };
+    if (typeof chromeApi?.debugger?.sendCommand !== 'function') {
+      installState.installError = 'debugger_sendCommand_unavailable';
+      return { ...installState };
+    }
+    installedChrome = chromeApi;
+    installState.installed = true;
+    installState.installError = null;
     return { ...installState };
   }
 
