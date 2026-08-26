@@ -41,14 +41,26 @@ const hoverPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'h
 assert.strictEqual(hoverPlan.steps.at(-1).postDelayMs, 400);
 
 const scrollBehavior = validateExecutionBehavior({ actionType: 'scrollHorizontal', scroll: { axis: 'horizontal', constraints: { durationMs: 240, eventCount: 4, absoluteDelta: 320, correctionRatio: 0.1 } }, metadata: { behaviorFamily: 'scroll-horizontal' } });
-const scrollPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'scrollHorizontal', args: { direction: -1 } }), behavior: scrollBehavior, context: { pointerStart: { x: 500, y: 400 }, viewportCenter: { x: 600, y: 350 } } });
+const scrollPlan = Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'scrollHorizontal', args: { direction: -1 } }),
+  behavior: scrollBehavior,
+  context: { pointerStart: { x: 500, y: 400 }, viewportCenter: { x: 600, y: 350 } }
+});
 assert.strictEqual(scrollPlan.steps.length, 5);
 assert.ok(scrollPlan.steps.slice(0, 4).every(step => step.params.deltaX < 0));
 assert.ok(scrollPlan.steps.every(step => step.params.x === 600 && step.params.y === 350));
 assert.strictEqual(scrollPlan.steps.at(-1).behaviorPhase, 'scroll-correction');
 
-const fallbackScrollBehavior = validateExecutionBehavior({ actionType: 'scrollVertical', scroll: { axis: 'vertical', constraints: { durationMs: null, eventCount: null, absoluteDelta: null, correctionRatio: null } }, metadata: { behaviorFamily: 'scroll-vertical' } });
-const fallbackScrollPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'scrollVertical', args: { direction: 1 } }), behavior: fallbackScrollBehavior, context: { pointerStart: { x: 999, y: 111 }, viewportCenter: { x: 640, y: 320 } } });
+const fallbackScrollBehavior = validateExecutionBehavior({
+  actionType: 'scrollVertical',
+  scroll: { axis: 'vertical', constraints: { durationMs: null, eventCount: null, absoluteDelta: null, correctionRatio: null } },
+  metadata: { behaviorFamily: 'scroll-vertical' }
+});
+const fallbackScrollPlan = Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'scrollVertical', args: { direction: 1 } }),
+  behavior: fallbackScrollBehavior,
+  context: { pointerStart: { x: 999, y: 111 }, viewportCenter: { x: 640, y: 320 } }
+});
 assert.strictEqual(fallbackScrollPlan.steps.length, 4);
 assert.ok(fallbackScrollPlan.steps.every(step => step.params.x === 640 && step.params.y === 320));
 assert.ok(fallbackScrollPlan.steps.every(step => step.params.deltaY > 0 && step.params.deltaX === 0));
@@ -61,12 +73,51 @@ assert.strictEqual(typePlan.steps.map(x => x.params.text).join(''), 'abc');
 assert.strictEqual(typePlan.steps[0].delayMs, 50);
 assert.strictEqual(typePlan.steps[1].delayMs, 80);
 
+const replaceBehavior = validateExecutionBehavior({
+  actionType: 'replaceText', targetRef: 'e9',
+  keyboard: { initialPauseMs: 0, constraints: { interKeyMedianMs: 80, holdMedianMs: 70 } },
+  metadata: { behaviorFamily: 'keyboard-text' }
+});
+const replaceTarget = { ref: 'e9', editable: true, rect: { x: 40, y: 60, width: 180, height: 24 } };
+const replacePlan = Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'replaceText', targetRef: 'e9', args: { text: 'NEW' } }),
+  behavior: replaceBehavior,
+  target: replaceTarget,
+  context: { pointerStart: { x: 400, y: 300 }, rng: () => 0.5 }
+});
+assert.strictEqual(replacePlan.actionType, 'replaceText');
+assert.ok(replacePlan.steps.some(step => step.params?.type === 'mousePressed'));
+assert.ok(replacePlan.steps.some(step => step.params?.type === 'mouseReleased'));
+const replaceKeys = replacePlan.steps.filter(step => step.method === 'Input.dispatchKeyEvent');
+assert.deepStrictEqual(replaceKeys.map(step => [step.params.type, step.params.key]), [
+  ['rawKeyDown', 'Control'],
+  ['rawKeyDown', 'a'],
+  ['keyUp', 'a'],
+  ['keyUp', 'Control']
+]);
+assert.strictEqual(replaceKeys[1].params.code, 'KeyA');
+assert.strictEqual(replaceKeys[1].params.windowsVirtualKeyCode, 65);
+assert.strictEqual(replaceKeys[1].params.modifiers, Planner.MODIFIER_BITS.Control);
+const replacementText = replacePlan.steps.filter(step => step.method === 'Input.insertText');
+assert.strictEqual(replacementText.map(step => step.params.text).join(''), 'NEW');
+assert.throws(() => Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'replaceText', targetRef: 'e10', args: { text: 'NEW' } }),
+  behavior: replaceBehavior,
+  target: { ref: 'e10', editable: false, rect: { x: 1, y: 1, width: 10, height: 10 } }
+}), /replace_text_requires_editable_target/);
+
 const keyBehavior = validateExecutionBehavior({ actionType: 'keyCombo', keyboard: { constraints: { holdMedianMs: 70 } }, metadata: { behaviorFamily: 'keyboard-key' } });
-const altLeftPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'keyCombo', args: { key: 'Alt+ArrowLeft' } }), behavior: keyBehavior });
+const altLeftPlan = Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'keyCombo', args: { key: 'Alt+ArrowLeft' } }),
+  behavior: keyBehavior
+});
 assert.strictEqual(altLeftPlan.actionType, 'keyCombo');
 assert.strictEqual(altLeftPlan.steps.length, 4);
 assert.deepStrictEqual(altLeftPlan.steps.map(step => [step.params.type, step.params.key]), [
-  ['rawKeyDown', 'Alt'], ['rawKeyDown', 'ArrowLeft'], ['keyUp', 'ArrowLeft'], ['keyUp', 'Alt']
+  ['rawKeyDown', 'Alt'],
+  ['rawKeyDown', 'ArrowLeft'],
+  ['keyUp', 'ArrowLeft'],
+  ['keyUp', 'Alt']
 ]);
 assert.strictEqual(altLeftPlan.steps[0].params.modifiers, Planner.MODIFIER_BITS.Alt);
 assert.strictEqual(altLeftPlan.steps[1].params.modifiers, Planner.MODIFIER_BITS.Alt);
@@ -85,7 +136,10 @@ const navigationBehavior = { profile: 'navigation-native', metadata: { behaviorF
 const backPlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'back' }), behavior: navigationBehavior });
 assert.strictEqual(backPlan.cdpPlanVersion, '0.1.2');
 assert.strictEqual(backPlan.actionType, 'back');
-assert.deepStrictEqual(backPlan.steps.map(step => step.method), ['Page.getNavigationHistory', 'Page.navigateToHistoryEntry']);
+assert.deepStrictEqual(backPlan.steps.map(step => step.method), [
+  'Page.getNavigationHistory',
+  'Page.navigateToHistoryEntry'
+]);
 assert.strictEqual(backPlan.steps[1].historyOffset, -1);
 assert.strictEqual(backPlan.steps[1].postDelayMs, 120);
 

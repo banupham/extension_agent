@@ -159,6 +159,8 @@ function scrollPlan(mappedAction, behavior, context = {}) {
   const absoluteDelta = Math.max(1, finite(constraints.absoluteDelta, 480));
   const correctionRatio = clamp(finite(constraints.correctionRatio, 0), 0, 0.35);
   const direction = finite(mappedAction.args?.direction, 1) < 0 ? -1 : 1;
+  // Generic page scroll must not inherit a stale pointer position from a prior page/action.
+  // Anchor wheel events at the current viewport center; targeted/nested scrolling is a separate action.
   const point = context.viewportCenter || context.pointerStart || { x: 400, y: 300 };
   const weights = Array.from({ length: eventCount }, (_, i) => Math.sin(Math.PI * (i + 1) / (eventCount + 1)));
   const sum = weights.reduce((a, b) => a + b, 0) || 1;
@@ -199,13 +201,34 @@ function canonicalModifier(token) {
 function keyDescription(key) {
   const normalized = String(key || '').trim();
   const known = KEY_DESCRIPTIONS[normalized];
-  if (!known) return { key: normalized };
-  return {
-    key: normalized,
-    code: known.code,
-    windowsVirtualKeyCode: known.windowsVirtualKeyCode,
-    nativeVirtualKeyCode: known.windowsVirtualKeyCode
-  };
+  if (known) {
+    return {
+      key: normalized,
+      code: known.code,
+      windowsVirtualKeyCode: known.windowsVirtualKeyCode,
+      nativeVirtualKeyCode: known.windowsVirtualKeyCode
+    };
+  }
+  if (/^[a-z]$/i.test(normalized)) {
+    const upper = normalized.toUpperCase();
+    const virtualKey = upper.charCodeAt(0);
+    return {
+      key: normalized.length === 1 ? normalized.toLowerCase() : normalized,
+      code: `Key${upper}`,
+      windowsVirtualKeyCode: virtualKey,
+      nativeVirtualKeyCode: virtualKey
+    };
+  }
+  if (/^[0-9]$/.test(normalized)) {
+    const virtualKey = normalized.charCodeAt(0);
+    return {
+      key: normalized,
+      code: `Digit${normalized}`,
+      windowsVirtualKeyCode: virtualKey,
+      nativeVirtualKeyCode: virtualKey
+    };
+  }
+  return { key: normalized };
 }
 
 function modifierDescription(modifier) {
@@ -294,18 +317,36 @@ function keyComboPlan(rawCombo, hold) {
   return steps;
 }
 
+function textInsertPlan(text, behavior) {
+  const constraints = behavior?.keyboard?.constraints || {};
+  const gap = clamp(finite(constraints.interKeyMedianMs, 80), 10, 600);
+  return [...String(text ?? '')].map((char, i) => ({
+    delayMs: i === 0 ? clamp(finite(behavior?.keyboard?.initialPauseMs, 0), 0, 1500) : gap,
+    method: 'Input.insertText',
+    params: { text: char }
+  }));
+}
+
+function replaceTextPlan(mappedAction, behavior, target, context = {}) {
+  if (!target || target.editable !== true) throw new Error('replace_text_requires_editable_target');
+  const constraints = behavior?.keyboard?.constraints || {};
+  const hold = clamp(finite(constraints.holdMedianMs, 70), 10, 500);
+
+  // ReplaceText is one semantic action. Acquire focus on its observation-bound target,
+  // select the existing value through a browser-native Ctrl+A sequence, then insert text.
+  const focusSteps = clickPlan(mappedAction, behavior, target, context);
+  const selectAllSteps = keyComboPlan('Control+a', hold);
+  const insertSteps = textInsertPlan(mappedAction.args?.text ?? '', behavior);
+  return [...focusSteps, ...selectAllSteps, ...insertSteps];
+}
+
 function keyboardPlan(mappedAction, behavior) {
   const text = String(mappedAction.args?.text ?? '');
   const key = String(mappedAction.args?.key ?? '');
   const constraints = behavior?.keyboard?.constraints || {};
-  const gap = clamp(finite(constraints.interKeyMedianMs, 80), 10, 600);
   const hold = clamp(finite(constraints.holdMedianMs, 70), 10, 500);
-  if (mappedAction.type === 'typeText' || mappedAction.type === 'replaceText') {
-    return [...text].map((char, i) => ({
-      delayMs: i === 0 ? clamp(finite(behavior?.keyboard?.initialPauseMs, 0), 0, 1500) : gap,
-      method: 'Input.insertText',
-      params: { text: char }
-    }));
+  if (mappedAction.type === 'typeText') {
+    return textInsertPlan(text, behavior);
   }
   if (mappedAction.type === 'pressKey') {
     if (!key) return [];
@@ -339,7 +380,8 @@ function buildCdpPlan({ mappedAction, behavior, target = null, context = {} }) {
   if (!mappedAction?.type) throw new Error('mappedAction required');
   let steps = [];
   const family = mappedAction.behaviorFamily || behavior?.metadata?.behaviorFamily || 'generic';
-  if (family === 'pointer-click' || family === 'focus-acquisition') steps = clickPlan(mappedAction, behavior, target, context);
+  if (mappedAction.type === 'replaceText') steps = replaceTextPlan(mappedAction, behavior, target, context);
+  else if (family === 'pointer-click' || family === 'focus-acquisition') steps = clickPlan(mappedAction, behavior, target, context);
   else if (family === 'pointer-hover') steps = hoverPlan(mappedAction, behavior, target, context);
   else if (family === 'scroll-vertical' || family === 'scroll-horizontal') steps = scrollPlan(mappedAction, behavior, context);
   else if (family === 'keyboard-text' || family === 'keyboard-key') steps = keyboardPlan(mappedAction, behavior);
@@ -370,6 +412,8 @@ module.exports = {
   modifierDescription,
   parseKeyCombo,
   keyComboPlan,
+  textInsertPlan,
+  replaceTextPlan,
   keyboardPlan,
   navigationHistoryPlan,
   buildCdpPlan
