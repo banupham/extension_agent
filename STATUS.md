@@ -51,6 +51,7 @@ doubleClick
 focus
 typeText
 pressKey
+navigate
 back history-CDP
 forward history-CDP
 ```
@@ -159,10 +160,21 @@ before.title = PressKey Test
 after.title  = PRESSKEY PASS
 ```
 
+`navigate` native evidence on `main`:
+
+```text
+Page.navigate → http://127.0.0.1:8091/target
+execution.ok = true
+stepCount = resultCount = 1
+before.url/title = / / Navigate Start
+after.url/title  = /target / NAVIGATE PASS
+```
+
+Additional external HTTPS smoke navigation to `https://pixelscan.dev/bot` also reached the requested URL with `execution.ok = true`. This is navigation evidence only; it is NOT evidence of stealth, bot-detection bypass, or platform acceptance. The immediate after-observation title was empty on that external page, so external page-load/observer timing remains separate from navigation execution correctness.
+
 Existing but not yet native-validated on the agreed main/CDP matrix:
 
 ```text
-navigate
 reload
 ```
 
@@ -208,10 +220,9 @@ Do not build Agent Cursor yet.
 Immediate native sequence on `main`:
 
 ```text
-1 navigate
-2 reload
-3 stale-ref / moving-target / observer outcome gates
-4 Agent Cursor Debug Overlay when PAGE_CDP pointer observability becomes useful
+1 reload
+2 stale-ref / moving-target / observer outcome gates
+3 Agent Cursor Debug Overlay when PAGE_CDP pointer observability becomes useful
 ```
 
 Agent Cursor remains mirror-only telemetry:
