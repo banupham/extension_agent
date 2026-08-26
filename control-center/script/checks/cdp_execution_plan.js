@@ -51,6 +51,21 @@ assert.ok(scrollPlan.steps.slice(0, 4).every(step => step.params.deltaX < 0));
 assert.ok(scrollPlan.steps.every(step => step.params.x === 600 && step.params.y === 350));
 assert.strictEqual(scrollPlan.steps.at(-1).behaviorPhase, 'scroll-correction');
 
+const fallbackScrollBehavior = validateExecutionBehavior({
+  actionType: 'scrollVertical',
+  scroll: { axis: 'vertical', constraints: { durationMs: null, eventCount: null, absoluteDelta: null, correctionRatio: null } },
+  metadata: { behaviorFamily: 'scroll-vertical' }
+});
+const fallbackScrollPlan = Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'scrollVertical', args: { direction: 1 } }),
+  behavior: fallbackScrollBehavior,
+  context: { pointerStart: { x: 999, y: 111 }, viewportCenter: { x: 640, y: 320 } }
+});
+assert.strictEqual(fallbackScrollPlan.steps.length, 4);
+assert.ok(fallbackScrollPlan.steps.every(step => step.params.x === 640 && step.params.y === 320));
+assert.ok(fallbackScrollPlan.steps.every(step => step.params.deltaY > 0 && step.params.deltaX === 0));
+assert.ok(Math.abs(fallbackScrollPlan.steps.reduce((sum, step) => sum + step.params.deltaY, 0) - 480) < 1e-6);
+
 const typeBehavior = validateExecutionBehavior({ actionType: 'typeText', keyboard: { initialPauseMs: 50, constraints: { interKeyMedianMs: 80, holdMedianMs: 70 } }, metadata: { behaviorFamily: 'keyboard-text' } });
 const typePlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'typeText', args: { text: 'abc' } }), behavior: typeBehavior });
 assert.strictEqual(typePlan.steps.length, 3);
