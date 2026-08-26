@@ -6,6 +6,7 @@ const SCOPE = 'AGENT_RUNTIME_V02';
 const LEGACY_SCOPE = 'AGENT_RUNTIME_V01';
 const DEBUGGER_VERSION = '1.3';
 const TARGET_TTL_MS = 4000;
+const TARGET_GEOMETRY_TOLERANCE_PX = 2;
 const attachedTabs = new Set();
 const pointerByTab = new Map();
 const registry = AgentTargetRegistry.createRegistry({ ttlMs: TARGET_TTL_MS });
@@ -146,6 +147,71 @@ async function resolveTarget(tabId, action) {
   return registry.resolve({ tabId, observationId: action?.observationId, targetRef: action?.targetRef, currentUrl: url });
 }
 
+function semanticText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+async function readLiveTarget(tabId, target) {
+  const interactiveSelector = 'a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]';
+  const locator = target?.selector
+    ? `document.querySelector(${JSON.stringify(target.selector)})`
+    : `document.elementFromPoint(${Number(target?.rect?.centerX)}, ${Number(target?.rect?.centerY)})`;
+  const climbToInteractive = target?.selector
+    ? ''
+    : `if (el && !el.matches(interactive)) el = el.closest(interactive);`;
+  const expression = `(() => {
+    const interactive = ${JSON.stringify(interactiveSelector)};
+    const label = el => {
+      const raw = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.innerText || '';
+      return String(raw).replace(/\\s+/g, ' ').trim().slice(0, 160);
+    };
+    let el = ${locator};
+    ${climbToInteractive}
+    if (!el) return { ok:false, reason:'missing' };
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    const visible = r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+    return {
+      ok:true,
+      tag:el.tagName.toLowerCase(),
+      role:el.getAttribute('role') || null,
+      label:label(el),
+      enabled:!el.matches(':disabled'),
+      visible,
+      rect:{ x:r.x, y:r.y, width:r.width, height:r.height }
+    };
+  })()`;
+  const result = await command(tabId, 'Runtime.evaluate', { expression, returnByValue: true });
+  return result?.result?.value || null;
+}
+
+async function assertTargetGeometryCurrent(tabId, target) {
+  const live = await readLiveTarget(tabId, target);
+  if (!live?.ok || !live.visible || !live.enabled || !live.rect) {
+    throw new Error(`target_geometry_unavailable:${live?.reason || 'not_interactable'}`);
+  }
+  if (!target?.selector) {
+    const identityChanged =
+      semanticText(live.tag) !== semanticText(target?.tag) ||
+      semanticText(live.role) !== semanticText(target?.role) ||
+      semanticText(live.label) !== semanticText(target?.label);
+    if (identityChanged) throw new Error('target_geometry_changed');
+  }
+  if (AgentTargetRegistry.geometryChanged(target?.rect, live.rect, TARGET_GEOMETRY_TOLERANCE_PX)) {
+    throw new Error('target_geometry_changed');
+  }
+  return live;
+}
+
+async function guardTargetGeometry(tabId, target) {
+  try {
+    return await assertTargetGeometryCurrent(tabId, target);
+  } catch (error) {
+    registry.invalidateTab(tabId);
+    throw error;
+  }
+}
+
 async function movePointer(tabId, x, y) {
   await command(tabId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' });
   pointerByTab.set(tabId, { x, y, ts: Date.now() });
@@ -153,6 +219,7 @@ async function movePointer(tabId, x, y) {
 
 async function targetPointer(tabId, action) {
   const target = await resolveTarget(tabId, action);
+  await guardTargetGeometry(tabId, target);
   const x = target.rect.centerX, y = target.rect.centerY;
   await movePointer(tabId, x, y);
   return { target, x, y };
@@ -163,6 +230,7 @@ async function clickTarget(tabId, action, clickCount = 1) {
   const holdMs = Math.min(1200, Math.max(0, Number(action?.behavior?.pointer?.holdMs ?? action?.holdMs ?? 60)));
   const dwellMs = Math.min(1500, Math.max(0, Number(action?.behavior?.pointer?.dwellBeforeDownMs ?? action?.dwellBeforeDownMs ?? 0)));
   if (dwellMs) await sleep(dwellMs);
+  await guardTargetGeometry(tabId, target);
   await command(tabId, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount });
   if (holdMs) await sleep(holdMs);
   await command(tabId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount });
@@ -187,13 +255,18 @@ function planRequiresTarget(plan) {
 
 async function executeCdpPlan(tabId, plan, observationId = null) {
   const normalized = AgentCdpPlanDispatcher.validatePlan(plan);
+  let guardedTarget = null;
   if (planRequiresTarget(normalized)) {
     const url = await currentUrl(tabId);
-    registry.resolve({ tabId, observationId, targetRef: normalized.targetRef, currentUrl: url });
+    guardedTarget = registry.resolve({ tabId, observationId, targetRef: normalized.targetRef, currentUrl: url });
+    await guardTargetGeometry(tabId, guardedTarget);
   }
   const result = await AgentCdpPlanDispatcher.dispatchPlan(
     normalized,
     async (method, params) => {
+      if (guardedTarget && method === 'Input.dispatchMouseEvent' && params?.type === 'mousePressed') {
+        await guardTargetGeometry(tabId, guardedTarget);
+      }
       const value = await command(tabId, method, params);
       if (method === 'Input.dispatchMouseEvent' && params?.type === 'mouseMoved') {
         pointerByTab.set(tabId, { x: Number(params.x), y: Number(params.y), ts: Date.now() });
@@ -238,6 +311,7 @@ async function executeNormalizedAction(tabId, action) {
     case 'doubleClick': return clickTarget(tabId, action, 2);
     case 'focus': {
       const target = await resolveTarget(tabId, action);
+      await guardTargetGeometry(tabId, target);
       if (target.selector) {
         const selector = JSON.stringify(target.selector);
         const result = await command(tabId, 'Runtime.evaluate', {
@@ -274,7 +348,7 @@ async function runtimeStatus(tabId) {
     tabId,
     targetRegistry: registry.status(tabId),
     tabContext: { version: '0.1.0', explicitTabPreferred: true, activeFallback: true },
-    planExecution: { version: '0.1.0', allowlistedOnly: true },
+    planExecution: { version: '0.1.0', allowlistedOnly: true, liveGeometryGuard: true },
     supportedActions: [
       'agentListTabs', 'agentObserveTabs', 'agentObserve', 'agentExecutePlan', 'agentStatus',
       'openUrl', 'reload', 'back', 'forward',
