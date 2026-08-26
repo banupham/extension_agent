@@ -106,6 +106,40 @@ assert.throws(() => Planner.buildCdpPlan({
   target: { ref: 'e10', editable: false, rect: { x: 1, y: 1, width: 10, height: 10 } }
 }), /replace_text_requires_editable_target/);
 
+const clearBehavior = validateExecutionBehavior({
+  actionType: 'clear', targetRef: 'e11',
+  keyboard: { constraints: { holdMedianMs: 70 } },
+  metadata: { behaviorFamily: 'keyboard-text' }
+});
+const clearTarget = { ref: 'e11', editable: true, rect: { x: 80, y: 120, width: 170, height: 24 } };
+const clearPlan = Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'clear', targetRef: 'e11' }),
+  behavior: clearBehavior,
+  target: clearTarget,
+  context: { pointerStart: { x: 500, y: 350 }, rng: () => 0.5 }
+});
+assert.strictEqual(clearPlan.actionType, 'clear');
+assert.ok(clearPlan.steps.some(step => step.params?.type === 'mousePressed'));
+assert.ok(clearPlan.steps.some(step => step.params?.type === 'mouseReleased'));
+const clearKeys = clearPlan.steps.filter(step => step.method === 'Input.dispatchKeyEvent');
+assert.deepStrictEqual(clearKeys.map(step => [step.params.type, step.params.key]), [
+  ['rawKeyDown', 'Control'],
+  ['rawKeyDown', 'a'],
+  ['keyUp', 'a'],
+  ['keyUp', 'Control'],
+  ['rawKeyDown', 'Backspace'],
+  ['keyUp', 'Backspace']
+]);
+assert.strictEqual(clearKeys.at(-2).params.code, 'Backspace');
+assert.strictEqual(clearKeys.at(-2).params.windowsVirtualKeyCode, 8);
+assert.strictEqual(clearKeys.at(-2).params.modifiers, 0);
+assert.ok(!clearPlan.steps.some(step => step.method === 'Input.insertText'));
+assert.throws(() => Planner.buildCdpPlan({
+  mappedAction: mapAgentAction({ type: 'clear', targetRef: 'e12' }),
+  behavior: clearBehavior,
+  target: { ref: 'e12', editable: false, rect: { x: 1, y: 1, width: 10, height: 10 } }
+}), /clear_requires_editable_target/);
+
 const keyBehavior = validateExecutionBehavior({ actionType: 'keyCombo', keyboard: { constraints: { holdMedianMs: 70 } }, metadata: { behaviorFamily: 'keyboard-key' } });
 const altLeftPlan = Planner.buildCdpPlan({
   mappedAction: mapAgentAction({ type: 'keyCombo', args: { key: 'Alt+ArrowLeft' } }),

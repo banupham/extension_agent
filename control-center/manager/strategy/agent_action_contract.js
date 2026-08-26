@@ -11,6 +11,14 @@ const TARGET_REQUIRED = new Set([
   'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek',
   'changePlaybackRate', 'hoverAndObserve', 'dismiss'
 ]);
+const EXECUTION_INTERNAL_FIELDS = [
+  'surface',
+  'executionSurface',
+  'executionVariant',
+  'mechanism',
+  'controlLease',
+  'hwnd'
+];
 
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -27,6 +35,11 @@ function validateAgentAction(action) {
     throw new Error('agent action must not emit raw coordinates');
   }
   if (Object.prototype.hasOwnProperty.call(action, 'cdpMethod')) throw new Error('agent action must not emit raw CDP methods');
+  for (const field of EXECUTION_INTERNAL_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(action, field)) {
+      throw new Error(`agent action must not choose execution surface/variant: ${field}`);
+    }
+  }
 
   return {
     contractVersion: AGENT_ACTION_CONTRACT_VERSION,
@@ -75,7 +88,7 @@ function cdpPrimitiveFor(type) {
     focus: ['Runtime.callFunctionOn|DOM.focus'],
     typeText: ['Input.dispatchKeyEvent|Input.insertText'],
     replaceText: ['Input.dispatchMouseEvent|Input.dispatchKeyEvent|Input.insertText'],
-    clear: ['Input.dispatchKeyEvent'],
+    clear: ['Input.dispatchMouseEvent|Input.dispatchKeyEvent'],
     pressKey: ['Input.dispatchKeyEvent'],
     keyCombo: ['Input.dispatchKeyEvent'],
     selectOption: ['Runtime.callFunctionOn'],

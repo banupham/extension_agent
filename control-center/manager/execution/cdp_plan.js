@@ -340,6 +340,31 @@ function replaceTextPlan(mappedAction, behavior, target, context = {}) {
   return [...focusSteps, ...selectAllSteps, ...insertSteps];
 }
 
+function clearTextPlan(mappedAction, behavior, target, context = {}) {
+  if (!target || target.editable !== true) throw new Error('clear_requires_editable_target');
+  const constraints = behavior?.keyboard?.constraints || {};
+  const hold = clamp(finite(constraints.holdMedianMs, 70), 10, 500);
+
+  // Clear is one semantic action bound to targetRef. Acquire that target, select all,
+  // then issue a key-like Backspace so the page receives normal deletion semantics.
+  const focusSteps = clickPlan(mappedAction, behavior, target, context);
+  const selectAllSteps = keyComboPlan('Control+a', hold);
+  const backspace = keyDescription('Backspace');
+  const deleteSteps = [
+    {
+      delayMs: 0,
+      method: 'Input.dispatchKeyEvent',
+      params: { type: 'rawKeyDown', ...backspace, modifiers: 0, isSystemKey: false }
+    },
+    {
+      delayMs: hold,
+      method: 'Input.dispatchKeyEvent',
+      params: { type: 'keyUp', ...backspace, modifiers: 0, isSystemKey: false }
+    }
+  ];
+  return [...focusSteps, ...selectAllSteps, ...deleteSteps];
+}
+
 function keyboardPlan(mappedAction, behavior) {
   const text = String(mappedAction.args?.text ?? '');
   const key = String(mappedAction.args?.key ?? '');
@@ -381,6 +406,7 @@ function buildCdpPlan({ mappedAction, behavior, target = null, context = {} }) {
   let steps = [];
   const family = mappedAction.behaviorFamily || behavior?.metadata?.behaviorFamily || 'generic';
   if (mappedAction.type === 'replaceText') steps = replaceTextPlan(mappedAction, behavior, target, context);
+  else if (mappedAction.type === 'clear') steps = clearTextPlan(mappedAction, behavior, target, context);
   else if (family === 'pointer-click' || family === 'focus-acquisition') steps = clickPlan(mappedAction, behavior, target, context);
   else if (family === 'pointer-hover') steps = hoverPlan(mappedAction, behavior, target, context);
   else if (family === 'scroll-vertical' || family === 'scroll-horizontal') steps = scrollPlan(mappedAction, behavior, context);
@@ -414,6 +440,7 @@ module.exports = {
   keyComboPlan,
   textInsertPlan,
   replaceTextPlan,
+  clearTextPlan,
   keyboardPlan,
   navigationHistoryPlan,
   buildCdpPlan
