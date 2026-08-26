@@ -4,6 +4,13 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { createRegistry, geometryChanged, normalizeFramePath } = require('../../extension/agent-runtime-extension/target_registry.js');
+const {
+  normalizeTargetTracking,
+  withTargetTrackingBehavior,
+  withTargetTrackingPlan
+} = require('../../manager/execution/target_tracking_variant.js');
+require('../../extension/agent-runtime-extension/follow_live_pointer.js');
+const FollowLive = globalThis.AgentFollowLivePointer;
 
 let now = 1000;
 const registry = createRegistry({ ttlMs: 4000, now: () => now });
@@ -111,6 +118,52 @@ assert.match(runtimeSource, /owner\.contentDocument/);
 assert.match(runtimeSource, /offsetX \+ r\.x \+ Number\(owner\.clientLeft/);
 assert.match(runtimeSource, /target_frame_changed/);
 
+// Experimental target-tracking variant stays below Strategy. Fixed behavior remains
+// the default; follow-live explicitly attaches semantic target metadata to a plan.
+assert.strictEqual(normalizeTargetTracking(undefined), 'fixed');
+assert.strictEqual(normalizeTargetTracking('follow-live'), 'follow-live');
+assert.throws(() => normalizeTargetTracking('teleport'), /unsupported_target_tracking/);
+const fixedBehavior = {
+  actionType: 'submit',
+  profile: 'fallback',
+  pointer: { profile: 'fallback', targetAcquisition: 'adaptive', constraints: {} },
+  metadata: {}
+};
+const followBehavior = withTargetTrackingBehavior(fixedBehavior, 'follow-live');
+assert.strictEqual(followBehavior.pointer.targetTracking, 'follow-live');
+assert.strictEqual(Object.prototype.hasOwnProperty.call(fixedBehavior.pointer, 'targetTracking'), false);
+const sampleTarget = {
+  ref: 'e-follow', tag: 'button', role: null, label: 'Moving Submit', frameDepth: 0,
+  rect: { x: 100, y: 50, width: 80, height: 30 }
+};
+const basePlan = {
+  cdpPlanVersion: '0.1.2', actionType: 'submit', targetRef: 'e-follow',
+  steps: [{ method: 'Input.dispatchMouseEvent', params: { type: 'mouseMoved', x: 140, y: 65 } }]
+};
+assert.strictEqual(withTargetTrackingPlan(basePlan, fixedBehavior, sampleTarget), basePlan);
+const followPlan = withTargetTrackingPlan(basePlan, followBehavior, sampleTarget);
+assert.strictEqual(followPlan.targetTracking, 'follow-live');
+assert.strictEqual(followPlan.trackingTarget.label, 'Moving Submit');
+assert.strictEqual(followPlan.trackingTarget.ref, basePlan.targetRef);
+
+// Pure correction contract: the first step stays near the original approach path;
+// correction grows monotonically and press/release use the full live-target delta.
+FollowLive.begin(99, sampleTarget);
+const trackingState = FollowLive.stateFor(99);
+const liveRect = { x: 140, y: 50, width: 80, height: 30 };
+const firstMove = FollowLive.correctedPointerParams(trackingState, { type: 'mouseMoved', x: 0, y: 0 }, liveRect);
+const nearMove = FollowLive.correctedPointerParams(trackingState, { type: 'mouseMoved', x: 138, y: 65 }, liveRect);
+const press = FollowLive.correctedPointerParams(trackingState, { type: 'mousePressed', x: 140, y: 65, button: 'left' }, liveRect);
+assert.strictEqual(firstMove.x, 0);
+assert.ok(nearMove.x > 138);
+assert.strictEqual(press.x, 180);
+assert.strictEqual(trackingState.lastProgress, 1);
+const trackingSummary = FollowLive.end(99);
+assert.ok(trackingSummary.samples >= 3);
+assert.ok(trackingSummary.correctionCount >= 3);
+assert.ok(trackingSummary.maxDeltaPx >= 40);
+assert.throws(() => FollowLive.begin(100, { ...sampleTarget, frameDepth: 1 }), /follow_live_tracking_top_document_only/);
+
 // Agent Cursor Debug Overlay contract: telemetry only, never an input source.
 const manifest = JSON.parse(fs.readFileSync(path.join(extensionRoot, 'manifest.json'), 'utf8'));
 const scripts = manifest.content_scripts || [];
@@ -120,9 +173,11 @@ assert.strictEqual(manifest.background?.service_worker, 'agent_runtime_debug_bac
 const overlaySource = fs.readFileSync(path.join(extensionRoot, 'agent_cursor_overlay.js'), 'utf8');
 const mirrorSource = fs.readFileSync(path.join(extensionRoot, 'agent_cursor_mirror.js'), 'utf8');
 const wrapperSource = fs.readFileSync(path.join(extensionRoot, 'agent_runtime_debug_background.js'), 'utf8');
+const followLiveSource = fs.readFileSync(path.join(extensionRoot, 'follow_live_pointer.js'), 'utf8');
 new Function(overlaySource);
 new Function(mirrorSource);
 new Function(wrapperSource);
+new Function(followLiveSource);
 assert.match(overlaySource, /attachShadow\(\{ mode: 'closed' \}\)/);
 assert.match(overlaySource, /pointer-events:none/);
 assert.match(overlaySource, /inset:0/);
@@ -136,6 +191,10 @@ assert.match(mirrorSource, /queueMicrotask/);
 assert.match(mirrorSource, /chromeApi\.tabs\.sendMessage/);
 assert.doesNotMatch(mirrorSource, /await\s+chromeApi\.tabs\.sendMessage/);
 assert.match(wrapperSource, /AgentCursorMirror\.install\(chrome\)/);
+assert.match(wrapperSource, /AgentFollowLivePointer\.install\(chrome\)/);
+assert.match(wrapperSource, /targetTracking === 'follow-live'/);
 assert.match(wrapperSource, /importScripts\('background\.js'\)/);
+assert.match(followLiveSource, /Runtime\.evaluate/);
+assert.match(followLiveSource, /follow_live_target_/);
 
-console.log('Agent Runtime target registry + iframe binding + cursor debug contract: PASS');
+console.log('Agent Runtime target registry + iframe binding + cursor debug + follow-live contract: PASS');
