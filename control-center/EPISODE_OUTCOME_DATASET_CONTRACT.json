@@ -46,6 +46,7 @@
   ],
   "trainingPolicy": {
     "eligibleLabelSources": ["human-demonstration", "approved-controller"],
+    "eligibleEvaluationSources": ["human-demonstration", "approved-controller"],
     "agentRuntimeSelfLabelsEligibleByDefault": false,
     "controlledNativeEligibleByDefault": false,
     "testFixtureEligible": false,
@@ -59,6 +60,27 @@
   },
   "splits": ["unassigned", "train", "validation", "test"],
   "splitInvariant": "One splitGroup must never appear in more than one assigned split.",
+  "splitPolicy": {
+    "defaultSeed": "strategy-episode-v0",
+    "defaultRatios": {
+      "train": 0.8,
+      "validation": 0.1,
+      "test": 0.1
+    },
+    "minimumDistinctGroups": 3,
+    "minimumGroupsPerAssignedSplit": 1,
+    "automaticAssignmentRequiresAllInputRecordsUnassigned": true,
+    "assignmentIsBySplitGroup": true,
+    "persistAssignedSplitInsteadOfRecomputingDuringTraining": true
+  },
+  "datasetReadiness": {
+    "requiresNoInvalidRecords": true,
+    "requiresNoUnassignedRecords": true,
+    "requiresTrainValidationTestCoverage": true,
+    "requiresTrustedVerifiedLabelsAcrossAllAssignedSplits": true,
+    "requiresAtLeastOneTrainingEligibleTrainRecord": true,
+    "requiresNoSplitGroupLeakage": true
+  },
   "terminalStatuses": ["done", "blocked", "failed"],
   "labelConsistency": [
     "control.status=done implies outcome.taskSucceeded=true",
@@ -101,6 +123,13 @@
     ],
     "urlPolicy": "training records must not contain URL query values or fragments",
     "credentialsOrSecretsAllowed": false
+  },
+  "exportPolicy": {
+    "format": "jsonl",
+    "trainExportContainsOnlyTrainingEligibleTrainRecords": true,
+    "validationAndTestAreNeverIncludedInTrainExport": true,
+    "manifestContainsSplitCountsAndEpisodeIdsOnly": true,
+    "controlledNativeOrTestFixtureMustNeverAppearInModelFitExport": true
   },
   "usageGate": [
     "contract and validator CI PASS",
