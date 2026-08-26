@@ -42,6 +42,7 @@ function chooseProfile(baseline, behaviorFamily, target) {
 }
 
 function finiteOrNull(value) {
+  if (value == null || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
