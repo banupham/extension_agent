@@ -20,6 +20,7 @@ docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CDP_NATIVE.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_AGENT_CURSOR.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_KEYBOARD_FIDELITY.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CLEAR_NATIVE.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MOVETO_NATIVE.md
 ```
 
 ---
@@ -49,6 +50,7 @@ basic click + visible effect
 OBSERVE AFTER / invalidation
 vertical scroll
 hover
+moveTo
 horizontal scroll
 doubleClick
 focus
@@ -238,6 +240,12 @@ execution/outcome preserved                   PASS
 
 Cursor readability refinement is presentation-only and must not alter real CDP timing.
 
+## Pointer trajectory diversity
+
+Repeated native `moveTo` tests reached the same semantic target successfully while producing visibly different pointer trajectories between runs. This is consistent with randomized target acquisition / path generation and the no-literal-trajectory-replay policy.
+
+This is functional diversity evidence only; it is not a natural-behavior quality PASS.
+
 ---
 
 # Browser UI / OS control — DEFERRED
@@ -262,27 +270,28 @@ Any future OS-control integration must require explicit consent before taking te
 
 ---
 
-# NEXT — `moveTo` native validation
+# NEXT — `scrollIntoView` native validation
 
-`moveTo` already exists in Agent Action Contract and requires `targetRef`.
+`scrollIntoView` already exists in Agent Action Contract and requires `targetRef`.
 
 Test current implementation on `main` before modifying it.
 
-Expected behavior:
+Expected semantic behavior:
 
 ```text
-moveTo(targetRef)
-→ PAGE_CDP Input.dispatchMouseEvent(mouseMoved) trajectory
-→ arrives inside observation-bound target
-→ no mousePressed / mouseReleased
-→ page pointer/mouse-enter/move listener can observe arrival
-→ Agent Cursor mirrors the same trajectory
+OBSERVE target outside current viewport
+→ scrollIntoView(targetRef)
+→ target becomes visible / reachable
+→ no click
+→ no arbitrary selector/coordinate from Strategy
+→ OBSERVE AFTER confirms target geometry in viewport
 ```
 
-After `moveTo`, continue existing actions such as:
+Because current metadata mentions DOM/Runtime-style primitives while the Runtime execution allowlist is intentionally narrow, this test may expose an existing implementation gap. Do not add or alter capability until native evidence confirms failure.
+
+After `scrollIntoView`, continue existing actions such as:
 
 ```text
-scrollIntoView
 drag
 selectOption / setChecked / submit / dismiss
 multi-frame observation
