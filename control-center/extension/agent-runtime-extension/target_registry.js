@@ -20,6 +20,17 @@
     };
   }
 
+  function normalizeOptions(options) {
+    if (!Array.isArray(options)) return [];
+    return options.slice(0, 100).map((option, index) => ({
+      index: option?.index != null && Number.isInteger(Number(option.index)) ? Number(option.index) : index,
+      value: String(option?.value ?? ''),
+      label: String(option?.label ?? '').slice(0, 160),
+      disabled: option?.disabled === true,
+      selected: option?.selected === true
+    }));
+  }
+
   function geometryChanged(observedRect, liveRect, tolerancePx = 2) {
     const observed = normalizeRect(observedRect);
     const live = normalizeRect(liveRect);
@@ -37,6 +48,11 @@
       editable: !!target.editable,
       enabled: target.enabled !== false,
       visible: target.visible !== false,
+      inputType: target.inputType || null,
+      checked: typeof target.checked === 'boolean' ? target.checked : null,
+      selectedValue: target.selectedValue == null ? null : String(target.selectedValue),
+      selectedIndex: target.selectedIndex != null && Number.isInteger(Number(target.selectedIndex)) ? Number(target.selectedIndex) : null,
+      options: Array.isArray(target.options) ? target.options.map(option => ({ ...option })) : [],
       rect: target.rect ? {
         x: target.rect.x,
         y: target.rect.y,
@@ -70,6 +86,11 @@
           editable: !!raw.editable,
           enabled: raw.enabled !== false,
           visible: raw.visible !== false,
+          inputType: typeof raw.inputType === 'string' ? raw.inputType : null,
+          checked: typeof raw.checked === 'boolean' ? raw.checked : null,
+          selectedValue: raw.selectedValue == null ? null : String(raw.selectedValue),
+          selectedIndex: raw.selectedIndex != null && Number.isInteger(Number(raw.selectedIndex)) ? Number(raw.selectedIndex) : null,
+          options: normalizeOptions(raw.options),
           selector: typeof raw.selector === 'string' ? raw.selector : null,
           rect
         });
@@ -120,5 +141,5 @@
     return { register, resolve, invalidateTab, status, publicTarget };
   }
 
-  return { createRegistry, normalizeRect, geometryChanged, publicTarget };
+  return { createRegistry, normalizeRect, normalizeOptions, geometryChanged, publicTarget };
 });

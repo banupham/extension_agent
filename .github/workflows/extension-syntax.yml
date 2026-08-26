@@ -37,6 +37,7 @@ jobs:
           node --check control-center/manager/strategy/execution_behavior_contract.js
           node --check control-center/manager/behavior/empirical_policy.js
           node --check control-center/manager/execution/cdp_plan.js
+          node --check control-center/manager/execution/form_plan.js
           node --check control-center/manager/agent/one_action_bridge.js
           node --check control-center/manager/agent/broker_runtime_client.js
           node --check control-center/server/server.js
@@ -47,6 +48,8 @@ jobs:
           node --check control-center/script/checks/agent_action_contract.js
           node --check control-center/script/checks/empirical_behavior_policy.js
           node --check control-center/script/checks/agent_runtime_target_registry.js
+          node --check control-center/script/checks/form_state_registry.js
+          node --check control-center/script/checks/form_control_plan.js
           node --check control-center/script/checks/cdp_execution_plan.js
           node --check control-center/script/checks/cdp_plan_dispatcher.js
           node --check control-center/script/checks/one_action_bridge.js
@@ -107,6 +110,10 @@ jobs:
         run: node control-center/script/checks/empirical_behavior_policy.js
       - name: Run Agent Runtime target registry contract test
         run: node control-center/script/checks/agent_runtime_target_registry.js
+      - name: Run observed form-state registry contract test
+        run: node control-center/script/checks/form_state_registry.js
+      - name: Run semantic form-control planner contract test
+        run: node control-center/script/checks/form_control_plan.js
       - name: Run CDP execution planner contract test
         run: node control-center/script/checks/cdp_execution_plan.js
       - name: Run CDP plan dispatcher contract test

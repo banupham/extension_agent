@@ -4,6 +4,7 @@ const { mapAgentAction } = require('../strategy/agent_action_contract.js');
 const { sampledBehavior } = require('../behavior/empirical_policy.js');
 const { buildCdpPlan } = require('../execution/cdp_plan.js');
 const { buildDragCdpPlan } = require('../execution/drag_plan.js');
+const { buildFormCdpPlan } = require('../execution/form_plan.js');
 
 const BRIDGE_VERSION = '0.2.1';
 const DEFAULT_POST_ACTION_SETTLE = Object.freeze({
@@ -14,7 +15,7 @@ const DEFAULT_POST_ACTION_SETTLE = Object.freeze({
 });
 const SETTLE_ACTION_TYPES = new Set([
   'click', 'doubleClick', 'hover', 'moveTo', 'drag', 'focus',
-  'pressKey', 'keyCombo', 'typeText'
+  'pressKey', 'keyCombo', 'typeText', 'setChecked', 'selectOption'
 ]);
 
 function findTarget(observation, targetRef) {
@@ -51,7 +52,10 @@ function semanticObservationFingerprint(observation) {
       label: String(element?.label || ''),
       editable: !!element?.editable,
       enabled: element?.enabled !== false,
-      visible: element?.visible !== false
+      visible: element?.visible !== false,
+      checked: typeof element?.checked === 'boolean' ? element.checked : null,
+      selectedValue: element?.selectedValue == null ? null : String(element.selectedValue),
+      selectedIndex: Number.isInteger(Number(element?.selectedIndex)) ? Number(element.selectedIndex) : null
     }))
   });
 }
@@ -210,7 +214,9 @@ async function runOneAction(options) {
   };
   const cdpPlan = mappedAction.type === 'drag'
     ? buildDragCdpPlan({ mappedAction, behavior, source: target, destination, context })
-    : buildCdpPlan({ mappedAction, behavior, target, context });
+    : ['setChecked', 'selectOption'].includes(mappedAction.type)
+      ? buildFormCdpPlan({ mappedAction, behavior, target, context })
+      : buildCdpPlan({ mappedAction, behavior, target, context });
 
   const execution = await runtime.executePlan({
     observationId: before.observationId,

@@ -69,6 +69,13 @@ async function observe(tabId) {
       const raw = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.innerText || '';
       return String(raw).replace(/\\s+/g, ' ').trim().slice(0, 160);
     };
+    const optionState = el => [...el.options].slice(0, 100).map((option, index) => ({
+      index,
+      value: String(option.value ?? ''),
+      label: String(option.label || option.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 160),
+      disabled: !!option.disabled,
+      selected: !!option.selected
+    }));
     const selector = 'a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]';
     const nodes = [...document.querySelectorAll(selector)].filter(visible).slice(0, 500);
     const active = document.activeElement;
@@ -76,6 +83,9 @@ async function observe(tabId) {
     const interactiveElements = nodes.map((el, i) => {
       const r = el.getBoundingClientRect();
       const tag = el.tagName.toLowerCase();
+      const inputType = tag === 'input' ? String(el.type || '').toLowerCase() : null;
+      const checkable = tag === 'input' && ['checkbox', 'radio'].includes(inputType);
+      const isSelect = tag === 'select';
       const ref = 'e' + i;
       if (el === active) focusedRef = ref;
       return {
@@ -86,6 +96,11 @@ async function observe(tabId) {
         editable: el.isContentEditable || ['input','textarea','select'].includes(tag),
         enabled: !el.matches(':disabled'),
         visible: true,
+        inputType,
+        checked: checkable ? !!el.checked : null,
+        selectedValue: isSelect ? String(el.value ?? '') : null,
+        selectedIndex: isSelect ? Number(el.selectedIndex) : null,
+        options: isSelect ? optionState(el) : [],
         selector: safeSelector(el),
         rect: { x: r.x, y: r.y, width: r.width, height: r.height }
       };
@@ -151,6 +166,26 @@ function semanticText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
+function optionStateSignature(options) {
+  if (!Array.isArray(options)) return '';
+  return JSON.stringify(options.map(option => ({
+    index: Number(option?.index),
+    value: String(option?.value ?? ''),
+    label: String(option?.label ?? ''),
+    disabled: option?.disabled === true
+  })));
+}
+
+function targetFormStateChanged(target, live) {
+  if (typeof target?.checked === 'boolean' && live?.checked !== target.checked) return true;
+  if (target?.tag === 'select') {
+    if (Number.isInteger(Number(target.selectedIndex)) && Number(live?.selectedIndex) !== Number(target.selectedIndex)) return true;
+    if (target.selectedValue != null && String(live?.selectedValue ?? '') !== String(target.selectedValue)) return true;
+    if (Array.isArray(target.options) && optionStateSignature(target.options) !== optionStateSignature(live?.options)) return true;
+  }
+  return false;
+}
+
 async function readLiveTarget(tabId, target) {
   const interactiveSelector = 'a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]';
   const locator = target?.selector
@@ -165,19 +200,35 @@ async function readLiveTarget(tabId, target) {
       const raw = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.innerText || '';
       return String(raw).replace(/\\s+/g, ' ').trim().slice(0, 160);
     };
+    const optionState = el => [...el.options].slice(0, 100).map((option, index) => ({
+      index,
+      value: String(option.value ?? ''),
+      label: String(option.label || option.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 160),
+      disabled: !!option.disabled,
+      selected: !!option.selected
+    }));
     let el = ${locator};
     ${climbToInteractive}
     if (!el) return { ok:false, reason:'missing' };
     const r = el.getBoundingClientRect();
     const s = getComputedStyle(el);
+    const tag = el.tagName.toLowerCase();
+    const inputType = tag === 'input' ? String(el.type || '').toLowerCase() : null;
+    const checkable = tag === 'input' && ['checkbox', 'radio'].includes(inputType);
+    const isSelect = tag === 'select';
     const visible = r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
     return {
       ok:true,
-      tag:el.tagName.toLowerCase(),
+      tag,
       role:el.getAttribute('role') || null,
       label:label(el),
       enabled:!el.matches(':disabled'),
       visible,
+      inputType,
+      checked:checkable ? !!el.checked : null,
+      selectedValue:isSelect ? String(el.value ?? '') : null,
+      selectedIndex:isSelect ? Number(el.selectedIndex) : null,
+      options:isSelect ? optionState(el) : [],
       rect:{ x:r.x, y:r.y, width:r.width, height:r.height }
     };
   })()`;
@@ -200,6 +251,7 @@ async function assertTargetGeometryCurrent(tabId, target) {
   if (AgentTargetRegistry.geometryChanged(target?.rect, live.rect, TARGET_GEOMETRY_TOLERANCE_PX)) {
     throw new Error('target_geometry_changed');
   }
+  if (targetFormStateChanged(target, live)) throw new Error('target_state_changed');
   return live;
 }
 
@@ -250,7 +302,7 @@ async function navigateHistory(tabId, direction) {
 }
 
 function planRequiresTarget(plan) {
-  return ['click', 'doubleClick', 'hover', 'moveTo', 'scrollIntoView', 'focus', 'drag', 'toggle', 'dismiss', 'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek'].includes(plan?.actionType);
+  return ['click', 'doubleClick', 'hover', 'moveTo', 'scrollIntoView', 'focus', 'drag', 'setChecked', 'selectOption', 'toggle', 'dismiss', 'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek'].includes(plan?.actionType);
 }
 
 async function executeCdpPlan(tabId, plan, observationId = null) {
