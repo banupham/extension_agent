@@ -42,6 +42,7 @@ vertical page scroll                     PASS
 hover without click                      PASS
 horizontal page scroll                   PASS
 doubleClick two-cycle native behavior    PASS
+focus editable target                    PASS
 ```
 
 Functional Agent PASS không đồng nghĩa Brain-quality PASS hoặc natural-behavior PASS.
@@ -147,6 +148,7 @@ navigate / reload
 Known fidelity gaps:
 
 ```text
+focus cdpPrimitives metadata still advertises Runtime.callFunctionOn|DOM.focus while planner executes Input.dispatchMouseEvent
 keyCombo modifiers incomplete
 Input.insertText listener fidelity not yet proven
 moving-target geometry revalidation not robust
@@ -337,6 +339,59 @@ Note: fallback Behavior reported `holdMs=0`, while Planner minimum clamp produce
 
 ---
 
+# Native evidence — focus PASS
+
+Controlled surface:
+
+```text
+http://127.0.0.1:8090/
+title = Agent Focus Test
+```
+
+Command:
+
+```bat
+node script/agent_one_action.js --type focus --label "Focus Target" --url-includes 127.0.0.1:8090 --full
+```
+
+Target geometry / pointer evidence:
+
+```text
+input rect = x 68..588, y 68..149
+final pointer/click = (302.34, 80.12)
+endpoint is inside the input hit-box
+```
+
+Outcome evidence:
+
+```text
+before.focusedRef = null
+after.focusedRef  = e0
+label: Focus Target → Focused Input
+human visual confirmation: FOCUS PASS
+execution.ok = true
+observationInvalidated = true
+```
+
+Classification:
+
+```text
+focus existing function = NATIVE PASS
+```
+
+Functional gate only requires a valid interior hit and real focus. Exact click-point naturalness/safe-margin quality is a later Behavior/robustness concern.
+
+Metadata drift observed:
+
+```text
+mappedAction.cdpPrimitives says Runtime.callFunctionOn|DOM.focus
+actual CDP plan uses Input.dispatchMouseEvent mouseMoved/pressed/released
+```
+
+Execution truth is the CDP plan. Track the mapping inconsistency as contract cleanup; it did not cause functional failure.
+
+---
+
 # Scheduled after current functional matrix — Agent Cursor Debug Overlay
 
 After current P0/A4 function matrix, add a debug-only visible Agent cursor that mirrors actual pointer events dispatched by Runtime.
@@ -365,12 +420,12 @@ vertical scroll
 hover
 horizontal scroll
 doubleClick
+focus
 
 NEXT:
-focus on a controlled editable target
+type non-sensitive text into the already focused controlled input
 
 THEN:
-type non-sensitive text
 back / forward
 
 AFTER FUNCTIONAL MATRIX:
@@ -381,6 +436,7 @@ stale-ref rejection when exercisable via existing interfaces
 moving-target rejection/reobserve
 post-action semantic outcome fidelity
 keyboard listener fidelity
+focus primitive metadata cleanup
 ```
 
 Do not start autonomous multi-step tasks yet.
