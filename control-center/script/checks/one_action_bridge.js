@@ -25,14 +25,35 @@ const baseline = {
 
 let observeCount = 0;
 let executed = null;
+let postExecuteObserveCount = 0;
 const runtime = {
   async observe() {
     observeCount += 1;
+    if (!executed) {
+      return {
+        observationId: `obs-${observeCount}`,
+        url: 'https://example.test/a',
+        title: 'Before',
+        viewport: { width: 1000, height: 700 },
+        scroll: { x: 0, y: 0 },
+        interactiveElements: [
+          { ref: 'e17', tag: 'button', role: 'button', label: 'Like', rect: { x: 700, y: 300, width: 80, height: 32 } }
+        ]
+      };
+    }
+
+    postExecuteObserveCount += 1;
+    const dynamicReady = postExecuteObserveCount >= 4;
     return {
       observationId: `obs-${observeCount}`,
+      url: 'https://example.test/a',
+      title: dynamicReady ? 'DYNAMIC READY' : 'CLICK ACK',
       viewport: { width: 1000, height: 700 },
+      scroll: { x: 0, y: 0 },
+      focusedRef: 'e17',
       interactiveElements: [
-        { ref: 'e17', tag: 'button', role: 'button', label: 'Like', rect: { x: 700, y: 300, width: 80, height: 32 } }
+        { ref: 'e17', tag: 'button', role: 'button', label: 'Like', rect: { x: 700, y: 300, width: 80, height: 32 } },
+        ...(dynamicReady ? [{ ref: 'e18', tag: 'button', role: 'button', label: 'Dynamic Child', rect: { x: 700, y: 350, width: 120, height: 32 } }] : [])
       ]
     };
   },
@@ -52,24 +73,33 @@ const runtime = {
       const target = observation.interactiveElements.find(x => x.label === 'Like');
       return { status: 'act', reason: 'semantic target found', action: { type: 'click', targetRef: target.ref } };
     },
-    rng: () => 0.5
+    rng: () => 0.5,
+    settleSleep: async () => {}
   });
-  assert.strictEqual(result.bridgeVersion, '0.2.0');
+  assert.strictEqual(result.bridgeVersion, '0.2.1');
   assert.strictEqual(brainSawObservationId, 'obs-1');
   assert.strictEqual(result.beforeObservationId, 'obs-1');
-  assert.strictEqual(result.afterObservationId, 'obs-2');
+  assert.strictEqual(result.afterObservationId, 'obs-7');
   assert.strictEqual(result.decision.status, 'act');
   assert.strictEqual(result.mappedAction.type, 'click');
   assert.strictEqual(result.behavior.metadata.behaviorFamily, 'pointer-click');
   assert.strictEqual(result.cdpPlan.actionType, 'click');
   assert.ok(result.cdpPlan.steps.length > 2);
   assert.strictEqual(executed.observationId, 'obs-1');
+  assert.strictEqual(result.after.title, 'DYNAMIC READY');
+  assert.ok(result.after.interactiveElements.some(x => x.label === 'Dynamic Child'));
+  assert.strictEqual(result.postActionObservation.mode, 'settled');
+  assert.strictEqual(result.postActionObservation.waitedMs, 400);
+  assert.strictEqual(result.postActionObservation.samples, 6);
+  assert.strictEqual(result.postActionObservation.semanticChanged, true);
+  assert.strictEqual(result.postActionObservation.deadlineReached, false);
   assert.strictEqual(result.invariant.oneActionOnly, true);
   assert.strictEqual(result.invariant.actionExecuted, true);
   assert.strictEqual(result.invariant.reObservedAfterExecution, true);
   assert.strictEqual(result.invariant.selectorUsedByStrategy, false);
-  assert.strictEqual(observeCount, 2);
+  assert.strictEqual(observeCount, 7);
 
+  executed = null;
   const beforeTerminalCount = observeCount;
   const terminal = await runOneAction({
     runtime,
@@ -78,6 +108,7 @@ const runtime = {
   });
   assert.strictEqual(terminal.decision.status, 'blocked');
   assert.strictEqual(terminal.execution, null);
+  assert.strictEqual(terminal.postActionObservation, null);
   assert.strictEqual(terminal.invariant.actionExecuted, false);
   assert.strictEqual(observeCount, beforeTerminalCount + 1);
 
