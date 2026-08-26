@@ -23,6 +23,7 @@ docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MOVETO_NATIVE.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_SCROLLINTOVIEW_NATIVE.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_DRAG_BATCH.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_FORMS_BATCH.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_OBSERVATION_UI_BATCH.md
 ```
 
 ---
@@ -73,6 +74,9 @@ setChecked
 selectOption
 toggle
 submit
+dismiss
+hoverAndObserve
+waitAndObserve
 stale-ref rejection after newer observation
 moving-target live-geometry rejection before pointer click
 drag destination live-geometry rejection before release
@@ -81,7 +85,7 @@ post-action settled semantic observation for delayed dynamic UI
 Agent Cursor V0.1 pointer visualization + Observer isolation
 ```
 
-Forms batch is now **4/4 native PASS**:
+Forms batch is **4/4 native PASS**:
 
 ```text
 setChecked
@@ -91,6 +95,16 @@ submit
 ```
 
 `setChecked` and `selectOption` were first native-confirmed unsupported, then fixed on `feat/agent-tab-context`, CI-passed, native re-tested, and selectively promoted to `main`. Their PAGE_CDP pointer phases were also visually confirmed through Agent Cursor after reloading the Runtime extension.
+
+Observation / UI batch is **3/3 native PASS**:
+
+```text
+dismiss
+hoverAndObserve
+waitAndObserve
+```
+
+`waitAndObserve` was first native-confirmed unsupported. It is now an observation-only action with a zero-input plan and bounded semantic polling. A deliberate ~5-second delayed semantic-change gate exposed the original 800ms deadline as too short; the dedicated wait budget is now 6000ms and native retest PASSed before deadline.
 
 ---
 
@@ -164,7 +178,7 @@ Runtime dispatcher accepts:
 0.1.3
 ```
 
-`0.1.3` is currently required by semantic drag because the plan binds both `targetRef` and `destinationRef`. Other existing planners may still emit compatible earlier versions.
+`0.1.3` is currently required by semantic drag and observation-only `waitAndObserve`. Other existing planners may still emit compatible earlier versions.
 
 Allowlisted EXECUTE_PLAN methods remain:
 
@@ -212,15 +226,27 @@ Strategy still emits no selector, coordinate, or raw CDP packet.
 
 ## Settled post-action observation
 
-One-action bridge `0.2.1` uses bounded semantic settling for action families that need it:
+Ordinary one-action bridge `0.2.1` semantic settling remains:
 
 ```text
-observe immediately
-→ poll every 80ms
-→ minimum window 400ms
-→ semantic stability >= 2 samples
-→ maximum deadline 800ms
+poll every 80ms
+minimum window 400ms
+semantic stability >= 2 samples
+maximum deadline 800ms
 ```
+
+`waitAndObserve` is intentionally different because waiting is the semantic action itself:
+
+```text
+plan steps = []
+poll every 80ms
+minimum window 400ms
+require semantic change
+semantic stability >= 2 samples
+maximum deadline 6000ms
+```
+
+The 6000ms budget is execution policy below Strategy; the Agent Action does not encode test-page timing.
 
 ## Keyboard/input fidelity
 
@@ -247,14 +273,18 @@ Any future OS-control integration requires explicit user consent and an exclusiv
 
 ---
 
-# NEXT — Observation / UI batch
+# NEXT — Media batch
 
-Run the existing capabilities on the fixed `8091` batch lab without adding new functionality first:
+Run existing capabilities first on the fixed `8091` batch lab:
 
 ```text
-dismiss
-hoverAndObserve
-waitAndObserve
+play
+pause
+mute
+unmute
+setVolume
+seek
+changePlaybackRate
 ```
 
 For every action:
@@ -265,11 +295,10 @@ existing capability FAIL → classify exact native gap
 only then fix on feat/agent-tab-context
 ```
 
-After Observation/UI, continue:
+After Media, continue:
 
 ```text
 multi-frame observation
-media: play / pause / mute / unmute / setVolume / seek / changePlaybackRate
 tab lifecycle: switchTab / openNewTab / closeTab
 ```
 
