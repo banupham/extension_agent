@@ -16,7 +16,7 @@ const popup = read('popup.js');
 const server = read('socket-server/server.js');
 const serverPkg = JSON.parse(read('socket-server/package.json'));
 
-assert.strictEqual(manifest.version, '0.8.0');
+assert.strictEqual(manifest.version, '0.8.1');
 assert.strictEqual(manifest.minimum_chrome_version, '116');
 assert.ok(manifest.name.includes('V0.8 Socket Mirror'));
 assert.ok(!manifest.host_permissions.some(pattern => /^wss?:/i.test(pattern)));
@@ -66,4 +66,4 @@ assert.ok(rawStore.includes('manual-chunked-jsonl-gzip-fallback-only'));
 assert.ok(popup.includes('GET_SOCKET_STATUS'));
 assert.ok(!popup.includes('RETRY_AUTO_EXPORT'));
 
-console.log('Training Collector V0.8 socket mirror contract OK');
+console.log('Training Collector V0.8.1 socket mirror inheritance contract OK');
