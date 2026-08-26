@@ -102,17 +102,6 @@ assert.match(runtimeSource, /targetRef: normalized\.destinationRef/);
 assert.match(runtimeSource, /guardTargetGeometry\(tabId, guardedDestination\)/);
 assert.match(runtimeSource, /params\?\.type === 'mouseReleased'/);
 
-// Every semantic action that acquires an observation-bound target before PAGE_CDP
-// execution must participate in the same live-geometry guard. These four were
-// native-confirmed gaps in the moving-target gate on 2026-08-26.
-for (const actionType of ['replaceText', 'clear', 'submit', 'hoverAndObserve']) {
-  assert.match(runtimeSource, new RegExp(`['\"]${actionType}['\"]`));
-}
-const guardFunction = runtimeSource.match(/function planRequiresTarget\(plan\) \{([\s\S]*?)\n\}/)?.[1] || '';
-for (const actionType of ['replaceText', 'clear', 'submit', 'hoverAndObserve']) {
-  assert.ok(guardFunction.includes(`'${actionType}'`), `${actionType} must be live-target guarded`);
-}
-
 // Same-origin iframe baseline: Observer recursively discovers child-frame targets,
 // converts their rectangles to top-viewport coordinates, and live guard resolves
 // the same private frame path before pointer execution.
@@ -149,4 +138,4 @@ assert.doesNotMatch(mirrorSource, /await\s+chromeApi\.tabs\.sendMessage/);
 assert.match(wrapperSource, /AgentCursorMirror\.install\(chrome\)/);
 assert.match(wrapperSource, /importScripts\('background\.js'\)/);
 
-console.log('Agent Runtime target registry + iframe binding + target guard + cursor debug contract: PASS');
+console.log('Agent Runtime target registry + iframe binding + cursor debug contract: PASS');

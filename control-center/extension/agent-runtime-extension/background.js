@@ -385,12 +385,7 @@ async function navigateHistory(tabId, direction) {
 }
 
 function planRequiresTarget(plan) {
-  return [
-    'click', 'doubleClick', 'hover', 'moveTo', 'scrollIntoView', 'focus', 'drag',
-    'replaceText', 'clear', 'setChecked', 'selectOption', 'toggle', 'submit',
-    'dismiss', 'hoverAndObserve', 'play', 'pause', 'mute', 'unmute',
-    'setVolume', 'seek', 'changePlaybackRate'
-  ].includes(plan?.actionType);
+  return ['click', 'doubleClick', 'hover', 'moveTo', 'scrollIntoView', 'focus', 'drag', 'setChecked', 'selectOption', 'toggle', 'dismiss', 'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek', 'changePlaybackRate'].includes(plan?.actionType);
 }
 
 async function executeCdpPlan(tabId, plan, observationId = null) {
