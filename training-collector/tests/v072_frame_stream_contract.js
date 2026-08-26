@@ -14,12 +14,13 @@ const background = read('background.js');
 const routeTrace = read('observer/route_trace.js');
 const rawStore = read('core/raw_session_store.js');
 
-assert.equal(manifest.version, '0.8.0');
+assert.equal(manifest.version, '0.8.1');
 assert.ok(manifest.name.includes('V0.8'));
 assert.equal(manifest.content_scripts[0].all_frames, true);
 assert.equal(manifest.content_scripts[0].match_about_blank, true);
 assert.equal(manifest.content_scripts[0].match_origin_as_fallback, true);
 assert.ok(manifest.content_scripts[0].js.includes('observer/route_trace.js'));
+assert.ok(manifest.content_scripts[0].js.includes('core/strategy_episode_view.js'));
 
 assert.ok(content.includes("type: 'frame-context'"));
 assert.ok(content.includes("type = 'collector-stream-health'"));
@@ -29,6 +30,8 @@ assert.ok(content.includes('sourceEventCounts'));
 assert.ok(content.includes('IS_TOP_FRAME'));
 assert.ok(content.includes('ignoredSubframe'));
 assert.ok(content.includes('tcRawPendingV072:'));
+assert.ok(content.includes('strategyObservationBefore'));
+assert.ok(content.includes('strategyObservationAfter'));
 
 assert.ok(routeTrace.includes("type: 'route-change'"));
 assert.ok(routeTrace.includes("snapshotReason: 'route-change'"));
@@ -46,4 +49,4 @@ assert.ok(rawStore.includes('all-frame-content-capture'));
 assert.ok(rawStore.includes('sanitized-spa-route-change'));
 assert.ok(rawStore.includes('collector-stream-start-health-stop'));
 
-console.log('Training Collector inherited V0.7.2 frame-aware + stream diagnostics contract OK under V0.8');
+console.log('Training Collector inherited V0.7.2 frame-aware + stream diagnostics contract OK under V0.8.1');
