@@ -36,11 +36,14 @@ function validateRequest(args = {}) {
 }
 
 function preflightText(request) {
+  const windowAnchorText = request.action === 'switchTab'
+    ? `Window anchor tab title: ${request.title}`
+    : `Target window title contains: ${request.title}`;
   const targetText = request.targetTabTitle ? `Target tab title: ${request.targetTabTitle}` : 'Target: browser New Tab button';
   return [
     '',
     '[BROWSER UI TAB-STRIP TEST — CONSENT REQUIRED]',
-    `Target window title contains: ${request.title}`,
+    windowAnchorText,
     `Action: ${request.action}`,
     targetText,
     'Mechanism: Windows UI Automation semantic discovery + Win32 SendInput real pointer trajectory/down/hold/up.',
@@ -67,12 +70,19 @@ function psSingleQuoted(value) {
 }
 
 function powershellArgs(request) {
-  const scriptPath = path.join(__dirname, 'browser_ui_tabstrip_spike.ps1');
-  const invoke = [
-    `& $block -Action ${psSingleQuoted(request.action)}`,
-    `-TitleContains ${psSingleQuoted(request.title)}`,
-    request.targetTabTitle ? `-TargetTabTitle ${psSingleQuoted(request.targetTabTitle)}` : ''
-  ].filter(Boolean).join(' ');
+  const switchMode = request.action === 'switchTab';
+  const scriptName = switchMode ? 'browser_ui_switch_tab_spike.ps1' : 'browser_ui_tabstrip_spike.ps1';
+  const scriptPath = path.join(__dirname, scriptName);
+  const invoke = switchMode
+    ? [
+        `& $block -AnchorTabTitle ${psSingleQuoted(request.title)}`,
+        `-TargetTabTitle ${psSingleQuoted(request.targetTabTitle)}`
+      ].join(' ')
+    : [
+        `& $block -Action ${psSingleQuoted(request.action)}`,
+        `-TitleContains ${psSingleQuoted(request.title)}`,
+        request.targetTabTitle ? `-TargetTabTitle ${psSingleQuoted(request.targetTabTitle)}` : ''
+      ].filter(Boolean).join(' ');
   const command = [
     "$ErrorActionPreference='Stop'",
     '$utf8 = New-Object System.Text.UTF8Encoding($false)',
