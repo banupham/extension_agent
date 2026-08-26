@@ -113,7 +113,10 @@ async function main() {
   assert.equal(continued.replan.observationSource, 'settled-after');
   assert.equal(continued.replan.observationId, 'obs-after');
   assert.equal(continued.replan.decision.status, 'act');
+  assert.equal(continued.replan.decision.action.type, 'submit');
+  assert.ok(continued.replan.decision.action.contractVersion);
   assert.equal(continued.invariant.nextActionExecuted, false);
+  assert.equal(continued.invariant.returnedActDecisionUsesSemanticAgentAction, true);
 
   let observeCalls = 0;
   const browserStrategy = strategyRecorder({ status: 'done', reasonCode: 'strategy_terminal' });
@@ -135,6 +138,25 @@ async function main() {
   assert.equal(browser.replan.strategyCallCount, 1);
   assert.equal(browser.replan.observationSource, 'fresh-observe');
   assert.equal(browser.replan.observationId, 'obs-fresh');
+
+  const invalidActionStrategy = strategyRecorder({
+    status: 'act',
+    reasonCode: 'invalid_selector_action',
+    action: { type: 'click', targetRef: 'e1', selector: '#submit', args: {} }
+  });
+  const invalidAction = await orchestrateOneStepReplan({
+    task: task('TARGET'),
+    stepResult: stepResult({ beforeTitle: 'BEFORE', afterTitle: 'AFTER' }),
+    strategy: invalidActionStrategy,
+    startedAtMs: 1000,
+    nowMs: 1100
+  });
+  assert.equal(invalidActionStrategy.calls.length, 1);
+  assert.equal(invalidAction.replan.strategyCallCount, 1);
+  assert.equal(invalidAction.replan.errorCode, 'replan_decision_invalid');
+  assert.equal(invalidAction.replan.decision, null);
+  assert.equal(invalidAction.invariant.boundedStrategyCalls, true);
+  assert.equal(invalidAction.invariant.nextActionExecuted, false);
 
   const failingStrategy = {
     calls: 0,
