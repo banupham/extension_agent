@@ -11,12 +11,33 @@ function send(type, extra = {}) {
   return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...extra });
 }
 
+function episodeTransitionCounts(episode) {
+  const transitions = Array.isArray(episode?.transitions) ? episode.transitions : [];
+  let complete = 0;
+  let pending = 0;
+  for (const transition of transitions) {
+    if (transition?.status === 'complete') complete += 1;
+    else if (transition?.status === 'pending') pending += 1;
+  }
+  return { total: transitions.length, complete, pending };
+}
+
 function showEpisode(state, error) {
   if (error) { statusEl.textContent = `Error: ${error}`; return; }
   const episode = state?.episode;
-  statusEl.textContent = episode
-    ? `${state.active ? 'Episode recording' : 'Episode stopped'}\n${episode.episodeId}\nTransitions: ${episode.transitions?.length || 0}\nOutcome: ${episode.finalOutcome?.status || '-'}`
-    : 'No active task episode';
+  if (!episode) {
+    statusEl.textContent = 'No active task episode';
+    return;
+  }
+  const counts = episodeTransitionCounts(episode);
+  statusEl.textContent = [
+    state.active ? 'Episode recording' : 'Episode stopped',
+    episode.episodeId,
+    `Transitions: ${counts.total}`,
+    `Complete: ${counts.complete}`,
+    `Pending: ${counts.pending}`,
+    `Outcome: ${episode.finalOutcome?.status || '-'}`
+  ].join('\n');
 }
 
 function showRaw(session, error) {
@@ -147,6 +168,12 @@ async function exportRaw() {
   showRaw(session);
 }
 
+async function stopWithOutcome(status) {
+  const res = await send('STOP_EPISODE', { outcome: { status } });
+  showEpisode(res?.state, res?.error);
+  return res;
+}
+
 document.getElementById('previewRaw').addEventListener('click', () => previewRaw().catch(error => {
   previewEl.hidden = false;
   previewEl.textContent = String(error?.message || error);
@@ -158,14 +185,14 @@ document.getElementById('refreshSocket').addEventListener('click', () => loadSoc
 document.getElementById('start').addEventListener('click', async () => {
   const instruction = taskEl.value.trim();
   const res = await send('START_EPISODE', { task: { instruction, type: 'unspecified', args: {} } });
-  showEpisode(res.state, res.error);
+  showEpisode(res?.state, res?.error);
   const raw = await send('GET_RAW_STATUS');
-  showRaw(raw.session, raw.error);
+  showRaw(raw?.session, raw?.error);
 });
 
-document.getElementById('success').addEventListener('click', async () => showEpisode((await send('STOP_EPISODE', { outcome: { status: 'success' } })).state));
-document.getElementById('failed').addEventListener('click', async () => showEpisode((await send('STOP_EPISODE', { outcome: { status: 'failed' } })).state));
-document.getElementById('stop').addEventListener('click', async () => showEpisode((await send('STOP_EPISODE', { outcome: { status: 'stopped' } })).state));
+document.getElementById('success').addEventListener('click', () => stopWithOutcome('success'));
+document.getElementById('failed').addEventListener('click', () => stopWithOutcome('failed'));
+document.getElementById('stop').addEventListener('click', () => stopWithOutcome('stopped'));
 
 refresh().catch(error => {
   const text = String(error?.message || error);
