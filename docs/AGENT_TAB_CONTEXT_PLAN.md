@@ -4,7 +4,7 @@
 
 Native A4 testing showed that an external broker command does not carry Chrome `sender.tab` identity the way Training Collector content-script events do. The Agent Runtime therefore needs an explicit browser-context layer instead of treating inferred active-tab state as the primary source of truth.
 
-This is an additive plan. It does **not** replace the existing A4 one-action bridge, Strategy/Behavior/CDP boundaries, observation-bound target registry, or `--tab` execution path.
+This is an additive plan. It does **not** replace the existing A4 one-action bridge, Strategy/Behavior/CDP boundaries, observation-bound target registry, or explicit `tabId` execution path.
 
 ## Updated execution boundary
 
@@ -119,9 +119,49 @@ all
 
 `matching` is browser-fact filtering only. It does not infer task intent. If several Facebook tabs match, Strategy/Manager must still choose the intended tab before execution.
 
-## CLI additions
+## User-facing selector vs internal tabId
 
-Existing:
+`tabId` is an execution identity, not the preferred user interface.
+
+The native CLI accepts either an exact numeric tab id or a human keyword:
+
+```bat
+node script/agent_one_action.js --observe --tab 181183499
+node script/agent_one_action.js --observe --tab facebook
+node script/agent_one_action.js --type click --label "Thích" --tab facebook
+```
+
+`--on` is an alias for the human-facing selector:
+
+```bat
+node script/agent_one_action.js --observe --on facebook
+```
+
+Resolution is deterministic and happens once before OBSERVE:
+
+```text
+user selector "facebook"
+→ list browser tabs
+→ match title / hostname / URL
+→ resolve one tabId
+→ OBSERVE(tabId)
+→ EXECUTE(tabId + observationId)
+→ OBSERVE AFTER(tabId)
+```
+
+If several matching tabs remain and there is no single active match, the CLI rejects with an ambiguity error instead of silently choosing a tab. Numeric `tabId` remains available for debugging and exact Agent execution.
+
+Host/title/url filters may also select a single execution tab without copying an id:
+
+```bat
+node script/agent_one_action.js --observe --host facebook.com
+node script/agent_one_action.js --observe --title-includes Facebook
+node script/agent_one_action.js --type click --label "Thích" --host facebook.com
+```
+
+## CLI inventory and scoped observation
+
+Existing/fallback:
 
 ```bat
 node script/agent_one_action.js --observe
@@ -129,7 +169,7 @@ node script/agent_one_action.js --observe --tab 123
 node script/agent_one_action.js --type click --label "Like" --tab 123
 ```
 
-New inventory:
+Inventory:
 
 ```bat
 node script/agent_one_action.js --tabs
@@ -137,27 +177,29 @@ node script/agent_one_action.js --tabs --tabs-scope visible
 node script/agent_one_action.js --tabs --tabs-scope matching --host facebook.com
 ```
 
-New scoped observation:
+Scoped observation:
 
 ```bat
 node script/agent_one_action.js --observe-tabs visible
 node script/agent_one_action.js --observe-tabs matching --host facebook.com
 ```
 
-Recommended native flow:
+Recommended human/native flow:
 
 ```text
-LIST TABS
-→ choose explicit tabId
+user says/CLI selects "facebook"
+→ manager resolves browser context to tabId
 → OBSERVE(tabId)
 → one action
 → EXECUTE(tabId + observationId)
 → OBSERVE AFTER(tabId)
 ```
 
+The user does not need to copy tab ids during normal use.
+
 ## Why this does not disturb the old plan
 
-The new layer only makes browser context identity first-class. It does not add autonomous multi-step behavior and does not broaden the Agent Action contract.
+The new layer only makes browser context identity first-class and adds a user-facing resolver before the existing one-action path. It does not add autonomous multi-step behavior and does not broaden the Agent Action contract.
 
 P0 native validation remains the current gate:
 
@@ -184,17 +226,20 @@ P1 remains deferred until P0 native evidence is stable.
 3. match facebook.com while another tab is foreground
 4. switch tabs and repeat inventory
 5. close a matched tab and repeat inventory
-6. observe explicit tabId
-7. switch foreground tab while CLI runs
-8. verify execution remains bound to the explicit tabId
-9. verify old --observe fallback still works
-10. verify stale observation cannot migrate to another tab
+6. observe by human keyword: --observe --tab facebook
+7. execute one action by the same keyword and verify one resolved tabId is reused
+8. verify ambiguous keyword rejects instead of guessing
+9. observe explicit numeric tabId
+10. switch foreground tab while CLI runs
+11. verify execution remains bound to the resolved tabId
+12. verify old --observe fallback still works
+13. verify stale observation cannot migrate to another tab
 ```
 
 ## Future, not part of this change
 
 ```text
-Brain-level browser-context selection policy
+Brain-level natural-language browser-context selection policy
 multi-frame Agent target registry
 cross-tab autonomous planning
 tab lifecycle actions
