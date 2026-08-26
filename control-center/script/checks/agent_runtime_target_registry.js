@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { createRegistry } = require('../../extension/agent-runtime-extension/target_registry.js');
+const { createRegistry, geometryChanged } = require('../../extension/agent-runtime-extension/target_registry.js');
 
 let now = 1000;
 const registry = createRegistry({ ttlMs: 4000, now: () => now });
@@ -29,6 +29,24 @@ const resolved = registry.resolve({
 assert.strictEqual(resolved.selector, '#private-selector');
 assert.strictEqual(resolved.rect.centerX, 140);
 assert.strictEqual(resolved.rect.centerY, 65);
+
+assert.strictEqual(
+  geometryChanged(
+    { x: 100, y: 50, width: 80, height: 30 },
+    { x: 101.5, y: 49, width: 80.5, height: 30 },
+    2
+  ),
+  false
+);
+assert.strictEqual(
+  geometryChanged(
+    { x: 100, y: 50, width: 80, height: 30 },
+    { x: 380, y: 50, width: 80, height: 30 },
+    2
+  ),
+  true
+);
+assert.strictEqual(geometryChanged(null, { x: 1, y: 1, width: 10, height: 10 }), true);
 
 registry.register({
   observationId: 'obs-2',
