@@ -21,6 +21,7 @@ docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_AGENT_CURSOR.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_KEYBOARD_FIDELITY.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_CLEAR_NATIVE.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MOVETO_NATIVE.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_SCROLLINTOVIEW_NATIVE.md
 ```
 
 ---
@@ -52,6 +53,7 @@ vertical scroll
 hover
 moveTo
 horizontal scroll
+scrollIntoView
 doubleClick
 focus
 typeText
@@ -166,6 +168,8 @@ No arbitrary raw-CDP tunnel from Brain.
 
 Observation-bound refs use TTL 4s and latest-observation rules. A newer observation on the same tab invalidates the old one. Before target-dependent pointer dispatch, Runtime re-reads live geometry and compares it with observed geometry using a 2px tolerance; geometry change causes `target_geometry_changed`, invalidates the observation and rejects rather than silently retargeting. The guard is also re-run immediately before `mousePressed`.
 
+`scrollIntoView` is target-derived and is also covered by the observation-bound live-geometry guard before its wheel plan executes.
+
 ## Settled post-action observation
 
 One-action bridge `0.2.1` uses bounded semantic settling:
@@ -246,6 +250,24 @@ Repeated native `moveTo` tests reached the same semantic target successfully whi
 
 This is functional diversity evidence only; it is not a natural-behavior quality PASS.
 
+## scrollIntoView
+
+Native evidence:
+
+```text
+Observer exposed Far Target while offscreen at rect.y = 1466.4375 with viewport.height = 640
+initial main action → cdp_plan_unsupported:scrollIntoView
+experimental planner → weighted Input.dispatchMouseEvent(mouseWheel) target acquisition
+Far Target became visible
+after.title = SCROLLINTOVIEW PASS
+no click
+Runtime observation-bound target guard added and native re-test still PASS
+```
+
+Promoted to `main` as commit `3efdc3e984c01a59b2afeb9c528331f2556d43ad`; runtime-syntax run `32950694941` SUCCESS.
+
+Human visual assessment of current scroll motion is roughly ~80% natural. Do not hand-tune this functional gate; leave further naturalness improvement to Behavior learning/refinement.
+
 ---
 
 # Browser UI / OS control — DEFERRED
@@ -270,29 +292,25 @@ Any future OS-control integration must require explicit consent before taking te
 
 ---
 
-# NEXT — `scrollIntoView` native validation
+# NEXT — `drag` native validation
 
-`scrollIntoView` already exists in Agent Action Contract and requires `targetRef`.
+`drag` already exists in the Agent Action Contract and requires a semantic `targetRef`, but current public action shape/harness does not yet document a destination representation and the CDP planner has no proven native drag path.
 
-Test current implementation on `main` before modifying it.
+Test the existing capability on `main` before designing or adding destination semantics.
 
-Expected semantic behavior:
+First gate:
 
 ```text
-OBSERVE target outside current viewport
-→ scrollIntoView(targetRef)
-→ target becomes visible / reachable
-→ no click
-→ no arbitrary selector/coordinate from Strategy
-→ OBSERVE AFTER confirms target geometry in viewport
+OBSERVE draggable source
+→ issue existing semantic drag(source targetRef)
+→ classify current behavior
 ```
 
-Because current metadata mentions DOM/Runtime-style primitives while the Runtime execution allowlist is intentionally narrow, this test may expose an existing implementation gap. Do not add or alter capability until native evidence confirms failure.
+If current execution is unsupported, treat that as a native-confirmed implementation/contract gap before deciding the minimal semantic destination shape. Strategy must never emit raw destination coordinates.
 
-After `scrollIntoView`, continue existing actions such as:
+After `drag`, continue existing actions such as:
 
 ```text
-drag
 selectOption / setChecked / submit / dismiss
 multi-frame observation
 ```
