@@ -22,9 +22,11 @@ on:
       - 'training-collector/popup.html'
       - 'training-collector/popup_episode_export.js'
       - 'training-collector/tools/build_strategy_episode_dataset.js'
+      - 'training-collector/tools/check_task_episode_review.js'
       - 'training-collector/tests/architecture_contract.js'
       - 'training-collector/tests/strategy_episode_view_contract.js'
       - 'training-collector/tests/task_episode_review_export_contract.js'
+      - 'training-collector/tests/task_episode_review_checker_contract.js'
       - 'training-collector/tests/strategy_episode_dataset_cli_contract.js'
       - 'training-collector/.gitignore'
       - '.github/workflows/episode-dataset-gate.yml'
@@ -51,9 +53,11 @@ jobs:
           node --check training-collector/content.js
           node --check training-collector/popup_episode_export.js
           node --check training-collector/tools/build_strategy_episode_dataset.js
+          node --check training-collector/tools/check_task_episode_review.js
           node --check training-collector/tests/architecture_contract.js
           node --check training-collector/tests/strategy_episode_view_contract.js
           node --check training-collector/tests/task_episode_review_export_contract.js
+          node --check training-collector/tests/task_episode_review_checker_contract.js
           node --check training-collector/tests/strategy_episode_dataset_cli_contract.js
       - name: Validate JSON contracts and manifest
         run: |
@@ -69,5 +73,7 @@ jobs:
         run: node training-collector/tests/architecture_contract.js
       - name: Run Task Episode review export contract
         run: node training-collector/tests/task_episode_review_export_contract.js
+      - name: Run Task Episode review checker contract
+        run: node training-collector/tests/task_episode_review_checker_contract.js
       - name: Run strategy dataset file builder contract
         run: node training-collector/tests/strategy_episode_dataset_cli_contract.js
