@@ -43,6 +43,7 @@ hover without click                      PASS
 horizontal page scroll                   PASS
 doubleClick two-cycle native behavior    PASS
 focus editable target                    PASS
+typeText into focused editable target    PASS
 ```
 
 Functional Agent PASS không đồng nghĩa Brain-quality PASS hoặc natural-behavior PASS.
@@ -134,18 +135,26 @@ Page.navigateToHistoryEntry
 
 No arbitrary raw-CDP tunnel from Brain.
 
-Implemented P0 plan families:
+Implemented and native-validated P0 plan families so far:
 
 ```text
 click / focus acquisition
 doubleClick
 hover
 scrollVertical / scrollHorizontal
-typeText / pressKey
+typeText
+```
+
+Implemented but not yet native-validated:
+
+```text
+pressKey
 navigate / reload
 ```
 
-Known fidelity gaps:
+Navigation contract/metadata includes `back` and `forward`, but current `buildCdpPlan()` has no back/forward case yet. Native-confirm this gap on `main` before any fix.
+
+Known fidelity / contract gaps:
 
 ```text
 focus cdpPrimitives metadata still advertises Runtime.callFunctionOn|DOM.focus while planner executes Input.dispatchMouseEvent
@@ -292,50 +301,24 @@ node script/agent_one_action.js --type doubleClick --label "Double Click Target"
 Target / outcome:
 
 ```text
-before:
-  ref = e0
-  label = Double Click Target
-  focusedRef = null
-
-after:
-  same ref = e0
-  label = Agent Double Click PASS
-  focusedRef = e0
+before: ref=e0, label=Double Click Target, focusedRef=null
+after:  ref=e0, label=Agent Double Click PASS, focusedRef=e0
 ```
 
 CDP sequence:
 
 ```text
-pointer approach mouseMoved events
+pointer approach
 → mousePressed  clickCount=1
-→ 10 ms
 → mouseReleased clickCount=1
 → 90 ms inter-click gap
 → mousePressed  clickCount=2
-→ 10 ms
 → mouseReleased clickCount=2
 ```
 
-Execution evidence:
+Execution: `cdpPlanVersion=0.1.1`, `stepCount=resultCount=15`, `execution.ok=true`, observation invalidated. Human visual confirmation: button changed to `Agent Double Click PASS`.
 
-```text
-cdpPlanVersion = 0.1.1
-stepCount = 15
-resultCount = 15
-execution.ok = true
-observationInvalidated = true
-beforeObservationId != afterObservationId
-```
-
-Human visual confirmation: button changed to `Agent Double Click PASS`.
-
-Classification:
-
-```text
-doubleClick existing function = NATIVE PASS
-```
-
-Note: fallback Behavior reported `holdMs=0`, while Planner minimum clamp produced 10 ms press holds. Functional behavior is validated; naturalness/timing quality remains a later gate.
+Functional behavior validated; timing naturalness remains a later gate.
 
 ---
 
@@ -354,41 +337,56 @@ Command:
 node script/agent_one_action.js --type focus --label "Focus Target" --url-includes 127.0.0.1:8090 --full
 ```
 
-Target geometry / pointer evidence:
+Evidence:
 
 ```text
 input rect = x 68..588, y 68..149
-final pointer/click = (302.34, 80.12)
-endpoint is inside the input hit-box
-```
-
-Outcome evidence:
-
-```text
+final click = (302.34, 80.12), inside hit-box
 before.focusedRef = null
 after.focusedRef  = e0
 label: Focus Target → Focused Input
 human visual confirmation: FOCUS PASS
 execution.ok = true
-observationInvalidated = true
-```
-
-Classification:
-
-```text
-focus existing function = NATIVE PASS
 ```
 
 Functional gate only requires a valid interior hit and real focus. Exact click-point naturalness/safe-margin quality is a later Behavior/robustness concern.
 
-Metadata drift observed:
+Metadata drift: mapped action advertises `Runtime.callFunctionOn|DOM.focus`, actual plan uses `Input.dispatchMouseEvent`. Execution truth is the CDP plan; track as cleanup, not functional failure.
+
+---
+
+# Native evidence — typeText PASS
+
+Controlled surface reused the focused input at:
 
 ```text
-mappedAction.cdpPrimitives says Runtime.callFunctionOn|DOM.focus
-actual CDP plan uses Input.dispatchMouseEvent mouseMoved/pressed/released
+http://127.0.0.1:8090/
 ```
 
-Execution truth is the CDP plan. Track the mapping inconsistency as contract cleanup; it did not cause functional failure.
+Command:
+
+```bat
+node script/agent_one_action.js --type typeText --text "Agent typing PASS 123" --url-includes 127.0.0.1:8090 --full
+```
+
+Evidence:
+
+```text
+actionType = typeText
+behaviorFamily = keyboard-text
+behavior.profile = conservative-fallback
+cdpPlanVersion = 0.1.1
+21 characters → 21 Input.insertText steps
+first delay = 0 ms, fallback inter-character delay = 80 ms
+execution.ok = true
+stepCount = resultCount = 21
+observationInvalidated = true
+before.focusedRef = e0
+after.focusedRef  = e0
+human visual confirmation: exact text "Agent typing PASS 123" appeared in the input
+```
+
+Observer does not currently expose the input value; semantic label remained `Focused Input`. Functional text insertion is PASS from actual UI + execution evidence. Physical-key/listener fidelity (`keydown/keyup` semantics) remains a separate later gate.
 
 ---
 
@@ -421,12 +419,14 @@ hover
 horizontal scroll
 doubleClick
 focus
+typeText
 
 NEXT:
-type non-sensitive text into the already focused controlled input
+back on a controlled local history surface
+→ native-confirm current main behavior before any fix
 
 THEN:
-back / forward
+forward
 
 AFTER FUNCTIONAL MATRIX:
 Agent Cursor Debug Overlay
