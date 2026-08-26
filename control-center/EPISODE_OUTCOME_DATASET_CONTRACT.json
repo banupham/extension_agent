@@ -31,7 +31,8 @@
     "strategyLabel": "Decision with semantic Agent Action only",
     "postActionLabels": ["Outcome", "Control", "Episode Budget", "Progress"],
     "terminalLabel": "terminalResult",
-    "forbidSelectorCoordinateOrRawCdp": true,
+    "forbidSelectorCoordinateOrRawCdpInDecisionAndAction": true,
+    "observationGeometryAllowed": true,
     "tabIdIsTrainingFeature": false,
     "behaviorTrajectoryIsStrategyFeature": false,
     "privateReasoningStored": false
@@ -68,29 +69,34 @@
   ],
   "privacy": {
     "requiresObservationPrivacyRedacted": true,
-    "forbiddenKeys": [
+    "forbiddenKeysAnywhere": [
       "selector",
       "selectors",
-      "coordinate",
-      "coordinates",
-      "x",
-      "y",
       "cdpPlan",
       "cdpPacket",
-      "cdpMethod",
       "rawCdp",
       "tabId",
       "password",
       "cookie",
       "cookies",
       "authorization",
-      "token",
       "accessToken",
       "refreshToken",
       "clipboard",
       "paymentSecret",
       "privateReasoning",
       "chainOfThought"
+    ],
+    "forbiddenDecisionOrActionKeys": [
+      "coordinate",
+      "coordinates",
+      "clientX",
+      "clientY",
+      "screenX",
+      "screenY",
+      "clickX",
+      "clickY",
+      "cdpMethod"
     ],
     "urlPolicy": "training records must not contain URL query values or fragments",
     "credentialsOrSecretsAllowed": false
