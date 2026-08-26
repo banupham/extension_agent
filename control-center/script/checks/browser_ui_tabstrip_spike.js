@@ -60,4 +60,9 @@ const psSource = fs.readFileSync(path.join(__dirname, '..', 'browser_ui_tabstrip
 assert.ok(psSource.includes("if (@('switchTab', 'closeTab') -contains $Action)"));
 assert.ok(!psSource.includes("if (['switchTab', 'closeTab'] -contains $Action)"));
 
+const labSource = fs.readFileSync(path.join(__dirname, '..', 'page_cdp_test_lab.js'), 'utf8');
+assert.match(labSource, /const browserUiTabCase = \['alpha', 'beta', 'disposable'\]\.includes\(tabCase\)/);
+assert.match(labSource, /const preserveBrowserUiTabTitle = \$\{browserUiTabCase \? 'true' : 'false'\}/);
+assert.match(labSource, /if \(!preserveBrowserUiTabTitle\) document\.title=text/);
+
 console.log('Browser UI tab-strip spike contract: PASS');
