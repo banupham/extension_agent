@@ -16,8 +16,6 @@ STATUS.md
 
 # CURRENT FOCUS — AGENT / A4 one-action functional native validation
 
-Collector V0.8 đã qua transport/capture gate và chỉ còn stability/regression support.
-
 ```text
 A0 Agent/Behavior contracts        COMPLETE
 A1 Action Window 0.1.4             COMPLETE
@@ -29,7 +27,9 @@ A5 Goal Checker + Replan           NOT STARTED
 Autonomous multi-step              NOT STARTED
 ```
 
-Current native evidence:
+Collector V0.8 transport/capture gate đã PASS và chỉ còn stability/regression support.
+
+Current Agent native evidence:
 
 ```text
 tab inventory / matching                 PASS
@@ -39,35 +39,36 @@ semantic basic click                      PASS
 visible click effect                      PASS
 OBSERVE AFTER / invalidation              PASS
 vertical page scroll                      PASS
+hover without click                       PASS
 ```
 
-Functional Agent PASS does **not** imply Brain-quality PASS or natural-behavior PASS.
+Functional Agent PASS không đồng nghĩa Brain-quality PASS hoặc natural-behavior PASS.
 
 ---
 
 # Native validation operating rule
 
-Test existing Agent functions on `main` first. Do not add a capability or test-mode merely to make a native test easier.
+Test chức năng hiện có trên `main` trước. Không thêm capability/test-mode chỉ để dễ test.
 
 ```text
 main
 → test existing function
 → PASS: record evidence and continue
-→ FAIL due implementation: switch to reusable experiment branch
+→ FAIL do implementation: chuyển sang reusable experiment branch
 → fix + contract/CI + native re-test
-→ merge only native-passed fix to main
-→ sync reusable branch back to main
+→ merge chỉ fix đã native PASS
+→ sync reusable branch về main
 ```
 
-Reusable experiment branch:
+Reusable experiment branch duy nhất:
 
 ```text
 feat/agent-tab-context
 ```
 
-Do not create one branch per bug.
+Không tạo branch mới cho từng bug.
 
-Repeated functional tests should prefer neutral/controlled pages. Account-backed platforms are sparse smoke-validation surfaces only, to reduce unintended account/platform effects from repeated automation.
+Repeated functional tests ưu tiên neutral/controlled pages. Account-backed platforms chỉ dùng sparse smoke validation để giảm unintended account/platform effects từ automation lặp lại.
 
 ---
 
@@ -95,15 +96,15 @@ Behavior does NOT choose task intent.
 Executor does NOT choose strategy.
 ```
 
-`tabId` is internal execution identity. Human-facing selectors such as `facebook`, hostname/title/url are resolved once to one exact tabId before OBSERVE and the same tab is reused for EXECUTE + OBSERVE AFTER.
+`tabId` là internal execution identity. Human-facing selector (keyword/hostname/title/url) được resolve một lần thành exact tabId trước OBSERVE và reuse cho EXECUTE + OBSERVE AFTER.
 
-CDP is the standard in-page execution path. `chrome.tabs.*` is control-plane only.
+CDP là standard in-page execution path. `chrome.tabs.*` chỉ là control-plane.
 
 ---
 
 # CDP / Runtime baseline
 
-Planner:
+Planner hiện tại:
 
 ```text
 cdpPlanVersion = 0.1.1
@@ -130,7 +131,7 @@ Page.navigateToHistoryEntry
 
 No arbitrary raw-CDP tunnel from Brain.
 
-Current implemented P0 plan families:
+Implemented P0 plan families:
 
 ```text
 click / focus acquisition
@@ -154,9 +155,9 @@ post-action semantic outcome can be incomplete on dynamic overlays
 
 ---
 
-# Native evidence — browser context + click
+# Native evidence — browser context + basic click PASS
 
-Browser-context core path:
+Browser context:
 
 ```text
 agentListTabs                          PASS
@@ -166,7 +167,7 @@ matching --host facebook.com          PASS
 keyword → exact internal tabId        PASS
 ```
 
-Basic semantic click command:
+Basic semantic click:
 
 ```bat
 node script/agent_one_action.js --type click --label "Thông báo" --tab facebook
@@ -183,7 +184,7 @@ beforeObservationId != afterObservationId
 human visual confirmation: notification panel opened
 ```
 
-Post-click observer did not expose all notification-panel contents; classify that separately as observer/outcome fidelity, not click-executor failure.
+Post-click observer chưa expose đầy đủ nội dung notification panel; đây là observer/outcome-fidelity issue, không phải click-executor failure.
 
 ---
 
@@ -201,31 +202,28 @@ Command:
 node script/agent_one_action.js --type scrollVertical --direction 1 --host en.wikipedia.org --full
 ```
 
-Initial `main` behavior FAILED functionally even though CDP dispatch returned success.
-
-Two implementation bugs were found:
+Initial `main` functional failure có hai nguyên nhân:
 
 ```text
-1. Missing empirical behavior metrics passed through Number(null)
-   → became zero-like values
-   → fallback scroll collapsed to an almost invisible wheel amount.
+1. Missing empirical metrics bị Number(null) → 0-like values
+   → fallback scroll collapse gần như 1 px.
 
 2. Generic page scroll inherited prior pointer position
-   → wheel could target a nested/control surface instead of the page body.
+   → wheel có thể nằm trên nested/control surface thay vì page body.
 ```
 
-Fix merged through PR #5:
+Fix merged PR #5:
 
 ```text
 missing metric remains null
 → planner fallback activates
-→ fallback scroll ≈ 4 wheel events / ~480 px requested burst
+→ fallback ≈ 4 wheel events / ~480 px requested burst
 
 generic page scroll
 → wheel anchor = viewport center
 ```
 
-Native evidence after fix:
+Native PASS evidence:
 
 ```text
 after.scroll.y = 388
@@ -235,24 +233,52 @@ same observed element e405:
   difference    = 388 px
 ```
 
-Classification:
-
-```text
-vertical scroll existing function = NATIVE PASS
-```
-
-This validates functional scrolling only; it does not claim human-like scroll quality.
-
-PR/CI:
+CI/merge:
 
 ```text
 PR:          #5
-head:        f23e9bfb45d28ad3ad6d0e22f65e39874cf8b906
 workflow:    runtime-syntax
 run:         32924626320
 result:      SUCCESS
 merge:       21018224496dad3208c04a0a324fdcf7748c218b
 ```
+
+This proves functional scrolling, not human-like scroll quality.
+
+---
+
+# Native evidence — hover without click PASS
+
+Controlled surface:
+
+```text
+https://en.wikipedia.org/wiki/Web_browser
+```
+
+Command:
+
+```bat
+node script/agent_one_action.js --type hover --label "Browser market" --host en.wikipedia.org --full
+```
+
+Human visual confirmation:
+
+```text
+Agent pointer logic reached Browser market
+no click occurred
+no navigation occurred
+page remained Web browser - Wikipedia
+```
+
+Classification:
+
+```text
+hover existing function = NATIVE PASS
+```
+
+Important limitation: CDP mouse events do not move the OS/native cursor, so hover may be visually invisible when the target has no hover styling. This is an observability/debugging limitation, not a hover execution failure.
+
+Potential future debug-only solution: an Agent Cursor overlay may mirror the exact dispatched mouse-event x/y/timing. It must be telemetry/visualization only, `pointer-events:none`, and must never become an input source or alter Strategy/Behavior/CDP execution. Do not add it as part of the current P0 functional matrix unless explicitly scheduled.
 
 ---
 
@@ -267,12 +293,12 @@ observe semantic targets
 basic click
 OBSERVE AFTER / invalidation
 vertical scroll
-
-NEXT:
 hover without click
 
-THEN:
+NEXT:
 horizontal scroll on a controlled horizontal surface
+
+THEN:
 doubleClick safe target
 focus
 type non-sensitive text
