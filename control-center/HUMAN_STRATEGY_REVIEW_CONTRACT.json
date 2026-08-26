@@ -1,7 +1,7 @@
 {
-  "contractVersion": "0.1.0",
+  "contractVersion": "0.1.1",
   "name": "human-strategy-review",
-  "purpose": "Convert privacy-safe Human Task Episode review exports into verified Strategy episode records without teaching raw behavior trajectories to Strategy.",
+  "purpose": "Convert privacy-safe Human Task Episode review exports into verified Strategy episode records without teaching raw behavior trajectories or incidental human noise to Strategy.",
   "input": {
     "reviewExportVersion": "0.1.0",
     "requiresStrategyReadyReviewExport": true,
@@ -11,15 +11,19 @@
     "requiresCredentialsExcludedConfirmation": true,
     "requiresSecretsExcludedConfirmation": true,
     "requiresSplitGroup": true,
-    "stepAnnotationRequired": [
-      "transitionId",
-      "action",
-      "outcome"
-    ],
-    "optionalStepAnnotation": [
-      "blocker",
-      "decisionReasonCode"
-    ]
+    "stepAnnotationRequired": ["transitionId", "include"],
+    "includedStepRequired": ["action", "outcome"],
+    "excludedStepRequired": ["exclusionReason"],
+    "optionalIncludedStepAnnotation": ["blocker", "decisionReasonCode"]
+  },
+  "transitionReview": {
+    "everyRawTransitionMustBeReviewed": true,
+    "includeMustBeExplicitBoolean": true,
+    "excludedTransitionIsNotStrategyStep": true,
+    "excludedTransitionMustRemainInOriginalReviewProvenance": true,
+    "excludedTransitionMustNotAffectProgressOrEpisodeBudgetHistory": true,
+    "atLeastOneIncludedTransitionRequired": true,
+    "reviewerMustOnlyExcludeTaskIrrelevantOrCaptureNoise": true
   },
   "boundaries": {
     "rawTelemetryRemainsSourceOfTruth": true,
@@ -46,9 +50,9 @@
     "terminalEpisodeRequired": true
   },
   "terminalPolicy": {
-    "done": "final A5.2/A5.3 state is done",
-    "blocked": "final A5.2/A5.3 state is blocked",
-    "failed": "final A5.3 budget state is terminal failed",
+    "done": "final included A5.2/A5.3 state is done",
+    "blocked": "final included A5.2/A5.3 state is blocked",
+    "failed": "final included A5.3 budget state is terminal failed",
     "nonTerminalReviewIsRejected": true
   }
 }
