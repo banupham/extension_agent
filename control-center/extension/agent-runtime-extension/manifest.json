@@ -5,6 +5,14 @@
   "description": "Dedicated CDP-backed runtime extension with observation-bound semantic target execution.",
   "permissions": ["debugger", "activeTab", "tabs", "storage"],
   "host_permissions": ["http://*/*", "https://*/*"],
-  "background": {"service_worker": "background.js"},
+  "background": {"service_worker": "agent_runtime_debug_background.js"},
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["agent_cursor_overlay.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
   "action": {"default_title": "Agent Runtime V0.2"}
 }
