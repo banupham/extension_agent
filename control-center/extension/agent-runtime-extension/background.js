@@ -86,6 +86,7 @@ async function observe(tabId) {
       const inputType = tag === 'input' ? String(el.type || '').toLowerCase() : null;
       const checkable = tag === 'input' && ['checkbox', 'radio'].includes(inputType);
       const isSelect = tag === 'select';
+      const isRange = tag === 'input' && inputType === 'range';
       const ref = 'e' + i;
       if (el === active) focusedRef = ref;
       return {
@@ -101,6 +102,10 @@ async function observe(tabId) {
         selectedValue: isSelect ? String(el.value ?? '') : null,
         selectedIndex: isSelect ? Number(el.selectedIndex) : null,
         options: isSelect ? optionState(el) : [],
+        rangeValue: isRange ? Number(el.value) : null,
+        rangeMin: isRange ? Number(el.min || '0') : null,
+        rangeMax: isRange ? Number(el.max || '100') : null,
+        rangeStep: isRange ? (el.step === 'any' ? 'any' : Number(el.step || '1')) : null,
         selector: safeSelector(el),
         rect: { x: r.x, y: r.y, width: r.width, height: r.height }
       };
@@ -183,6 +188,12 @@ function targetFormStateChanged(target, live) {
     if (target.selectedValue != null && String(live?.selectedValue ?? '') !== String(target.selectedValue)) return true;
     if (Array.isArray(target.options) && optionStateSignature(target.options) !== optionStateSignature(live?.options)) return true;
   }
+  if (target?.tag === 'input' && String(target?.inputType || '').toLowerCase() === 'range') {
+    if (target.rangeValue != null && Number(live?.rangeValue) !== Number(target.rangeValue)) return true;
+    if (target.rangeMin != null && Number(live?.rangeMin) !== Number(target.rangeMin)) return true;
+    if (target.rangeMax != null && Number(live?.rangeMax) !== Number(target.rangeMax)) return true;
+    if (target.rangeStep != null && String(live?.rangeStep) !== String(target.rangeStep)) return true;
+  }
   return false;
 }
 
@@ -216,6 +227,7 @@ async function readLiveTarget(tabId, target) {
     const inputType = tag === 'input' ? String(el.type || '').toLowerCase() : null;
     const checkable = tag === 'input' && ['checkbox', 'radio'].includes(inputType);
     const isSelect = tag === 'select';
+    const isRange = tag === 'input' && inputType === 'range';
     const visible = r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
     return {
       ok:true,
@@ -229,6 +241,10 @@ async function readLiveTarget(tabId, target) {
       selectedValue:isSelect ? String(el.value ?? '') : null,
       selectedIndex:isSelect ? Number(el.selectedIndex) : null,
       options:isSelect ? optionState(el) : [],
+      rangeValue:isRange ? Number(el.value) : null,
+      rangeMin:isRange ? Number(el.min || '0') : null,
+      rangeMax:isRange ? Number(el.max || '100') : null,
+      rangeStep:isRange ? (el.step === 'any' ? 'any' : Number(el.step || '1')) : null,
       rect:{ x:r.x, y:r.y, width:r.width, height:r.height }
     };
   })()`;
@@ -302,7 +318,7 @@ async function navigateHistory(tabId, direction) {
 }
 
 function planRequiresTarget(plan) {
-  return ['click', 'doubleClick', 'hover', 'moveTo', 'scrollIntoView', 'focus', 'drag', 'setChecked', 'selectOption', 'toggle', 'dismiss', 'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek'].includes(plan?.actionType);
+  return ['click', 'doubleClick', 'hover', 'moveTo', 'scrollIntoView', 'focus', 'drag', 'setChecked', 'selectOption', 'toggle', 'dismiss', 'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek', 'changePlaybackRate'].includes(plan?.actionType);
 }
 
 async function executeCdpPlan(tabId, plan, observationId = null) {

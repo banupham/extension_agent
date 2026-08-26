@@ -10,6 +10,16 @@
     return Number.isFinite(n) ? n : null;
   }
 
+  function optionalFinite(value) {
+    if (value == null || value === '') return null;
+    return finite(value);
+  }
+
+  function normalizeRangeStep(value) {
+    if (value === 'any') return 'any';
+    return optionalFinite(value);
+  }
+
   function normalizeRect(rect) {
     const x = finite(rect?.x), y = finite(rect?.y), width = finite(rect?.width), height = finite(rect?.height);
     if (x == null || y == null || width == null || height == null || width <= 0 || height <= 0) return null;
@@ -53,6 +63,10 @@
       selectedValue: target.selectedValue == null ? null : String(target.selectedValue),
       selectedIndex: target.selectedIndex != null && Number.isInteger(Number(target.selectedIndex)) ? Number(target.selectedIndex) : null,
       options: Array.isArray(target.options) ? target.options.map(option => ({ ...option })) : [],
+      rangeValue: optionalFinite(target.rangeValue),
+      rangeMin: optionalFinite(target.rangeMin),
+      rangeMax: optionalFinite(target.rangeMax),
+      rangeStep: normalizeRangeStep(target.rangeStep),
       rect: target.rect ? {
         x: target.rect.x,
         y: target.rect.y,
@@ -91,6 +105,10 @@
           selectedValue: raw.selectedValue == null ? null : String(raw.selectedValue),
           selectedIndex: raw.selectedIndex != null && Number.isInteger(Number(raw.selectedIndex)) ? Number(raw.selectedIndex) : null,
           options: normalizeOptions(raw.options),
+          rangeValue: optionalFinite(raw.rangeValue),
+          rangeMin: optionalFinite(raw.rangeMin),
+          rangeMax: optionalFinite(raw.rangeMax),
+          rangeStep: normalizeRangeStep(raw.rangeStep),
           selector: typeof raw.selector === 'string' ? raw.selector : null,
           rect
         });

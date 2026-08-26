@@ -5,6 +5,7 @@ const { sampledBehavior } = require('../behavior/empirical_policy.js');
 const { buildCdpPlan } = require('../execution/cdp_plan.js');
 const { buildDragCdpPlan } = require('../execution/drag_plan.js');
 const { buildFormCdpPlan } = require('../execution/form_plan.js');
+const { buildMediaCdpPlan } = require('../execution/media_plan.js');
 const { buildWaitAndObservePlan } = require('../execution/wait_plan.js');
 
 const BRIDGE_VERSION = '0.2.1';
@@ -228,9 +229,11 @@ async function runOneAction(options) {
     ? buildDragCdpPlan({ mappedAction, behavior, source: target, destination, context })
     : ['setChecked', 'selectOption'].includes(mappedAction.type)
       ? buildFormCdpPlan({ mappedAction, behavior, target, context })
-      : mappedAction.type === 'waitAndObserve'
-        ? buildWaitAndObservePlan({ mappedAction, behavior })
-        : buildCdpPlan({ mappedAction, behavior, target, context });
+      : ['setVolume', 'seek', 'changePlaybackRate'].includes(mappedAction.type)
+        ? buildMediaCdpPlan({ mappedAction, behavior, target, context })
+        : mappedAction.type === 'waitAndObserve'
+          ? buildWaitAndObservePlan({ mappedAction, behavior })
+          : buildCdpPlan({ mappedAction, behavior, target, context });
 
   const execution = await runtime.executePlan({
     observationId: before.observationId,
