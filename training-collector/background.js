@@ -1,11 +1,18 @@
 'use strict';
 
-importScripts('core/episode_builder.js', 'core/raw_session_store.js', 'core/indexeddb_chunk_store.js', 'core/socket_mirror.js');
+importScripts(
+  'core/episode_builder.js',
+  'core/episode_capture_gate.js',
+  'core/raw_session_store.js',
+  'core/indexeddb_chunk_store.js',
+  'core/socket_mirror.js'
+);
 
 const EPISODE_STATE_KEY = 'trainingCollectorStateV03';
 const RECENT_SESSION_LIMIT = 20;
 const SOCKET_ENDPOINT = 'ws://127.0.0.1:8765/training-collector';
 const EpisodeBuilder = globalThis.TrainingCollectorV02.EpisodeBuilder;
+const EpisodeCaptureGate = globalThis.TrainingCollectorV09.EpisodeCaptureGate;
 const RawStore = globalThis.TrainingCollectorV03.RawSessionStore;
 const ChunkStore = globalThis.TrainingCollectorV06.IndexedDbChunkStore.createChunkStore({ chunkSize: RawStore.CHUNK_SIZE });
 const SocketMirrorFactory = globalThis.TrainingCollectorV08.SocketMirror;
@@ -259,27 +266,39 @@ async function startEpisode(task) {
   if (!tab?.id || !/^https?:/i.test(tab.url || '')) {
     throw new Error('Open a normal http/https page before starting an episode');
   }
+
   const initial = await requestSnapshot(tab.id);
+  const initialObservation = EpisodeCaptureGate.assertSnapshotReady(initial);
   const state = {
     active: true,
     episode: EpisodeBuilder.createEpisode({
       task,
       tabId: tab.id,
-      initialObservation: initial?.observation || null,
+      initialObservation,
       now: nowIso()
     })
   };
+
   await saveEpisodeState(state);
-  await chrome.tabs.sendMessage(tab.id, {
-    scope: 'TRAINING_COLLECTOR_V03',
-    type: 'START_EPISODE_CAPTURE'
-  }, { frameId: 0 }).catch(() => {});
+  try {
+    const capture = await chrome.tabs.sendMessage(tab.id, {
+      scope: 'TRAINING_COLLECTOR_V03',
+      type: 'START_EPISODE_CAPTURE'
+    }, { frameId: 0 });
+    EpisodeCaptureGate.assertCaptureArmed(capture);
+  } catch (error) {
+    await saveEpisodeState({ ...EMPTY });
+    throw new Error(`episode_capture_start_failed: ${String(error?.message || error)}`);
+  }
   return state;
 }
 
 async function stopEpisode(outcome) {
   const state = await loadEpisodeState();
   if (!state.active || !state.episode) return state;
+
+  EpisodeCaptureGate.assertStopAllowed(state.episode, outcome);
+
   const tabId = state.episode.tabId;
   if (tabId) {
     await chrome.tabs.sendMessage(tabId, {
