@@ -30,6 +30,37 @@ function frameHtml() {
 </body></html>`;
 }
 
+function nestedFrameLevel1Html() {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Nested Frame Level 1</title>
+<style>body{font-family:Arial,sans-serif;margin:12px} iframe{width:95%;height:120px;border:2px solid #5b7}</style>
+</head>
+<body>
+  <strong>NESTED FRAME LEVEL 1</strong>
+  <iframe src="/frame-level2" title="Nested Frame Level 2"></iframe>
+</body></html>`;
+}
+
+function nestedFrameLevel2Html() {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Nested Frame Level 2</title>
+<style>body{font-family:Arial,sans-serif;margin:18px} button{padding:10px 16px}</style>
+</head>
+<body>
+  <strong>NESTED FRAME LEVEL 2</strong>
+  <button id="nestedFrameTarget" aria-label="Nested Frame Action Target">Nested Frame Action Target</button>
+  <script>
+    document.getElementById('nestedFrameTarget').addEventListener('click', event => {
+      document.title = 'NESTED FRAME CLICK PASS';
+      document.body.dataset.result = 'NESTED FRAME CLICK PASS';
+      event.currentTarget.textContent = 'NESTED FRAME CLICK PASS';
+      event.currentTarget.setAttribute('aria-label', 'NESTED FRAME CLICK PASS');
+      try { window.top.postMessage({ type:'NESTED_FRAME_GATE', result:'NESTED FRAME CLICK PASS' }, '*'); } catch (_) {}
+    });
+  </script>
+</body></html>`;
+}
+
 function mainHtml(url) {
   const waitCase = url.searchParams.get('case') === 'wait';
   const tabCase = String(url.searchParams.get('tab') || '').trim().toLowerCase();
@@ -51,6 +82,7 @@ function mainHtml(url) {
     #hoverDetail{margin-left:12px}
     #dialog{padding:10px;border:1px solid #c66;background:#fee;display:inline-block}
     iframe{width:100%;height:180px;border:1px solid #777}
+    #nestedFrame{height:190px;border:2px solid #5b7}
     #state{position:sticky;top:0;background:#fffbe6;border:1px solid #cc9;padding:8px;z-index:2}
   </style>
 </head>
@@ -111,6 +143,12 @@ function mainHtml(url) {
     <iframe src="/frame" title="Batch Lab Child Frame"></iframe>
   </section>
 
+  <section id="nestedFrames">
+    <h2>Nested same-origin frame gate</h2>
+    <div>TOP → LEVEL 1 → LEVEL 2</div>
+    <iframe id="nestedFrame" src="/frame-level1" title="Nested Frame Level 1"></iframe>
+  </section>
+
   <script>
     const state = document.getElementById('state');
     const preserveBrowserUiTabTitle = ${browserUiTabCase ? 'true' : 'false'};
@@ -118,6 +156,12 @@ function mainHtml(url) {
       state.textContent=text;
       if (!preserveBrowserUiTabTitle) document.title=text;
     }
+
+    window.addEventListener('message', event => {
+      if (event?.data?.type === 'NESTED_FRAME_GATE' && event.data.result === 'NESTED FRAME CLICK PASS') {
+        mark('NESTED FRAME CLICK PASS');
+      }
+    });
 
     document.getElementById('setChecked').addEventListener('change', e => {
       mark(e.target.checked ? 'SETCHECKED PASS' : 'SETCHECKED FALSE');
@@ -170,6 +214,8 @@ function mainHtml(url) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${HOST}:${PORT}`);
   if (url.pathname === '/frame') return sendHtml(res, frameHtml());
+  if (url.pathname === '/frame-level1') return sendHtml(res, nestedFrameLevel1Html());
+  if (url.pathname === '/frame-level2') return sendHtml(res, nestedFrameLevel2Html());
   if (url.pathname === '/' || url.pathname === '/lab') return sendHtml(res, mainHtml(url));
   res.statusCode = 404;
   res.end('not found');
@@ -179,5 +225,6 @@ server.listen(PORT, HOST, () => {
   console.log(`PAGE_CDP batch lab: http://${HOST}:${PORT}/`);
   console.log(`waitAndObserve case: http://${HOST}:${PORT}/?case=wait`);
   console.log(`Browser UI tabs: http://${HOST}:${PORT}/?tab=alpha | ?tab=beta | ?tab=disposable`);
+  console.log('Nested frame gate: TOP → /frame-level1 → /frame-level2 → Nested Frame Action Target');
   console.log('Stop with Ctrl+C. Keep this fixed port for all batch gates.');
 });
