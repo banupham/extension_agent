@@ -57,6 +57,7 @@ back history-CDP
 forward history-CDP
 stale-ref rejection after newer observation
 moving-target live-geometry rejection before pointer click
+post-action settled semantic observation for delayed dynamic UI
 ```
 
 Functional Agent PASS != Brain-quality PASS != natural-behavior PASS.
@@ -106,7 +107,7 @@ TASK
 → CDP EXECUTION PLAN           = exact page/browser-native plan
 → AGENT RUNTIME EXTENSION      = dispatch + narrow runtime binding
 → CHROME
-→ OBSERVE AFTER
+→ SETTLED OBSERVE AFTER
 → GOAL CHECK / REPLAN
 ```
 
@@ -234,11 +235,57 @@ browser remained TARGET MOVED TO B
 neither old-position trap nor moved target was clicked
 ```
 
+`post-action outcome` native evidence:
+
+```text
+initial implementation:
+click Open Dynamic Panel
+→ execution.ok=true
+→ page immediately entered CLICK ACK
+→ Dynamic Child appeared 250ms later
+→ single immediate OBSERVE AFTER returned CLICK ACK and did not include Dynamic Child
+
+later standalone OBSERVE:
+title = DYNAMIC READY
+interactiveElements included Dynamic Child
+```
+
+Classification: click execution and Observer semantic capability were both correct; one-action bridge outcome timing was too early.
+
+One-action bridge `0.2.1` now performs bounded semantic settling for UI/input actions:
+
+```text
+observe immediately after execution
+→ poll every 80ms
+→ minimum observation window 400ms
+→ stop after semantic snapshot is stable for >= 2 samples
+→ maximum deadline 800ms
+```
+
+The semantic fingerprint excludes observation IDs/timestamps and pointer geometry animation; it uses URL/title/focus/scroll plus semantic interactive-element state.
+
+Native re-test:
+
+```text
+bridgeVersion = 0.2.1
+execution.ok = true
+after.title = DYNAMIC READY
+after.interactiveElements includes Dynamic Child
+postActionObservation.mode = settled
+samples = 6
+waitedMs = 400
+semanticChanged = true
+stableSamples = 3
+deadlineReached = false
+oneActionOnly = true
+```
+
+No second Agent Action and no manual second OBSERVE were required.
+
 Known later fidelity/robustness gates:
 
 ```text
 Input.insertText physical-key/listener fidelity
-post-action semantic outcome fidelity
 focus primitive metadata cleanup
 multi-frame Agent observation
 ```
@@ -267,26 +314,33 @@ Any future OS-control integration must require explicit consent before taking te
 
 ---
 
-# NEXT
+# NEXT — Agent Cursor Debug Overlay
 
-Do not build Agent Cursor yet.
+The remaining direct PAGE_CDP functional/robustness gates no longer block pointer observability. Build the previously approved Agent Cursor as mirror-only debug telemetry.
 
-Immediate native sequence on `main`:
-
-```text
-1 post-action observer outcome fidelity
-2 remaining keyboard/input fidelity and metadata cleanup gates as useful
-3 Agent Cursor Debug Overlay when PAGE_CDP pointer observability becomes useful
-```
-
-Agent Cursor remains mirror-only telemetry:
+Required invariant:
 
 ```text
 CDP dispatch = source of truth
-→ cursor mirrors x/y/timing/state only
+→ cursor mirrors x/y/timing/button state only
 → never generates input
 → never selects/retargets targets
+→ never changes Behavior timing/trajectory
+→ pointer-events:none
+→ Observer must ignore the overlay
 ```
+
+Preferred implementation direction:
+
+```text
+Agent Runtime CDP dispatch
+→ emit/mirror pointer debug state
+→ isolated page overlay (Shadow DOM or equivalent)
+→ high z-index visual cursor
+→ no execution authority
+```
+
+After Agent Cursor functional validation, continue remaining fidelity/metadata gates as useful.
 
 No autonomous multi-step work yet.
 
