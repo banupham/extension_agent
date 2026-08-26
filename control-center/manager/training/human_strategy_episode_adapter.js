@@ -64,14 +64,7 @@ function normalizeReviewConfirmations(annotation) {
     throw new Error(`annotation.contractVersion must equal ${HUMAN_REVIEW_CONTRACT_VERSION}`);
   }
   const review = isPlainObject(annotation.review) ? annotation.review : {};
-  const required = [
-    'taskPrivacyReviewed',
-    'semanticLabelsVerified',
-    'outcomeVerified',
-    'credentialsExcluded',
-    'secretsExcluded'
-  ];
-  for (const key of required) {
+  for (const key of ['taskPrivacyReviewed', 'semanticLabelsVerified', 'outcomeVerified', 'credentialsExcluded', 'secretsExcluded']) {
     if (review[key] !== true) throw new Error(`annotation.review.${key} must be true`);
   }
   return review;
@@ -111,31 +104,13 @@ function monotonicTimes(transitions) {
 function terminalResultFromStep(step) {
   if (!step) throw new Error('final reviewed step required');
   if (step.budget.status === 'done' || step.control.status === 'done') {
-    return {
-      status: 'done',
-      reasonCode: step.budget.reasonCode || step.control.reasonCode || 'goal_satisfied',
-      taskSucceeded: true,
-      finalProgress: step.progress.after,
-      verified: true
-    };
+    return { status: 'done', reasonCode: step.budget.reasonCode || step.control.reasonCode || 'goal_satisfied', taskSucceeded: true, finalProgress: step.progress.after, verified: true };
   }
   if (step.budget.status === 'blocked' || step.control.status === 'blocked') {
-    return {
-      status: 'blocked',
-      reasonCode: step.budget.reasonCode || step.control.reasonCode || 'blocked',
-      taskSucceeded: false,
-      finalProgress: step.progress.after,
-      verified: true
-    };
+    return { status: 'blocked', reasonCode: step.budget.reasonCode || step.control.reasonCode || 'blocked', taskSucceeded: false, finalProgress: step.progress.after, verified: true };
   }
   if (step.budget.status === 'failed' && step.budget.terminal === true) {
-    return {
-      status: 'failed',
-      reasonCode: step.budget.reasonCode || 'episode_budget_failed',
-      taskSucceeded: false,
-      finalProgress: step.progress.after,
-      verified: true
-    };
+    return { status: 'failed', reasonCode: step.budget.reasonCode || 'episode_budget_failed', taskSucceeded: false, finalProgress: step.progress.after, verified: true };
   }
   throw new Error('reviewed episode is not terminal under A5.2/A5.3 controls');
 }
@@ -143,63 +118,67 @@ function terminalResultFromStep(step) {
 function assertReviewFinalOutcome(reviewExport, terminalResult) {
   const status = String(reviewExport?.finalOutcome?.status || '').trim().toLowerCase();
   if (!status) throw new Error('reviewExport.finalOutcome.status required');
-  if (status === 'success' && terminalResult.status !== 'done') {
-    throw new Error('human finalOutcome success requires terminal done Strategy record');
-  }
-  if (status === 'failed' && terminalResult.status === 'done') {
-    throw new Error('human finalOutcome failed cannot produce terminal done Strategy record');
-  }
+  if (status === 'success' && terminalResult.status !== 'done') throw new Error('human finalOutcome success requires terminal done Strategy record');
+  if (status === 'failed' && terminalResult.status === 'done') throw new Error('human finalOutcome failed cannot produce terminal done Strategy record');
   if (status === 'stopped') throw new Error('stopped human episode is not training-review terminal evidence');
 }
 
-function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {}) {
-  const { episodeId, transitions } = assertReviewExport(reviewExport);
-  normalizeReviewConfirmations(annotation);
-  if (requireString(annotation.episodeId, 'annotation.episodeId') !== episodeId) {
-    throw new Error('annotation.episodeId must match review export episodeId');
-  }
-  const splitGroup = requireString(annotation.splitGroup, 'annotation.splitGroup');
+function normalizeTransitionReviews(transitions, annotation) {
   const annotations = Array.isArray(annotation.steps) ? annotation.steps : [];
-  if (annotations.length !== transitions.length) {
-    throw new Error('annotation.steps length must equal review export transitions length');
-  }
-
+  if (annotations.length !== transitions.length) throw new Error('annotation.steps length must equal review export transitions length');
   const byTransitionId = new Map();
   for (const [index, item] of annotations.entries()) {
     if (!isPlainObject(item)) throw new Error(`annotation.steps[${index}] must be an object`);
     const transitionId = requireString(item.transitionId, `annotation.steps[${index}].transitionId`);
     if (byTransitionId.has(transitionId)) throw new Error(`duplicate annotation transitionId: ${transitionId}`);
+    if (typeof item.include !== 'boolean') throw new Error(`annotation.steps[${index}].include must be boolean`);
+    if (item.include === false) requireString(item.exclusionReason, `annotation.steps[${index}].exclusionReason`);
     byTransitionId.set(transitionId, item);
   }
+  for (const transition of transitions) {
+    if (!byTransitionId.has(transition.transitionId)) throw new Error(`missing annotation for transitionId ${transition.transitionId}`);
+  }
+  return byTransitionId;
+}
 
+function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {}) {
+  const { episodeId, transitions } = assertReviewExport(reviewExport);
+  normalizeReviewConfirmations(annotation);
+  if (requireString(annotation.episodeId, 'annotation.episodeId') !== episodeId) throw new Error('annotation.episodeId must match review export episodeId');
+  const splitGroup = requireString(annotation.splitGroup, 'annotation.splitGroup');
+  const byTransitionId = normalizeTransitionReviews(transitions, annotation);
   const times = monotonicTimes(transitions);
+
   let previousProgress = 0;
   let history = [];
-  const steps = transitions.map((transition, index) => {
+  const steps = [];
+  const excludedTransitions = [];
+
+  transitions.forEach((transition, sourceIndex) => {
     const reviewed = byTransitionId.get(transition.transitionId);
-    if (!reviewed) throw new Error(`missing annotation for transitionId ${transition.transitionId}`);
+    if (reviewed.include === false) {
+      excludedTransitions.push({ transitionId: transition.transitionId, reason: String(reviewed.exclusionReason).trim() });
+      return;
+    }
+
     const action = validateAgentAction(reviewed.action);
-    const outcome = normalizeReviewedOutcome(reviewed.outcome, previousProgress, index);
+    const outcome = normalizeReviewedOutcome(reviewed.outcome, previousProgress, sourceIndex);
     const blocker = reviewed.blocker == null ? null : reviewed.blocker;
     const control = reduceOutcomeToControl({ outcome, blocker });
     const budget = evaluateEpisodeBudget({
       history,
       control,
       actionType: action.type,
-      startedAtMs: times[index].startedAtMs,
-      nowMs: times[index].nowMs,
+      startedAtMs: times[sourceIndex].startedAtMs,
+      nowMs: times[sourceIndex].nowMs,
       budgets: options.budgets || {}
     });
     history = budget.history;
-    const progress = {
-      before: previousProgress,
-      after: outcome.progress,
-      delta: outcome.progress - previousProgress
-    };
+    const progress = { before: previousProgress, after: outcome.progress, delta: outcome.progress - previousProgress };
     previousProgress = outcome.progress;
 
-    return {
-      stepIndex: index,
+    steps.push({
+      stepIndex: steps.length,
       observation: transition.strategyObservationBefore,
       decision: {
         contractVersion: '0.1.0',
@@ -207,48 +186,33 @@ function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {
         action,
         targetRef: action.targetRef,
         confidence: 1,
-        reasonCode: typeof reviewed.decisionReasonCode === 'string' && reviewed.decisionReasonCode.trim()
-          ? reviewed.decisionReasonCode.trim()
-          : 'verified_human_demonstration',
+        reasonCode: typeof reviewed.decisionReasonCode === 'string' && reviewed.decisionReasonCode.trim() ? reviewed.decisionReasonCode.trim() : 'verified_human_demonstration',
         expectedOutcome: action.expectedOutcome || {},
         recovery: {},
-        metadata: {
-          labelSource: 'verified-human-review',
-          transitionId: transition.transitionId
-        }
+        metadata: { labelSource: 'verified-human-review', transitionId: transition.transitionId }
       },
       action,
       outcome,
       control,
       budget,
       progress
-    };
+    });
   });
+
+  if (!steps.length) throw new Error('at least one reviewed transition must be included as a Strategy step');
 
   const terminalResult = terminalResultFromStep(steps.at(-1));
   assertReviewFinalOutcome(reviewExport, terminalResult);
-
   const task = isPlainObject(annotation.taskOverride) ? annotation.taskOverride : reviewExport.task;
   const record = buildEpisodeRecord({
     episodeId: `human-${episodeId}`,
-    source: {
-      kind: 'human-demonstration',
-      labelVerified: true,
-      outcomeVerified: true,
-      provenanceId: episodeId,
-      collectedAt: reviewExport.exportedAt || reviewExport.endedAt || null
-    },
+    source: { kind: 'human-demonstration', labelVerified: true, outcomeVerified: true, provenanceId: episodeId, collectedAt: reviewExport.exportedAt || reviewExport.endedAt || null },
     task,
     steps,
     terminalResult,
     split: 'unassigned',
     splitGroup,
-    privacy: {
-      redacted: true,
-      credentialsExcluded: true,
-      secretsExcluded: true,
-      policyVersion: 'human-strategy-review-0.1.0'
-    }
+    privacy: { redacted: true, credentialsExcluded: true, secretsExcluded: true, policyVersion: `human-strategy-review-${HUMAN_REVIEW_CONTRACT_VERSION}` }
   });
 
   return {
@@ -256,7 +220,10 @@ function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {
     provenance: {
       reviewExportVersion: reviewExport.reviewExportVersion,
       sourceEpisodeId: episodeId,
-      rawTelemetryPreservedExternally: true
+      rawTelemetryPreservedExternally: true,
+      reviewedTransitionCount: transitions.length,
+      includedTransitionCount: steps.length,
+      excludedTransitions
     },
     record
   };
@@ -268,5 +235,6 @@ module.exports = {
   normalizeReviewedOutcome,
   monotonicTimes,
   terminalResultFromStep,
+  normalizeTransitionReviews,
   adaptHumanReviewToStrategyEpisode
 };
