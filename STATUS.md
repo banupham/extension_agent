@@ -26,19 +26,20 @@ docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_FORMS_BATCH.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_OBSERVATION_UI_BATCH.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MEDIA_BATCH.md
 docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_MULTIFRAME_BATCH.md
+docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_TAB_LIFECYCLE_BATCH.md
 ```
 
 ---
 
-# CURRENT FOCUS — batch native validation of remaining existing Agent Actions
+# CURRENT FOCUS — functional matrix closed; Browser UI/OS shell re-test next
 
 ```text
 A0 Agent/Behavior contracts        COMPLETE
 A1 Action Window 0.1.4             COMPLETE
 A2 Behavior Feature 0.2.0          COMPLETE
 A3 Empirical baseline contract     READY
-P0 Agent Runtime                   CORE FUNCTION MATRIX NATIVE PASS
-A4 One-action bridge               CORE FUNCTION MATRIX NATIVE PASS
+P0 Agent Runtime                   SCOPED FUNCTION MATRIX NATIVE PASS
+A4 One-action bridge               SCOPED FUNCTION MATRIX NATIVE PASS
 A5 Goal Checker + Replan           NOT STARTED
 Autonomous multi-step              NOT STARTED
 ```
@@ -86,6 +87,9 @@ unmute
 setVolume
 seek
 changePlaybackRate
+switchTab
+openNewTab
+closeTab
 same-origin iframe observation / semantic target binding
 same-origin iframe PAGE_CDP click
 stale-ref rejection after newer observation
@@ -140,6 +144,16 @@ click observation-bound Frame Action Target through PAGE_CDP
 
 The existing top-document-only Observer first native-failed to discover the iframe target. The repair recursively observes visible same-origin frames, binds frame path internally, converts child rects to top-viewport coordinates, and re-resolves the bound frame for live geometry guards. Cross-origin/OOPIF support is not claimed by this gate.
 
+Tab lifecycle batch is **3/3 native PASS**:
+
+```text
+switchTab
+openNewTab
+closeTab
+```
+
+All three first native-failed with `cdp_plan_unsupported:*`. They now use a browser-action envelope and `chrome.tabs.update/create/remove`; `cdpPlan = null`. Browser Context resolves the internal `tabId`; Strategy does not emit tab IDs or execution primitives. Post-action evidence is tab inventory before/after, and `closeTab` does not attempt to page-observe a tab after removal. Selective promotion to `main` commit `32190277ef9610bdf51aa4a0a855d639ce8068ea` passed main CI run `32972700448`.
+
 ---
 
 # Development / branch rule
@@ -161,7 +175,7 @@ Reusable experiment branch:
 feat/agent-tab-context
 ```
 
-Do not merge the whole experimental branch blindly. Selectively promote only native-proven code/tests. Browser UI/OS experiments remain deferred.
+Do not merge the whole experimental branch blindly. Selectively promote only native-proven code/tests. Browser UI/OS experiments remain isolated until explicitly promoted.
 
 Controlled local webpage tests reuse one fixed surface:
 
@@ -182,10 +196,10 @@ TASK
 → STRATEGY / BRAIN
 → AGENT ACTION CONTRACT        = WHAT
 → EXECUTION BEHAVIOR CONTRACT = HOW naturally / allowed variant
-→ CDP EXECUTION PLAN           = exact page/browser-native plan
+→ PAGE_CDP PLAN or BROWSER ACTION ENVELOPE
 → AGENT RUNTIME EXTENSION      = dispatch + narrow runtime binding
 → CHROME
-→ SETTLED OBSERVE AFTER
+→ SETTLED PAGE OBSERVE or BROWSER-CONTEXT OBSERVE AFTER
 → GOAL CHECK / REPLAN
 ```
 
@@ -203,7 +217,7 @@ Executor does NOT choose strategy.
 
 # CDP / Runtime baseline
 
-Runtime dispatcher accepts:
+Runtime dispatcher accepts PAGE_CDP plans:
 
 ```text
 0.1.0
@@ -227,6 +241,16 @@ Page.navigateToHistoryEntry
 ```
 
 No arbitrary raw-CDP tunnel from Brain.
+
+## Browser-native tab lifecycle
+
+```text
+switchTab   → chrome.tabs.update(tabId, {active:true})
+openNewTab  → chrome.tabs.create({url, active:true, windowId})
+closeTab    → chrome.tabs.remove(tabId)
+```
+
+These do not use `EXECUTE_PLAN`, PAGE_CDP input, or Browser UI/OS. The one-action bridge records `beforeBrowserContext` and `afterBrowserContext`; the browser action is one semantic action and `cdpPlan = null`.
 
 ## Observation-bound target safety
 
@@ -272,7 +296,7 @@ changePlaybackRate
 → Input.dispatchKeyEvent Home / ArrowDown / Enter
 ```
 
-Strategy still emits no selector, coordinate, frame path, or raw CDP packet.
+Strategy still emits no selector, coordinate, frame path, raw CDP packet, or browser API packet.
 
 ## Settled post-action observation
 
@@ -315,35 +339,39 @@ Repeated pointer/scroll/drag/range tests provide functional diversity evidence o
 
 ---
 
-# Browser UI / OS control — DEFERRED
+# Browser UI / OS control — EXPERIMENTAL, RE-TEST NEXT
 
-Experimental evidence retained on `feat/agent-tab-context` includes Win32/Windows-UIA browser-shell control probes. Do not integrate BROWSER_UI_OS into Runtime during this functional phase.
+Experimental evidence retained on `feat/agent-tab-context` includes Win32/Windows-UIA browser-shell control probes. It remains a separate execution surface and is not integrated into ordinary Runtime execution.
 
-Any future OS-control integration requires explicit user consent and an exclusive desktop-input lease.
+Previous exploratory evidence included browser Back/Forward via Win32 SendInput and UIA-discovered physical-style pointer interaction. The next gate is to re-test this surface after closing the scoped semantic action matrix.
+
+Any test that sends real OS mouse/keyboard input requires explicit user consent immediately before input is sent and an exclusive desktop-input lease. Browser UI functional correctness and naturalness are separate gates; naturalness should be refined through Behavior learning rather than hand-tuned per functional test.
 
 ---
 
-# NEXT — tab lifecycle batch
+# NEXT — Browser UI/OS shell-control re-test
 
-Run existing capabilities first:
+Start from the preserved experimental artifacts on `feat/agent-tab-context` and verify existing functionality before changing implementation.
 
-```text
-switchTab
-openNewTab
-closeTab
-```
-
-These are browser-control-plane actions and should use `chrome.tabs.*`, not PAGE_CDP input and not Browser UI/OS.
-
-For every action:
+Initial re-test scope:
 
 ```text
-existing capability PASS → record evidence
-existing capability FAIL → classify exact native gap
-only then fix on feat/agent-tab-context
+browser Back / Forward shell controls
+UIA semantic discovery of browser toolbar controls
+physical-style mouse trajectory → down → hold → up
 ```
 
-After tab lifecycle functional coverage is closed, stop and review the matrix before starting A5 / Goal Checker + Replan. No autonomous multi-step work yet.
+Rules:
+
+```text
+no PAGE_CDP pretending to hit browser chrome
+no teleport+click
+no Runtime integration before evidence
+explicit consent immediately before OS input
+one exclusive desktop-input owner
+```
+
+After Browser UI/OS re-test, review the evidence and architecture before deciding whether to integrate that surface or proceed to A5 / Goal Checker + Replan. Autonomous multi-step remains out of scope.
 
 ---
 
@@ -354,7 +382,7 @@ cross-origin/OOPIF frame observation when a real task requires it
 focus primitive metadata cleanup
 physical-key-like text-entry variant only if a real task requires listener fidelity
 pointer/scroll/drag/range naturalness refinement through Behavior learning
-Browser UI/OS integration when an actual shell-control task requires it
+Browser UI/OS integration only after the shell-control re-test and explicit design review
 ```
 
 ---
