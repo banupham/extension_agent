@@ -1,0 +1,47 @@
+{
+  "contractVersion": "0.1.0",
+  "purpose": "Execution surfaces below Strategy. Agent Action remains semantic WHAT; Execution Surface Policy selects WHERE; Behavior Policy selects HOW naturally inside the selected variant.",
+  "surfaces": {
+    "page-cdp": {
+      "scope": "webpage-renderer",
+      "default": true,
+      "exclusiveDesktopInput": false,
+      "consentRequired": false,
+      "notes": "In-page pointer/keyboard/scroll/form/media execution through allowlisted CDP primitives."
+    },
+    "browser-native": {
+      "scope": "browser-control-plane",
+      "default": false,
+      "exclusiveDesktopInput": false,
+      "consentRequired": false,
+      "notes": "Deterministic browser/tab/navigation control through CDP Page domain and browser control-plane APIs."
+    },
+    "browser-ui-os": {
+      "scope": "windows-desktop-input",
+      "default": false,
+      "exclusiveDesktopInput": true,
+      "consentRequired": true,
+      "maxConcurrentDesktopInputOwners": 1,
+      "notes": "Visible browser chrome / OS interaction through semantic UI Automation discovery and allowlisted physical Windows input."
+    }
+  },
+  "browserNativeDefaultActions": [
+    "navigate",
+    "back",
+    "forward",
+    "reload",
+    "switchTab",
+    "openNewTab",
+    "closeTab"
+  ],
+  "selectionRule": "Use the lowest/least-exclusive surface that can correctly satisfy the semantic action. BROWSER_UI_OS is an escalation surface, not the default for ordinary webpage interaction.",
+  "strategyBoundary": "Strategy must not emit executionSurface, surface, executionVariant, mechanism, controlLease, HWND, screen coordinates, or raw protocol packets.",
+  "browserUiOsLease": {
+    "scope": "windows-desktop-input",
+    "exclusive": true,
+    "consentRequired": true,
+    "allowedInputChannels": ["pointer", "keyboard"],
+    "releaseOn": ["success", "failure", "cancel"],
+    "rule": "Acquire after explicit user consent and release on every terminal path. Only one physical desktop-input owner at a time per Windows desktop/session."
+  }
+}

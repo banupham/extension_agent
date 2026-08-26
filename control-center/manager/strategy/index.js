@@ -44,5 +44,6 @@ module.exports = {
   createStrategy,
   ...require('./contracts'),
   ...require('./agent_action_contract'),
+  ...require('./execution_surface_contract'),
   ...require('./execution_behavior_contract')
 };
