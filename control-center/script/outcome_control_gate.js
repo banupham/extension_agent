@@ -63,7 +63,14 @@ async function main(argv = process.argv.slice(2)) {
     });
     const control = reduceOutcomeToControl({ outcome });
     const firstEvidence = outcome.evidence?.[0] || null;
-    const pass = control.status === expectedStatus;
+    const executionOk = step.execution?.ok === true;
+    const statusMatched = control.status === expectedStatus;
+    const evidenceMatched = expectedStatus === 'done'
+      ? firstEvidence?.beforeMatched === false && firstEvidence?.afterMatched === true
+      : expectedStatus === 'continue'
+        ? firstEvidence?.afterMatched === false
+        : true;
+    const pass = executionOk && statusMatched && evidenceMatched;
 
     console.log(JSON.stringify({
       ok: pass,
@@ -71,7 +78,7 @@ async function main(argv = process.argv.slice(2)) {
       result: pass ? 'PASS' : 'FAIL',
       actionType: step.mappedAction?.type || null,
       targetLabel: selectedTarget?.label || null,
-      executionOk: step.execution?.ok === true,
+      executionOk,
       beforeMatched: firstEvidence?.beforeMatched ?? null,
       afterMatched: firstEvidence?.afterMatched ?? null,
       actionSucceeded: outcome.actionSucceeded,
