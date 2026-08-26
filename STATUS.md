@@ -12,7 +12,7 @@ Trước khi sửa code: `STATUS.md` → `docs/PROJECT_JOURNAL.md` → source/te
 
 ---
 
-# CURRENT FOCUS — AGENT / A4 native one-action validation
+# CURRENT FOCUS — AGENT / A4 native one-action functional validation
 
 Collector V0.8 transport/capture gate đã đạt và chỉ còn stability/regression support.
 
@@ -26,12 +26,26 @@ login privacy boundary        PASS
 browser close finalize        PASS
 ```
 
+Current Agent native evidence:
+
+```text
+tab inventory / tab matching          PASS
+human keyword → exact tabId resolve   PASS
+OBSERVE on Facebook by keyword        PASS
+semantic button selection             PASS
+basic native click dispatch           PASS
+OBSERVE AFTER / invalidation           PASS
+```
+
+This milestone is functional Agent validation only. Brain task reasoning, autonomous multi-step planning and natural-behavior quality are not declared complete by these passes.
+
 ---
 
 # Agent execution boundary
 
 ```text
 TASK
+→ BROWSER CONTEXT / TAB INVENTORY
 → OBSERVER
 → STRATEGY / BRAIN
 → AGENT ACTION CONTRACT        = WHAT
@@ -51,7 +65,9 @@ Behavior does NOT choose task intent.
 Executor does NOT choose strategy.
 ```
 
-CDP is the standard in-page execution layer. `chrome.tabs.*` remains tab lifecycle control-plane.
+`tabId` is internal execution identity. Human-facing CLI may select a browser context by keyword/host/title/url; manager resolves that once to one `tabId` before OBSERVE and reuses the same tab for EXECUTE + OBSERVE AFTER.
+
+CDP is the standard in-page execution layer. `chrome.tabs.*` remains tab lifecycle/control-plane.
 
 ---
 
@@ -139,13 +155,13 @@ keyboard-key
 pointer-drag (sparse fallback)
 ```
 
-`focus-acquisition` now deliberately reuses the pointer-click empirical baseline because the physical acquisition/click mechanics are the same family while semantic intent remains `focus`.
+`focus-acquisition` deliberately reuses the pointer-click empirical baseline because the physical acquisition/click mechanics are the same family while semantic intent remains `focus`.
 
-Real native baseline JSON is intentionally a generated local artifact from collected sessions, not hard-coded into source. The first native Agent tests may pass `--baseline <file>`; without it the policy uses conservative fallbacks.
+Real native baseline JSON is intentionally a generated local artifact from collected sessions, not hard-coded into source. Native Agent functional tests may run without it using conservative fallbacks; naturalness evaluation is a separate later gate.
 
 ---
 
-# CDP Execution Planner — READY FOR NATIVE TEST
+# CDP Execution Planner — v0.1.1 / BASIC CLICK NATIVE PASS
 
 ```text
 control-center/manager/execution/cdp_plan.js
@@ -188,27 +204,58 @@ navigate/reload
 
 Natural behavior comes from aggregate distributions/context, not fixed random jitter and not literal trajectory replay.
 
-Known fidelity gaps before declaring execution complete:
+Native basic click evidence now proves a `0.1.1` pointer-click plan can be dispatched successfully by Agent Runtime. Remaining fidelity questions:
 
 ```text
-doubleClick sequence is structurally correct but still needs browser-native validation
+doubleClick sequence still needs browser-native validation
 keyCombo modifier sequence is not complete yet
 Input.insertText per char may differ from keyDown/keyUp listeners
+moving target geometry revalidation is not robust yet
 ```
 
 ---
 
-# Agent Runtime V0.2 — P0 READY
+# Agent Runtime V0.2 — P0 IN NATIVE VALIDATION
 
 Main files:
 
 ```text
 control-center/extension/agent-runtime-extension/manifest.json
 control-center/extension/agent-runtime-extension/target_registry.js
+control-center/extension/agent-runtime-extension/tab_context.js
 control-center/extension/agent-runtime-extension/cdp_plan_dispatcher.js
 control-center/extension/agent-runtime-extension/broker_client.js
 control-center/extension/agent-runtime-extension/background.js
 ```
+
+## Browser/tab context
+
+External broker commands do not have content-script `sender.tab` identity. Agent Runtime therefore exposes explicit browser context:
+
+```text
+agentListTabs
+agentObserveTabs
+agentObserve(tabId?)
+agentExecutePlan(tabId? + observationId)
+```
+
+Scopes:
+
+```text
+active
+visible
+matching
+all
+```
+
+Human-facing CLI supports selectors such as:
+
+```bat
+node script/agent_one_action.js --observe --tab facebook
+node script/agent_one_action.js --observe --host facebook.com
+```
+
+Manager resolves the selector once to an exact `tabId`; the execution identity remains explicit internally.
 
 ## Observation-bound targets
 
@@ -244,27 +291,40 @@ Page.navigateToHistoryEntry
 
 No arbitrary `Runtime.evaluate` / raw CDP tunnel exists through `EXECUTE_PLAN`.
 
+Dispatcher version compatibility after native evidence:
+
+```text
+accepted CDP plans: 0.1.0, 0.1.1
+latest planner:      0.1.1
+```
+
+The previous runtime accepted only `0.1.0`, while manager planner emitted `0.1.1`, causing `unsupported_cdp_plan_version`. Native branch validation with the compatibility fix succeeded; backward acceptance of `0.1.0` remains covered by contract test.
+
 After a plan executes the observation is invalidated, forcing OBSERVE AFTER.
 
 ## Direct broker connection
 
-Agent Runtime now connects directly to the existing control broker as a separate agent:
+Agent Runtime connects directly to the existing control broker as a separate agent:
 
 ```text
 meta.product = agent-runtime
 broker actions:
   agentStatus
+  agentListTabs
+  agentObserveTabs
   agentObserve
   agentExecutePlan
 ```
 
 Agent Mode does NOT proxy through the deterministic Stealth/Scenario extension.
 
+Multiple extension clients may share broker port `3000`; broker routing is by `agentId`. Native debugging showed Stealth Executor and Agent Runtime are separate agent products, not two servers competing to listen on the same port.
+
 Extension-side reconnect/heartbeat is implemented; explicit client close no longer schedules reconnect.
 
 ---
 
-# A4 one-action bridge — READY FOR NATIVE TEST
+# A4 one-action bridge — BASIC CLICK NATIVE PASS
 
 Manager files:
 
@@ -277,44 +337,123 @@ control-center/script/agent_one_action.js
 Bridge version `0.2.0` has the correct decision order:
 
 ```text
-OBSERVE
-→ Brain decide(observation)
+resolve browser context once
+→ OBSERVE
+→ Brain/harness decide(observation)
 → exactly ONE Agent Action
 → mapAgentAction
 → sampledBehavior
 → buildCdpPlan
-→ broker agentExecutePlan(observationId)
-→ OBSERVE AFTER
+→ broker agentExecutePlan(tabId + observationId)
+→ OBSERVE AFTER on same tab
 ```
 
 Terminal Brain decisions such as `blocked` execute nothing.
 
 Native harness can auto-discover the single broker agent whose `meta.product=agent-runtime`; `--agent` is available when multiple runtimes are connected.
 
-Example modes after `npm install` in `control-center`:
+Examples from `control-center`:
 
 ```bat
-node control-center/script/agent_one_action.js --observe
-node control-center/script/agent_one_action.js --type click --label "Example label"
-node control-center/script/agent_one_action.js --type doubleClick --label "Example label"
-node control-center/script/agent_one_action.js --type hover --label "Example label"
-node control-center/script/agent_one_action.js --type focus --label "Search"
-node control-center/script/agent_one_action.js --type typeText --text "agent test"
-node control-center/script/agent_one_action.js --type scrollVertical --direction 1
+node script/agent_one_action.js --tabs
+node script/agent_one_action.js --tabs --tabs-scope matching --host facebook.com
+node script/agent_one_action.js --observe --tab facebook
+node script/agent_one_action.js --type click --label "Thông báo" --tab facebook
+node script/agent_one_action.js --type doubleClick --label "Example label" --tab facebook
+node script/agent_one_action.js --type hover --label "Example label" --tab facebook
+node script/agent_one_action.js --type focus --label "Search" --tab facebook
+node script/agent_one_action.js --type typeText --text "agent test" --tab facebook
+node script/agent_one_action.js --type scrollVertical --direction 1 --tab facebook
 ```
 
 Optional:
 
 ```text
 --baseline <generated behavior-baseline.json>
---tab <tabId>
+--tab <numeric tabId | human keyword>
+--on <human keyword>
+--host <hostname>
 --agent <runtime-agentId>
 --full
 ```
 
 ---
 
+# Native evidence — 2026-08-26
+
+## Browser context / tab identity — PASS
+
+Observed native sequence:
+
+```text
+agentListTabs
+→ returned Google/Facebook browser facts with tabId/windowId/active/url
+
+--tabs --tabs-scope matching --host facebook.com
+→ returned only Facebook tab
+
+--observe --tab facebook
+→ resolved human keyword to exact internal tabId
+→ observation.url = https://web.facebook.com/...
+→ observation.title = Facebook
+```
+
+This removes the need for a user to copy/paste tab ids during normal use. Numeric tabId remains available for debugging and exact internal binding.
+
+## Semantic basic click — PASS
+
+Native command:
+
+```bat
+node script/agent_one_action.js --type click --label "Thông báo" --tab facebook
+```
+
+Observed evidence:
+
+```text
+resolvedTabId = Facebook tab
+selectedTarget.ref = e13
+selectedTarget.role = button
+selectedTarget.label = Thông báo
+cdpPlanVersion = 0.1.1
+plan = mouseMoved → mouseMoved → mousePressed → mouseReleased
+execution.ok = true
+stepCount = 4
+resultCount = 4
+observationInvalidated = true
+beforeObservationId != afterObservationId
+```
+
+Human visual confirmation: Facebook panel **“Thông báo” actually opened**.
+
+Therefore this is recorded as a functional native click PASS for the Agent execution stack.
+
+Important scope of this pass:
+
+```text
+PASS:
+  browser-context resolution
+  semantic target selection by label
+  one-action mapping
+  CDP 0.1.1 dispatch
+  observation invalidation
+  OBSERVE AFTER
+  visible UI click effect
+
+NOT YET CLAIMED:
+  full semantic capture of notification panel contents after click
+  Brain-level goal reasoning
+  autonomous multi-step behavior
+  naturalness/human-likeness quality
+```
+
+Post-click observation did not expose the notification contents as completely as desired. Treat that as observer/outcome-fidelity evidence for later investigation, not as a failure of the native click executor.
+
+---
+
 # Latest CI gate
+
+Last established full regression gate before this native milestone:
 
 ```text
 run:    32910975163
@@ -322,39 +461,52 @@ commit: 7667e66404b6aef7405b180a11707b0987975a5f
 result: SUCCESS
 ```
 
-This run passed Agent action/behavior contracts, A3 policy, target registry, CDP planner including focus/doubleClick contracts, allowlisted dispatcher, one-action Brain bridge, extension broker client, manager broker adapter, native harness contract, A1/A2 and Collector regressions/socket integration.
+The CDP dispatcher compatibility change has its own contract coverage for:
 
-CI success is NOT native Chrome Agent validation.
+```text
+accept 0.1.1
+retain 0.1.0 compatibility
+reject unknown versions
+retain CDP method allowlist
+retain delay bounds
+```
+
+CI success is NOT native Chrome Agent validation; the basic click additionally has native browser evidence above.
 
 ---
 
-# NEXT — native A4 validation
+# NEXT — continue A4 functional native validation
 
-Do not start autonomous multi-step tasks yet. Validate one action at a time:
+Do not start autonomous multi-step tasks yet. Do not make naturalness the primary acceptance gate yet. Continue one function at a time:
 
 ```text
-OBSERVE semantic targets
-click button/link by label/ref
-re-observe and verify new observationId
+TAB CONTEXT / keyword resolve      PASS
+OBSERVE semantic targets           PASS
+basic click + visible UI effect    PASS
+OBSERVE AFTER / new observation    PASS
+
+next:
+stale-ref rejection
 doubleClick on a safe target
 hover without click
 vertical scroll
 horizontal scroll on a real carousel
 focus + type non-sensitive text as separate actions
 back / forward
-stale-ref rejection
+moving-target evidence/rejection
 ```
 
-Measure correctness first, naturalness second.
+Functional correctness first. Brain quality and natural human behavior remain separate later gates.
 
-Important native questions:
+Important native questions still open:
 
 ```text
 Does 4 s observation TTL survive real Brain/model latency?
 Does a dynamic target move between observation and execution?
 Does two-cycle doubleClick behave correctly on real sites?
 Does per-character Input.insertText trigger required site listeners?
-Do sampled pointer corrections look natural rather than artificial?
+Does OBSERVE AFTER capture enough semantic state for goal checking?
+Do sampled pointer corrections look natural rather than artificial?  (later behavior-quality gate)
 ```
 
 ---
@@ -408,12 +560,14 @@ Human login demonstrations may contribute timing/semantic form behavior but neve
 1. GitHub is source of truth.
 2. Scenario Mode and Agent Mode remain separate.
 3. Strategy=WHAT; Behavior=HOW; CDP Planner=exact plan; Executor=dispatch.
-4. Collector raw stays un-derived and privacy-filtered.
-5. Strategy/Behavior dataset eligibility remain separate.
-6. Human demonstrations provide distributions/context, not literal replay.
-7. Sparse families remain explicitly sparse.
-8. Target refs are observation-bound and stale refs trigger re-observation.
-9. `EXECUTE_PLAN` is allowlisted; no arbitrary CDP method tunnel.
-10. Brain decides only after OBSERVE and at most one action per loop.
-11. CI success != native Chrome Agent validation.
-12. Update STATUS/JOURNAL after architecture or dataset-contract milestones.
+4. Browser context is first-class; human selectors resolve to exact internal tabId before OBSERVE.
+5. Collector raw stays un-derived and privacy-filtered.
+6. Strategy/Behavior dataset eligibility remain separate.
+7. Human demonstrations provide distributions/context, not literal replay.
+8. Sparse families remain explicitly sparse.
+9. Target refs are observation-bound and stale refs trigger re-observation.
+10. `EXECUTE_PLAN` is allowlisted; no arbitrary CDP method tunnel.
+11. Brain decides only after OBSERVE and at most one action per loop.
+12. CI success != native Chrome Agent validation.
+13. Functional Agent validation != Brain quality != natural-behavior quality.
+14. Update STATUS/JOURNAL after architecture, protocol, dataset-contract or native-gate milestones.
