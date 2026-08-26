@@ -8,7 +8,7 @@ const {
   evaluateBaselineReadiness
 } = require('./check_strategy_baseline_readiness.js');
 
-const MODEL_VERSION = '0.1.0';
+const MODEL_VERSION = '0.2.0';
 
 function die(message) {
   throw new Error(message);
@@ -37,29 +37,66 @@ function targetLabelForStep(step) {
   return typeof hit?.label === 'string' && hit.label.trim() ? hit.label.trim() : null;
 }
 
+function historyActionTypes(history) {
+  return (Array.isArray(history) ? history : [])
+    .map(item => String(item?.actionType || item?.action?.type || '').trim())
+    .filter(Boolean);
+}
+
+function sameActionHistory(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
+function newBucket(type, priorActionTypes = null) {
+  return {
+    type,
+    ...(priorActionTypes == null ? {} : { priorActionTypes: [...priorActionTypes] }),
+    examples: 0,
+    instructions: new Set(),
+    targetLabels: new Set()
+  };
+}
+
+function addExample(bucket, instruction, targetLabel) {
+  bucket.examples += 1;
+  if (instruction) bucket.instructions.add(instruction);
+  if (targetLabel) bucket.targetLabels.add(targetLabel);
+}
+
+function serializeBucket(item) {
+  return {
+    type: item.type,
+    ...(Array.isArray(item.priorActionTypes) ? { priorActionTypes: [...item.priorActionTypes] } : {}),
+    examples: item.examples,
+    instructions: [...item.instructions].sort(),
+    targetLabels: [...item.targetLabels].sort()
+  };
+}
+
 function fitBaseline(trainRecords) {
   if (!Array.isArray(trainRecords) || !trainRecords.length) die('non-empty train records required');
   const byType = new Map();
+  const byHistory = new Map();
   const episodeIds = [];
 
   for (const record of trainRecords) {
     episodeIds.push(String(record?.episodeId || ''));
     const instruction = String(record?.task?.instruction || '').trim();
+    const priorActionTypes = [];
+
     for (const step of record?.steps || []) {
       const action = validateAgentAction(step.action);
-      if (!byType.has(action.type)) {
-        byType.set(action.type, {
-          type: action.type,
-          examples: 0,
-          instructions: new Set(),
-          targetLabels: new Set()
-        });
-      }
-      const bucket = byType.get(action.type);
-      bucket.examples += 1;
-      if (instruction) bucket.instructions.add(instruction);
       const targetLabel = targetLabelForStep(step);
-      if (targetLabel) bucket.targetLabels.add(targetLabel);
+
+      if (!byType.has(action.type)) byType.set(action.type, newBucket(action.type));
+      addExample(byType.get(action.type), instruction, targetLabel);
+
+      const historyKey = `${JSON.stringify(priorActionTypes)}\u0000${action.type}`;
+      if (!byHistory.has(historyKey)) byHistory.set(historyKey, newBucket(action.type, priorActionTypes));
+      addExample(byHistory.get(historyKey), instruction, targetLabel);
+
+      priorActionTypes.push(action.type);
     }
   }
 
@@ -70,15 +107,19 @@ function fitBaseline(trainRecords) {
     kind: 'offline-semantic-prototype-baseline',
     fitSource: 'train-only',
     heldOutUsedForFit: false,
+    historyAware: true,
+    historyFeature: 'prior-semantic-action-types',
     trainingEpisodeIds: episodeIds.filter(Boolean).sort(),
     actionPrototypes: [...byType.values()]
-      .map(item => ({
-        type: item.type,
-        examples: item.examples,
-        instructions: [...item.instructions].sort(),
-        targetLabels: [...item.targetLabels].sort()
-      }))
-      .sort((a, b) => a.type.localeCompare(b.type))
+      .map(serializeBucket)
+      .sort((a, b) => a.type.localeCompare(b.type)),
+    historyPrototypes: [...byHistory.values()]
+      .map(serializeBucket)
+      .sort((a, b) => (
+        a.priorActionTypes.length - b.priorActionTypes.length ||
+        JSON.stringify(a.priorActionTypes).localeCompare(JSON.stringify(b.priorActionTypes)) ||
+        a.type.localeCompare(b.type)
+      ))
   };
 }
 
@@ -88,9 +129,9 @@ function bestSimilarity(needleTokens, phrases) {
   return best;
 }
 
-function choosePrototype(model, task) {
+function scorePrototypes(prototypes, task) {
   const taskTokens = tokens(task?.instruction);
-  const scored = (model?.actionPrototypes || []).map(proto => {
+  return (prototypes || []).map(proto => {
     const instructionScore = bestSimilarity(taskTokens, proto.instructions);
     const targetLabelScore = bestSimilarity(taskTokens, proto.targetLabels);
     const score = (0.35 * instructionScore) + (0.65 * targetLabelScore);
@@ -101,8 +142,23 @@ function choosePrototype(model, task) {
     b.instructionScore - a.instructionScore ||
     a.proto.type.localeCompare(b.proto.type)
   ));
+}
+
+function choosePrototype(model, task, history = []) {
+  const priorActionTypes = historyActionTypes(history);
+  const historyMatches = (model?.historyPrototypes || []).filter(proto =>
+    sameActionHistory(proto?.priorActionTypes, priorActionTypes)
+  );
+  const useHistory = historyMatches.length > 0;
+  const candidates = useHistory ? historyMatches : (model?.actionPrototypes || []);
+  const scored = scorePrototypes(candidates, task);
   if (!scored.length) die('model has no action prototypes');
-  return scored[0];
+  return {
+    ...scored[0],
+    historyMatched: useHistory,
+    priorActionTypes,
+    prototypeSource: useHistory ? 'historyPrototypes' : 'actionPrototypes'
+  };
 }
 
 function chooseTargetRef(proto, task, observation) {
@@ -132,8 +188,8 @@ function chooseTargetRef(proto, task, observation) {
   return candidates[0]?.ref || null;
 }
 
-function predictAction(model, task, observation) {
-  const chosen = choosePrototype(model, task);
+function predictAction(model, task, observation, history = []) {
+  const chosen = choosePrototype(model, task, history);
   const targetRef = chooseTargetRef(chosen.proto, task, observation);
   const action = validateAgentAction({
     contractVersion: '0.1.0',
@@ -148,7 +204,10 @@ function predictAction(model, task, observation) {
     score: chosen.score,
     evidence: {
       instructionScore: chosen.instructionScore,
-      targetLabelScore: chosen.targetLabelScore
+      targetLabelScore: chosen.targetLabelScore,
+      historyMatched: chosen.historyMatched,
+      priorActionTypes: chosen.priorActionTypes,
+      prototypeSource: chosen.prototypeSource
     }
   };
 }
@@ -161,10 +220,11 @@ function evaluateRecords(model, records) {
   let exactSemanticCorrect = 0;
 
   for (const record of records || []) {
+    const history = [];
     for (const step of record?.steps || []) {
       total += 1;
       const expected = validateAgentAction(step.action);
-      const predicted = predictAction(model, record.task, step.observation);
+      const predicted = predictAction(model, record.task, step.observation, history);
       const typeOk = predicted.action.type === expected.type;
       const targetOk = predicted.action.targetRef === expected.targetRef;
       const exactOk = typeOk && targetOk;
@@ -174,15 +234,19 @@ function evaluateRecords(model, records) {
       details.push({
         episodeId: record.episodeId,
         stepIndex: step.stepIndex,
+        priorActionTypes: historyActionTypes(history),
         expectedType: expected.type,
         predictedType: predicted.action.type,
         expectedTargetRef: expected.targetRef,
         predictedTargetRef: predicted.action.targetRef,
         score: predicted.score,
+        historyMatched: predicted.evidence.historyMatched,
+        prototypeSource: predicted.evidence.prototypeSource,
         actionTypeCorrect: typeOk,
         targetRefCorrect: targetOk,
         exactSemanticCorrect: exactOk
       });
+      history.push({ stepIndex: history.length + 1, actionType: expected.type });
     }
   }
 
@@ -264,6 +328,7 @@ function main(argv = process.argv.slice(2)) {
       validationRecords: splits.validation.length,
       testRecords: splits.test.length,
       actionPrototypeCount: model.actionPrototypes.length,
+      historyPrototypeCount: model.historyPrototypes.length,
       validation: {
         total: evaluation.validation.total,
         actionTypeAccuracy: evaluation.validation.actionTypeAccuracy,
@@ -290,7 +355,11 @@ module.exports = {
   tokens,
   jaccard,
   targetLabelForStep,
+  historyActionTypes,
+  sameActionHistory,
   fitBaseline,
+  bestSimilarity,
+  scorePrototypes,
   choosePrototype,
   chooseTargetRef,
   predictAction,
