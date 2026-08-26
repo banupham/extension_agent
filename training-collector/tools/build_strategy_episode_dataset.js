@@ -13,15 +13,15 @@ const {
 function parseJsonRecords(text, sourceName = '<input>') {
   const trimmed = String(text || '').trim();
   if (!trimmed) return [];
-  if (trimmed.startsWith('[')) {
+
+  try {
     const value = JSON.parse(trimmed);
-    if (!Array.isArray(value)) throw new Error(`${sourceName}: JSON array expected`);
-    return value;
-  }
-  if (trimmed.startsWith('{') && !trimmed.includes('\n')) {
-    const value = JSON.parse(trimmed);
+    if (Array.isArray(value)) return value;
     if (Array.isArray(value?.records)) return value.records;
-    return [value];
+    if (value && typeof value === 'object') return [value];
+    throw new Error(`${sourceName}: JSON object or array expected`);
+  } catch (wholeJsonError) {
+    if (!trimmed.includes('\n')) throw wholeJsonError;
   }
 
   const rows = [];
