@@ -1,0 +1,46 @@
+name: a5-replan-gate
+
+on:
+  push:
+    branches:
+      - feat/agent-tab-context
+    paths:
+      - 'control-center/manager/agent/one_step_replan.js'
+      - 'control-center/manager/goal/**'
+      - 'control-center/script/checks/one_step_replan.js'
+      - 'control-center/script/checks/goal_checker.js'
+      - 'control-center/script/checks/outcome_controller.js'
+      - 'control-center/script/checks/episode_budget.js'
+      - 'control-center/ONE_STEP_REPLAN_CONTRACT.json'
+      - '.github/workflows/a5-replan-gate.yml'
+  workflow_dispatch:
+
+jobs:
+  a5-replan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check A5 JavaScript syntax
+        run: |
+          node --check control-center/manager/goal/goal_checker.js
+          node --check control-center/manager/goal/outcome_controller.js
+          node --check control-center/manager/goal/episode_budget.js
+          node --check control-center/manager/agent/one_step_replan.js
+          node --check control-center/script/checks/goal_checker.js
+          node --check control-center/script/checks/outcome_controller.js
+          node --check control-center/script/checks/episode_budget.js
+          node --check control-center/script/checks/one_step_replan.js
+      - name: Validate A5 contract JSON
+        run: |
+          node -e "const fs=require('fs'); ['control-center/GOAL_CHECKER_CONTRACT.json','control-center/OUTCOME_CONTROL_CONTRACT.json','control-center/EPISODE_BUDGET_CONTRACT.json','control-center/ONE_STEP_REPLAN_CONTRACT.json'].forEach(p=>JSON.parse(fs.readFileSync(p,'utf8')))"
+      - name: Run A5.1 Goal Checker regression
+        run: node control-center/script/checks/goal_checker.js
+      - name: Run A5.2 Outcome Controller regression
+        run: node control-center/script/checks/outcome_controller.js
+      - name: Run A5.3 Episode Budget regression
+        run: node control-center/script/checks/episode_budget.js
+      - name: Run A5.4 explicit one-step replan contract
+        run: node control-center/script/checks/one_step_replan.js
