@@ -18,26 +18,23 @@ Read this file before changing the repository.
 - No literal trajectory replay.
 - Human demonstrations never auto-promote; exact digest confirmation is required.
 
-## Agent maturity
+## Current agent maturity
 
 - Behavior/HOW is learned from real human interaction and runtime-loadable.
 - Strategy/WHAT is supervised and has its first human-approved leakage-safe six-group dataset.
 - Recovery/replan/semantic memory already exist.
 - Agent is maturing but is not fully autonomous.
 - Collector/resolver/approval/dataset readiness are not current blockers.
-- v0.3.2 fixed the prior validation target-grounding failure exactly.
-- v0.3.3 decouples **WHAT action selection** from **current-observation target ranking**, while retaining learned TRAIN lexical anchors and the v0.3.2 target-grounding policy.
-- The unchanged six-group v0.3.3 regression now **PASSes exactly** on validation and test.
-- This six-group result is regression evidence, not pristine unseen proof, because prior heldout failures informed v0.3.x redesigns.
-- Immediate next gate is a **fresh unseen controlled/native family or mission**. Do not reuse/relabel the six to manufacture fresh evidence.
+- v0.3.3 now passes the unchanged six-group regression exactly on both validation and test.
+- That six-group PASS is regression evidence, **not pristine unseen proof**, because earlier heldout failures influenced v0.3.x redesigns.
+- A new frozen-model fresh-unseen decision gate is implemented and CI-tested; the user's real v0.3.3 model has **not yet run it**.
+- Native text execution has a separate known blocker: the learned offline provider currently emits `typeText` with `args:{}`, while CDP execution inserts only `mappedAction.args.text`. Do not claim native text-entry readiness until this semantic payload path is fixed and tested.
 
 ## Collector / teaching state — CLOSED
 
-Prior collector bug `episode_success_has_pending_transition` was fixed by serialized episode-state mutation.
+Prior collector bug `episode_success_has_pending_transition` was fixed by serialized episode-state mutation. Do not recollect the six teaching tasks.
 
-Do not recollect the six teaching tasks.
-
-Six episodes:
+Six fixed historical episodes:
 
 1. `ep-1787826569158` — Google -> Gmail click
 2. `ep-1787826618214` — Google -> type OpenAI -> submit search
@@ -55,7 +52,7 @@ Six split groups:
 5. `semantic-sequence:click:teaching-confirm`
 6. `semantic-sequence:typeText:message-composer>submit:message-composer`
 
-A split group is a semantic-family leakage boundary. One group must stay wholly in exactly one split.
+A split group is a semantic-family leakage boundary; one group stays wholly in exactly one split.
 
 ## Resolver / explicit approval — PASS
 
@@ -70,13 +67,13 @@ Real six-group resolver result:
 - edit/focus/click/key mechanics remain HOW/capture noise
 - `autoTrainEligible:false`
 
-Explicit human-approved digest:
+Approved digest:
 
 `8f18d4e5b053d9dae57107b4aa021dfbf46128df3c75b9c50dbad996346b8241`
 
-Exact confirmation phrase already received:
+Exact human confirmation already received:
 
-`YES-I-REVIEWED-STRATEGY-APPROVAL-DIGEST`
+`YES-I-REVIEWED-STRATEGY-APPROVAL-DIGEST 8f18d4e5b053d9dae57107b4aa021dfbf46128df3c75b9c50dbad996346b8241`
 
 Do not ask user to reconfirm.
 
@@ -92,7 +89,7 @@ Do not ask user to reconfirm.
 - `baselineReady:true`
 - readiness errors `[]`
 
-Deterministic split (`strategy-episode-v0`):
+Deterministic split seed `strategy-episode-v0`:
 
 TRAIN:
 
@@ -109,9 +106,9 @@ TEST:
 
 - `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
 
-`baselineReady:true` only proves data/split validity. It does not prove broad generalization.
+`baselineReady:true` proves data/split validity only, not broad generalization.
 
-## Baseline evolution
+## Strategy baseline evolution
 
 ### v0.2.0 — genuine FAIL
 
@@ -125,131 +122,92 @@ TEST:
 - Topic Search selected e3 instead of e1
 - Google Search selected e15 instead of e1
 
-### v0.3.1 — editable gate, real regression still FAIL
+### v0.3.1 — editable affordance gate, still target FAIL
 
-- actionTypeAccuracy stayed 1 in validation/test
+- actionTypeAccuracy remained 1
 - target refs remained e3/e15
-- this proved e3/e15 passed the prior editable gate
+- proved both wrong refs passed the prior editable gate
 
-## Real target-grounding diagnostic — PASS and informative
+### v0.3.2 — target grounding fixed, action selection regressed on Google
 
-Privacy-safe diagnostic showed:
+Privacy-safe target diagnostic established:
 
-Topic Search:
+- Topic Search had two editable-looking candidates; TRAIN-local label memory incorrectly dominated current-task semantics.
+- Google wrong controls included `input role=button editable=true`, exposing stale/over-broad editable semantics.
+- Focus was absent and was explicitly **not** added as a rule.
 
-- no `focusedElementRef`
-- e1 and e3 both looked like available editable inputs
-- e1 current-task similarity `0.2222`, TRAIN prototype-label similarity 0
-- e3 current-task similarity 0, TRAIN prototype-label similarity 1
-- e3 won because TRAIN-local target label memory dominated current-task semantics
-
-Google Search:
-
-- no `focusedElementRef`
-- expected e1: textarea/combobox editable
-- wrong e15/e151: `input role=button editable=true`
-- collector had over-broad editable semantics for input/select controls
-
-Therefore focus was explicitly **not** added as a rule.
-
-## v0.3.2 — diagnostic-driven target grounding
-
-Important commits:
+Important v0.3.2 commits:
 
 - `310321606a2c87e65e2b8c444e349f3028de3d59` — collector text-editable semantic classification
-- `c1d2b1b75b5f6952004e23b13d0c3f8c375c8776` — current-task-dominant target grounding + stale semantic-role veto
-- `0a85e5f1bdb653da9b52f2adce0d5a9da0b67192` — model version `0.3.2`
-- `0271f8aff1bd59367f66127625a4253c81b4df52` — diagnostic-derived generic transfer contract
-- `b80e8f41fef9f43f4d3598a8456c9456e1b42674` — history contract alignment
-- `e5d5229feb151f6e4df6eacfdfbb1de396baf8f0` — v0.3.2 handoff milestone
+- `c1d2b1b75b5f6952004e23b13d0c3f8c375c8776` — current-task-dominant grounding + stale-role veto
+- `0a85e5f1bdb653da9b52f2adce0d5a9da0b67192` — model v0.3.2
+- `0271f8aff1bd59367f66127625a4253c81b4df52` — diagnostic transfer contract
+- `b80e8f41fef9f43f4d3598a8456c9456e1b42674` — history alignment
+- `e5d5229feb151f6e4df6eacfdfbb1de396baf8f0` — handoff milestone
 
-Generic v0.3.2 behavior:
+Real v0.3.2 regression:
 
-- text actions reject semantic button/link/etc. roles even when stale snapshots say `editable:true`
-- non-text input types are rejected when available
-- old snapshots remain compatible
-- among eligible text targets, current-task label semantics dominate
-- TRAIN target labels and learned tag/role traits are supporting evidence
-- no site/ref hardcode
+Validation Topic Search:
 
-## v0.3.2 real six-group regression — FAIL, but validation exact grounding PASS
-
-User ran v0.3.2 on the unchanged approved dataset.
-
-Validation / Topic Search:
-
-- total 2
 - actionTypeAccuracy 1
 - targetRefAccuracy 1
 - exactSemanticAccuracy 1
-- `typeText@e1 -> submit@e1` exactly correct
+- exact sequence `typeText@e1 -> submit@e1`
 
-Preserve this target-grounding fix.
+Google test:
 
-Test / Google Search:
-
-- total 2
 - actionTypeAccuracy 0
 - targetRefAccuracy 0
 - exactSemanticAccuracy 0
-- step 0 expected `typeText@e1`, predicted `click@e4`
-- step 1 inherited predicted click history and predicted `click@e10` instead of `submit@e1`
+- first action expected `typeText@e1`, predicted `click@e4`
+- predicted click history then caused step 1 to remain click
 
-This exposed an action-selection regression rather than a target-grounding failure.
+### Action-selection diagnostic — decisive
 
-## Real action-selection diagnostic — PASS and decisive
-
-Privacy-safe action diagnostic was run on the same unchanged dataset at HEAD `c552c57`.
-
-Google test step 0 task features:
-
-- `textEntryIntent:true`
-- `submitIntent:true`
-- `enterIntent:false`
-- `clickIntent:true`
-
-History-eligible candidate comparison:
+Real Google test step 0 candidate evidence:
 
 `click`:
 
-- total score `0.4125`
+- score `0.4125`
 - instruction similarity `0.166666...`
-- learned target-label similarity `0`
+- TRAIN target-label similarity `0`
 - task feature score `0.444444...`
-- semantic target score `0.55`
-- eligibleTargetCount `72`
+- current semantic target score `0.55`
+- eligible target count `72`
 
 `typeText`:
 
-- total score `0.396644...`
+- score `0.396644...`
 - instruction similarity `0.235294...`
-- learned target-label similarity `0`
+- TRAIN target-label similarity `0`
 - task feature score `0.666666...`
-- semantic target score `0.195454...`
-- eligibleTargetCount `3`
+- current semantic target score `0.195454...`
+- eligible target count `3`
 
-Conclusion confirmed by real evidence:
+Conclusion: `typeText` had stronger task evidence; `click` won solely because current target-ranking evidence leaked too strongly into WHAT selection.
 
-- `typeText` had stronger task-level evidence
-- `click` won only because its current-observation `semanticTargetScore` was much higher
-- current target-ranking quality was improperly influencing **WHAT action selection**
-- the wrong first click then constrained step 1 through autoregressive predicted history
+Diagnostic commits:
 
-This justified architectural decoupling rather than another target-weight tweak.
+- `24ed4361c0aa0c5f48077bf61a88ada7af4d921d`
+- `4e95a3aace50f78a079ee228b5496b88797a71bd`
+- `00ebc762cfb47e91596f66b58d41f4bc4b5c9fca`
+
+CI run `33077622407`: success.
 
 ## v0.3.3 — WHAT selection decoupled from current target ranking
 
 Provider/fitter/test commits:
 
 - `4db6fd71f88de78943a52dd886146a2aacdb0208` — initial action/target decoupling
-- `c72c8683a6bfc05348436f4fae9730735ec34e48` — generic action/target decoupling contract
-- `82225a43597ecf459b03135585a6ce0cd136e78b` — dedicated decoupling CI gate
-- `07a99b51889a48598a398bc4d892c70a94d6546a` — block ungrounded text actions explicitly
-- `14a75c87acc749b318198858b4d5083cdd11eaa3` — refined action score preserving TRAIN lexical anchors
-- `ccc88d94377eb4b7e772eb8ff3191973f97e5752` — model version `0.3.3` + model metadata
-- `2cb60b28eddb0aea271e2ee3be477c420cd4463d` — offline contract aligned to v0.3.3
-- `a542737d3e4152069a73d35d4fda3988d87e1c57` — history contract aligned to v0.3.3
-- `d073f5b1eab801cb5815458d350f9079c045b9a3` — pre-rerun v0.3.3 handoff milestone
+- `c72c8683a6bfc05348436f4fae9730735ec34e48` — generic decoupling contract
+- `82225a43597ecf459b03135585a6ce0cd136e78b` — dedicated decoupling CI
+- `07a99b51889a48598a398bc4d892c70a94d6546a` — explicitly block ungrounded text actions
+- `14a75c87acc749b318198858b4d5083cdd11eaa3` — retain TRAIN lexical anchors while removing current target ranking from WHAT
+- `ccc88d94377eb4b7e772eb8ff3191973f97e5752` — model v0.3.3 + metadata
+- `2cb60b28eddb0aea271e2ee3be477c420cd4463d` — offline contract aligned
+- `a542737d3e4152069a73d35d4fda3988d87e1c57` — history contract aligned
+- `d073f5b1eab801cb5815458d350f9079c045b9a3` — pre-rerun milestone
+- `eb388be5ab438a553a4e67e288d065753b48d306` — records real six-group PASS
 
 Model metadata:
 
@@ -257,11 +215,7 @@ Model metadata:
 - `actionSelectionUsesCurrentTargetRanking:false`
 - `targetGroundingPolicy: current-task-dominant-with-action-affordance`
 
-### v0.3.3 action score
-
-Current-observation `semanticTargetScore` is still computed for diagnostics/grounding evidence but is **not** used to rank WHAT action.
-
-Action score preserves the prior TRAIN-level evidence ratio and removes only the current-target term:
+Action score:
 
 ```text
 score = (
@@ -271,46 +225,26 @@ score = (
 ) / 0.65
 ```
 
-Important distinction:
+Current-observation `semanticTargetScore` remains available for diagnostics/grounding but is not used to rank WHAT action.
 
-- learned TRAIN target labels remain a small static lexical anchor so semantic action categories such as play/mute are still distinguishable
-- current observation target landscape cannot flip WHAT action
-- after WHAT is selected, target grounding uses the existing v0.3.2 semantic policy
-- if a selected text action has no valid editable target, provider blocks with `offline_baseline_target_not_found` and `reobserve`; it does not act with null target and does not fall through to a different action
+Important guards:
 
-### Contract findings during implementation
+- TRAIN target labels remain a small static lexical anchor so categories such as play/mute do not collapse.
+- After WHAT selection, target grounding uses the v0.3.2 current-task-dominant semantic policy.
+- If selected text action has no valid editable target, provider blocks with `offline_baseline_target_not_found` + `reobserve`; it does not act with null target and does not fall through to another action.
 
-The new contract deliberately caught two issues before user rerun:
+CI after v0.3.3 alignment:
 
-1. Initial provider could return `status:act` with `targetRef:null` for `typeText` because the generic action contract did not itself require a target for that action. Provider now explicitly blocks ungrounded text actions.
-2. Removing all learned target-label evidence from action scoring caused `Play Media` to regress to `mute`, because current task-feature extraction has no media-specific feature. The refined policy therefore retains TRAIN lexical label anchors while still removing current-observation target ranking from WHAT selection.
-
-These are generic architecture guards, not six-task/site hardcodes.
-
-### CI — PASS
-
-On provider architecture HEAD `14a75c87acc749b318198858b4d5083cdd11eaa3`:
-
-- strategy-action-target-decoupling run `33079737881`: success
-- strategy-action-selection-diagnostic run `33079737922`: success
-- strategy-offline-baseline run `33079737926`: success
-- runtime-syntax run `33079737904`: success
-
-With v0.3.3 fitter/model metadata:
-
-- dedicated action-target decoupling run `33080054925`: success
-- action-selection diagnostic run `33080054901`: success
-
-After all v0.3.3 contract expectations were aligned on HEAD `a542737d3e4152069a73d35d4fda3988d87e1c57`:
-
-- strategy-offline-baseline run `33080180912`: success
-- runtime-syntax run `33080180866`: success
+- strategy-offline-baseline `33080180912`: success
+- runtime-syntax `33080180866`: success
+- dedicated action-target decoupling `33080054925`: success
+- action diagnostic `33080054901`: success
 
 ## v0.3.3 real six-group regression — PASS
 
-User reran the unchanged approved six-group dataset at repository HEAD `d073f5b`.
+User reran the unchanged approved six-group dataset at local HEAD `d073f5b`.
 
-Fitter summary:
+Fitter:
 
 - result `PASS`
 - modelVersion `0.3.3`
@@ -327,60 +261,142 @@ Fit policy remained leakage-safe:
 - `testUsedForFit:false`
 - `evaluationHistoryUsesModelPredictions:true`
 
-Validation / Topic Search (`human-ep-1787828642619`):
+Validation / Topic Search `human-ep-1787828642619`:
 
-- total 2
-- actionTypeCorrect 2
-- targetRefCorrect 2
-- exactSemanticCorrect 2
-- actionTypeAccuracy 1
-- targetRefAccuracy 1
-- exactSemanticAccuracy 1
-- step 0: expected `typeText@e1`, predicted `typeText@e1`
-- step 1: expected `submit@e1`, predicted `submit@e1`
+- actionTypeCorrect 2/2
+- targetRefCorrect 2/2
+- exactSemanticCorrect 2/2
+- all accuracies `1`
+- expected/predicted `typeText@e1 -> submit@e1`
 
-Test / Google Search (`human-ep-1787826618214`):
+Test / Google Search `human-ep-1787826618214`:
 
-- total 2
-- actionTypeCorrect 2
-- targetRefCorrect 2
-- exactSemanticCorrect 2
-- actionTypeAccuracy 1
-- targetRefAccuracy 1
-- exactSemanticAccuracy 1
-- step 0: expected `typeText@e1`, predicted `typeText@e1`
-- step 1: expected `submit@e1`, predicted `submit@e1`
+- actionTypeCorrect 2/2
+- targetRefCorrect 2/2
+- exactSemanticCorrect 2/2
+- all accuracies `1`
+- expected/predicted `typeText@e1 -> submit@e1`
 
 Interpretation:
 
-- v0.3.3 preserves the v0.3.2 target-grounding fix and removes the Google action-selection regression
-- action sequence and target grounding are exact across the current validation/test records
-- this closes the current six-group regression gate
-- this does **not** establish pristine unseen generalization because the prior validation/test failures influenced v0.3.x redesigns
-- do not continue tuning on these six records unless a later generic regression requires it
+- v0.3.3 preserves the v0.3.2 target-grounding fix and removes the Google action-selection regression.
+- The six-group regression gate is closed PASS.
+- Do not keep tuning on these six records merely to accumulate PASSes.
+- This is not pristine unseen evidence because prior validation/test failures influenced redesign.
 
-## Evaluation methodology
+## Runtime architecture inspection after six-group PASS
 
-Topic Search and Google Search were originally legitimate heldout records, but their failures have now influenced generic redesigns. Repeated evaluation is therefore regression testing, not pristine unseen proof.
+### Strategy factory
 
-The next proof must use a **fresh unseen controlled/native family or mission** that was not used to design v0.3.x.
+`control-center/manager/strategy/index.js`:
 
-Do not recollect/relabel the six to manufacture a new heldout claim. Do not move heldout records into TRAIN.
+- `createStrategy()` accepts only provider `"baseline"` or an already-created provider object implementing `decide()`.
+- `createOfflineBaselineProvider()` already exists and is exported.
+- No Strategy model-file loader/path wiring exists yet.
 
-## Immediate next step — fresh unseen proof, then runtime learned Strategy integration
+### Offline Strategy provider
 
-The six-group regression gate is closed PASS. Do **not** rerun collector, resolver, approval, dataset builder, or the same six-group baseline again just to accumulate PASSes.
+`control-center/manager/strategy/offline_baseline_provider.js`:
 
-Before coding runtime integration, inspect the existing manager/runtime Strategy model loading and selection path so the next implementation uses the repository's actual architecture rather than inventing a parallel path.
+- `createOfflineBaselineProvider({ model, minimumConfidence })` requires a model object.
+- It validates the model, chooses semantic action/target, and blocks ungrounded text actions.
+- It performs no file I/O.
 
-Next gate order:
+### Mission Strategy executor
 
-1. inspect existing Strategy creation/provider/model-loading mechanism
-2. define a fresh unseen controlled/native mission/family that is not one of the six and is not derived from their heldout failure details
-3. run fresh unseen proof without fitting on that family
-4. if fresh unseen PASS, integrate learned Strategy model loading beside learned Behavior using the existing manager architecture
-5. then validate native long mission, multi-subgoal execution, replan, recovery, and semantic memory
+`control-center/manager/mission/mission_strategy_executor.js`:
 
-Do not claim broad Strategy generalization until the fresh unseen gate passes.
+- accepts either `strategy` or per-subgoal `createStrategy`.
+- Behavior baseline is independently resolved through `resolveBehaviorBaseline({ baseline, baselineFile })`.
+- Strategy is passed separately to `executeBoundedEpisodeLoop`.
+- This is already the correct Strategy WHAT / Behavior HOW separation.
+
+### Learned Behavior loader pattern
+
+`control-center/manager/behavior/baseline_loader.js` already provides the pattern Strategy should later mirror:
+
+- isolated file I/O
+- strong artifact validation
+- forbidden/private-key boundary checks
+- object-or-file resolution
+- safe metadata describing what was loaded
+
+Do not invent a parallel Strategy loading architecture; reuse this pattern after fresh unseen Strategy proof.
+
+## Native text execution blocker discovered during runtime inspection
+
+The learned offline Strategy provider currently constructs actions with:
+
+```js
+args: {}
+```
+
+including `typeText`.
+
+`control-center/manager/execution/cdp_plan.js` executes `typeText` using only:
+
+```js
+mappedAction.args?.text
+```
+
+Therefore a semantically correct learned decision such as `typeText@field` currently produces an empty text insertion at native execution time.
+
+This does **not** invalidate the Strategy semantic PASSes. It means native execution needs a separate generic semantic-payload bridge, likely from transient task/runtime args into the AgentAction, with privacy tests proving typed values are not persisted into Strategy model/recovery/memory/training.
+
+Do not solve this by storing demonstrated typed values in the learned Strategy model.
+
+## Fresh unseen frozen-model decision gate — READY, CI PASS
+
+This gate was created **after** v0.3.3 and the six-group model were frozen. It does not fit or modify the model.
+
+Files/commits:
+
+- `70e3a5e398d8602f93a88853b56fbdb091642936` — `control-center/script/offline_strategy_fresh_unseen_decision_gate.js`
+- `b46e423eb27166c702b17e76ef013bd18fe7349a` — fresh-unseen gate contract
+- `3706f3abbe365d633ecc27a84f1ccedbcfd54a45` — dedicated CI workflow
+
+Dedicated CI:
+
+- strategy-fresh-unseen-decision run `33081805755`: success
+
+The CI contract uses a separate synthetic model only to validate gate mechanics. It is **not** evidence that the user's real v0.3.3 model passes.
+
+Fresh families in the gate:
+
+1. `fresh-parcel-approval`
+   - instruction: `Click Approve Parcel`
+   - new button/field landscape
+   - expected semantic action: `click` on the new `Approve Parcel` target
+2. `fresh-dispatch-note`
+   - instruction: `Type the requested parcel code into Dispatch Note and press Enter`
+   - new textarea + competing editable field + button distractors
+   - expected semantic sequence: `typeText -> submit`
+   - expected target continuity: both actions on the new `Dispatch Note` target
+
+The gate:
+
+- loads an existing model file
+- does not import or run the fitter
+- checks the model object is unchanged in memory
+- hashes the model file before/after and fails if it changes
+- emits no selector/coordinate/raw-CDP targeting
+- does not use or persist an actual typed value
+
+## Evaluation methodology / current gate
+
+Topic Search and Google Search were originally legitimate heldout records, but their failures influenced v0.3.x. Their current PASS is regression evidence only.
+
+The next evidence must come from the new fresh-unseen gate using the user's already-fitted `baseline-v033/model.json` without refitting.
+
+If that real frozen-model gate PASSes:
+
+1. record the exact fresh-unseen PASS in this handoff
+2. treat it as first controlled fresh-unseen semantic evidence, still not broad web autonomy
+3. implement Strategy model-file loading by following the existing Behavior loader pattern
+4. implement the transient semantic text payload bridge so `typeText` can execute real task text without persisting typed values in Strategy/memory/training
+5. then run a fresh native browser execution gate
+6. only after native PASS move to longer mission / multi-subgoal / replan / recovery / semantic memory validation
+
+If the fresh-unseen decision gate FAILs, diagnose the exact new family generically; do not touch the six split, do not recollect, and do not fit on the fresh family merely to force PASS.
 
 Never promote to `main` without explicit user approval after verified PASS.
