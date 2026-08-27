@@ -28,7 +28,8 @@
         "observer/mutation_trace.js",
         "observer/hover_trace.js",
         "observer/route_trace.js",
-        "content.js"
+        "content.js",
+        "capture/episode_provenance_capture.js"
       ],
       "run_at": "document_idle"
     }
