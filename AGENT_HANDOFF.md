@@ -395,3 +395,27 @@ All eight inputs passed the privacy-safe review queue boundary. No raw session r
 - approval applicator/dataset builder/fitter not imported
 
 The digest has zero eligible semantic candidates and must not be approved or applied. Mark Success is capture outcome evidence only, not semantic approval.
+
+## Continuous-learning user interaction model — CODEX-CURATED
+
+The user is not responsible for reading raw traces, JSON, transition metrics, semantic internals, dataset splits, or training statistics. Going forward:
+
+- user creates demonstrations and later performs final Agent acceptance testing
+- Codex owns privacy inspection, quality filtering, WHAT/HOW semantic curation, ACCEPT/REJECT/REDO decisions, candidate preparation, dataset/training/evaluation, and failure diagnosis
+- user receives only concise ACCEPT/REJECT/REDO results and simple redo instructions
+- the only mid-pipeline user action remains exact digest approval after Codex has produced a valid candidate bundle
+- human digest approval remains mandatory; successful capture never auto-approves training data
+- after approval, Codex runs approval application, stable incremental merge, train-only fit, technical evaluation, and prepares 3–5 fresh user acceptance tasks
+
+Current eight-task Codex curation decision:
+
+- ACCEPT: `ep-1787851293595` — search Wikipedia for Hệ Mặt Trời
+- ACCEPT: `ep-1787851361981` — open CSS on MDN
+- ACCEPT: `ep-1787851404562` — search DuckDuckGo for Linux information
+- ACCEPT: `ep-1787851750688` — search for and open the official Python result
+- ACCEPT: `ep-1787851808921` — search Wikipedia and switch the AI article to English
+- REDO: `ep-1787851260188` — multiple unlabeled clicks prevent reliable identification of the intended Tiếng Việt click
+- REDO: `ep-1787851520829` — captured path goes directly to Hà Nội and does not demonstrate the requested Việt Nam-then-Hà Nội sequence
+- REDO: `ep-1787851685350` — capture proves opening HTML but not a distinct HTML elements action
+
+No episode is REJECTed for privacy. Preserve all original evidence. Do not expose raw diagnostics to the user unless requested.
