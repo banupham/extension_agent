@@ -61,6 +61,8 @@ async function runGate(options = {}) {
   const result = await executeMissionWithStrategy({
     plan,
     runtime: options.runtime,
+    baselineFile: options.baselineFile || null,
+    baseline: options.baseline || null,
     createStrategy: async ({ semantic }) => strategyForSemantic(semantic),
     episodeBudgets: episodeBudgets(),
     postActionSettle: { pollMs: 80, minWindowMs: 240, maxWindowMs: 900, stableSamples: 2 }
@@ -87,6 +89,8 @@ async function runGate(options = {}) {
   if (result?.invariant?.orderedExecution !== true) errors.push('mission_order_invariant_failed');
   if (result?.invariant?.allCompletedSubgoalsUsedGoalCheckedEpisodes !== true) errors.push('goal_checked_episode_invariant_failed');
   if (result?.invariant?.noPassTitleCriterionRequired !== true) errors.push('no_pass_title_invariant_failed');
+  if (result?.invariant?.behaviorBaselineNeverReplaysLiteralTrajectory !== true) errors.push('behavior_literal_replay_boundary_failed');
+  if (options.baselineFile && (result?.behaviorBaseline?.loaded !== true || result?.behaviorBaseline?.source !== 'file')) errors.push('behavior_baseline_file_not_loaded');
   if (subgoals.some(item => item?.result?.invariant?.selectorUsedByStrategy !== false)) errors.push('selector_boundary_failed');
 
   return {
@@ -94,6 +98,7 @@ async function runGate(options = {}) {
     result: errors.length === 0 ? 'PASS' : 'FAIL',
     gate: 'offline-strategy-semantic-mission',
     mission: plan.instruction,
+    behaviorBaseline: result.behaviorBaseline,
     semanticMission: result.semanticMission,
     actionLabels,
     expectedActionLabels: EXPECTED_ACTION_LABELS,
@@ -134,7 +139,11 @@ async function main(argv = process.argv.slice(2)) {
       executePlan: payload => client.executePlan({ ...payload, tabId }),
       executeBrowserAction: payload => client.executeBrowserAction({ ...payload, tabId })
     };
-    const result = await runGate({ runtime, mission: args.task || DEFAULT_MISSION });
+    const result = await runGate({
+      runtime,
+      mission: args.task || DEFAULT_MISSION,
+      baselineFile: args.baseline || null
+    });
     console.log(JSON.stringify({ agentId, tabId, ...result }, null, 2));
     if (!result.ok) process.exitCode = 2;
   } finally {
