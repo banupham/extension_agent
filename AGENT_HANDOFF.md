@@ -37,54 +37,42 @@ Verified local outputs:
   - digestHash: `f0b4aaa723de2f67220e2e70b3f231036524f34eaccfbd3bfbd555df23a01749`
   - autoTrainEligible: false
 
-## New diagnostic work committed
+## Diagnostic result from real batch
 
-After the zero-recovery real-data result, the feature branch added a privacy-safe aggregate diagnostic path:
+The user ran `diagnose_strategy_target_backfill.js` against the 68 real raw files. Result: PASS.
 
-- `5106368d5b819087180d1c714aa7f77231213458` — durable handoff file.
-- `9c0fd631f0a0e063d0ab5b2d8e49049415edeedb` — `training-collector/tools/diagnose_strategy_target_backfill.js`.
-- `7f6499727abb666d6f215fcac96180023ed78fc6` — diagnostic contract.
-- `1b99bea6d99bd6f386f571e80df39a7ba9d0dd27` — CI gate for the diagnostic.
-- `c8b55d775c09ddc283f88f0c2b5bd8f93b4d428f` — handoff updated with the local diagnostic command.
+Key aggregate results:
 
-GitHub Actions run `33059955915` for commit `1b99bea6d99bd6f386f571e80df39a7ba9d0dd27` completed with conclusion `success`; the new target-backfill diagnostic contract passed together with the existing semantic mission, behavior baseline, ambiguity, target-backfill, and approval pipeline gates.
+- rawEventCount: 171040
+- targetDescriptorEventCount: 14732
+- resolvedTargetDescriptorEventCount: 205
+- semanticSnapshotElementCount: 25712
+- descriptorIndexKeyCount: 21569
+- descriptorPageCount: 294
+- descriptorRefTokenCount: 4607
+- requestedTransitionCount: 25
+- exactDescriptorKeyMatchCount: 0
+- pagePresentButExactKeyMissingCount: 0
+- targetRefSeenOnOtherPageCount: 25
+- descriptorPageMissingCount: 0
+- likelyBlocker: `element_refs_exist_but_page_identity_does_not_link`
 
-The diagnostic reports aggregate linkage coverage only. It does not emit raw page IDs, element refs, selectors, coordinates, tab IDs, or raw text values.
+Interpretation: useful semantic evidence exists in the raw telemetry, but the 25 historical review transitions cannot currently be linked to the correct raw page identity. Do not guess or auto-approve these 25 transitions.
 
-## Interpretation
+## Agent maturity status
 
-The target-backfill mechanism is contract-correct but recovered **zero** semantic targets from the user's 68 real raw telemetry files. Therefore the remaining 25 ambiguous click transitions must not be guessed or auto-approved. The blocker is evidence linkage/availability in the real telemetry, not the approval machinery.
+- Behavior/HOW: already learned from the user's real demonstrations and is runtime-loadable.
+- Strategy/WHAT: early supervised-learning stage. It has some verified semantic experience, but is still being taught and does not yet have enough diverse, trustworthy human Strategy data for a new general Strategy fit.
+- Overall: the agent is maturing, but it is still in the teaching phase rather than autonomous self-development.
 
 ## Immediate next action
 
-Run the aggregate diagnostic on the user's real batch and use `likelyBlocker` plus the aggregate counts to decide the next patch.
+Make the smallest privacy-safe provenance/linkage improvement so future and, where provably possible, historical review transitions can be connected to their semantic evidence. Do not infer targets from task wording alone.
 
-```bat
-cd /d C:\Users\duong\Downloads\extension_agent
-git pull
-git rev-parse --short HEAD
-node training-collector\tests\strategy_target_backfill_diagnostic_contract.js
-node training-collector\tools\diagnose_strategy_target_backfill.js --pack training-collector\strategy-data\random-human-v01\batch-v03\strategy-review-pack-v01\review-pack.json --raw training-collector\socket-data --out training-collector\strategy-data\random-human-v01\batch-v03\strategy-target-evidence-v01\diagnostic.json
-```
+Preferred order:
 
-Expected contract output: `Strategy target backfill diagnostic contract: PASS`.
+1. add durable capture provenance that directly connects episode transition to page instance + semantic target evidence at collection time;
+2. attempt historical recovery only where correlation is deterministic and unambiguous;
+3. leave unresolved historical transitions for human review if deterministic linkage is impossible.
 
-Then inspect only the aggregate fields:
-
-- `rawCoverage.targetDescriptorEventCount`
-- `rawCoverage.resolvedTargetDescriptorEventCount`
-- `rawCoverage.semanticSnapshotElementCount`
-- `rawCoverage.descriptorIndexKeyCount`
-- `requestedCoverage.exactDescriptorKeyMatchCount`
-- `requestedCoverage.pagePresentButExactKeyMissingCount`
-- `requestedCoverage.targetRefSeenOnOtherPageCount`
-- `requestedCoverage.descriptorPageMissingCount`
-- `likelyBlocker`
-
-Preferred evidence order for any future recovery patch:
-
-1. exact page-instance + element-ref correlation,
-2. exact transition/page provenance if available,
-3. bounded timestamp/sequence correlation only when unambiguous.
-
-Do not infer target semantics from task wording alone. If evidence remains insufficient, leave the 25 transitions unresolved and improve future capture instead.
+After the capture/provenance patch, add a contract test, run CI, update this handoff, then run a new small human demonstration batch to verify that ambiguous clicks become semantically reviewable.
