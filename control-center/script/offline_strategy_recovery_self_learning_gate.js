@@ -15,11 +15,14 @@ const {
   createRecoveryPolicyProvider,
   readRecoveryMemory
 } = require('../manager/strategy/recovery_policy_memory.js');
+const { readRecoveryOutcomeMemory } = require('../manager/strategy/recovery_outcome_memory.js');
 const { parseArgs, discoverRuntimeAgent, resolveCommandTabId } = require('./agent_one_action.js');
 
 const DEFAULT_MEMORY_FILE = path.join('training-collector', 'strategy-data', 'recovery-self-learning-v01', 'memory.jsonl');
+const DEFAULT_OUTCOME_MEMORY_FILE = path.join('training-collector', 'strategy-data', 'recovery-self-learning-v01', 'outcomes.jsonl');
 const LEARN_SEQUENCE = ['click', 'waitAndObserve', 'scrollVertical', 'click'];
 const RECALL_SEQUENCE = ['click', 'scrollVertical', 'click'];
+const RELEARN_SEQUENCE = ['click', 'scrollVertical', 'click'];
 
 function makeTask(instruction = 'Complete the recovery self-learning challenge') {
   return {
@@ -107,9 +110,13 @@ function commonErrors(result) {
 async function runGate(options = {}) {
   if (!options.runtime) throw new Error('runtime_required');
   const mode = String(options.mode || 'learn').trim().toLowerCase();
-  if (!['learn', 'recall'].includes(mode)) throw new Error('mode must be learn or recall');
+  if (!['learn', 'recall', 'relearn'].includes(mode)) throw new Error('mode must be learn, recall, or relearn');
   const memoryFile = path.resolve(options.memoryFile || DEFAULT_MEMORY_FILE);
-  if (options.resetMemory === true && fs.existsSync(memoryFile)) fs.rmSync(memoryFile, { force: true });
+  const outcomeMemoryFile = path.resolve(options.outcomeMemoryFile || DEFAULT_OUTCOME_MEMORY_FILE);
+  if (options.resetMemory === true) {
+    if (fs.existsSync(memoryFile)) fs.rmSync(memoryFile, { force: true });
+    if (fs.existsSync(outcomeMemoryFile)) fs.rmSync(outcomeMemoryFile, { force: true });
+  }
 
   const task = makeTask(options.instruction);
   const baseProvider = createBaseProvider();
@@ -118,13 +125,15 @@ async function runGate(options = {}) {
   if (mode === 'learn') {
     const provider = createRecoveryExplorationProvider({
       baseProvider,
-      actionTypes: ['waitAndObserve', 'scrollVertical', 'scrollHorizontal']
+      actionTypes: ['waitAndObserve', 'scrollVertical', 'scrollHorizontal'],
+      outcomeMemoryFile
     });
     result = await executeRecoveryExplorationLearningEpisode({
       runtime: options.runtime,
       strategy: createStrategy({ provider }),
       task,
       recoveryMemoryFile: memoryFile,
+      recoveryOutcomeMemoryFile: outcomeMemoryFile,
       budgets: budgets(),
       postActionSettle: {
         pollMs: 80,
@@ -133,7 +142,7 @@ async function runGate(options = {}) {
         stableSamples: 2
       }
     });
-  } else {
+  } else if (mode === 'recall') {
     const records = readRecoveryMemory(memoryFile);
     if (!records.length) throw new Error(`recovery_memory_empty:${memoryFile}`);
     const provider = createRecoveryPolicyProvider({
@@ -147,11 +156,25 @@ async function runGate(options = {}) {
       task,
       budgets: budgets()
     });
+  } else {
+    const outcomes = readRecoveryOutcomeMemory(outcomeMemoryFile);
+    if (!outcomes.length) throw new Error(`recovery_outcome_memory_empty:${outcomeMemoryFile}`);
+    const provider = createRecoveryExplorationProvider({
+      baseProvider,
+      actionTypes: ['waitAndObserve', 'scrollVertical', 'scrollHorizontal'],
+      outcomeMemoryFile
+    });
+    result = await executeBoundedEpisodeLoop({
+      runtime: options.runtime,
+      strategy: createStrategy({ provider }),
+      task,
+      budgets: budgets()
+    });
   }
 
   const errors = commonErrors(result);
   const actualSequence = (result.steps || []).map(step => step?.action?.type || null);
-  const expectedSequence = mode === 'learn' ? LEARN_SEQUENCE : RECALL_SEQUENCE;
+  const expectedSequence = mode === 'learn' ? LEARN_SEQUENCE : (mode === 'recall' ? RECALL_SEQUENCE : RELEARN_SEQUENCE);
   if (JSON.stringify(actualSequence) !== JSON.stringify(expectedSequence)) {
     errors.push(`sequence:${actualSequence.join(',')}`);
   }
@@ -164,8 +187,19 @@ async function runGate(options = {}) {
     if (result?.recoveryLearning?.learned !== true) errors.push('recovery_not_learned');
     const rootRecord = (result?.recoveryLearning?.records || []).find(record => record?.trigger?.actionType === 'click');
     if (!rootRecord || rootRecord?.recovery?.type !== 'scrollVertical') errors.push('root_recovery_not_credited_to_scroll');
-  } else if (sources[1] !== 'recoveryPolicy') {
-    errors.push(`recall_source:${sources[1] || '<missing>'}`);
+    const outcomeRecords = result?.recoveryOutcomeLearning?.records || [];
+    const waitOutcome = outcomeRecords.find(record => record?.recovery?.type === 'waitAndObserve');
+    const scrollOutcome = outcomeRecords.find(record => record?.recovery?.type === 'scrollVertical');
+    if (!waitOutcome || waitOutcome?.outcome?.usefulEffect !== false) errors.push('negative_wait_outcome_missing');
+    if (!scrollOutcome || scrollOutcome?.outcome?.usefulEffect !== true) errors.push('positive_scroll_outcome_missing');
+  } else if (mode === 'recall') {
+    if (sources[1] !== 'recoveryPolicy') errors.push(`recall_source:${sources[1] || '<missing>'}`);
+  } else {
+    if (sources[1] !== 'recoveryExploration') errors.push(`relearn_source:${sources[1] || '<missing>'}`);
+    const metadata = result?.steps?.[1]?.decision?.metadata || {};
+    if (metadata.historicalAttempts < 1 || metadata.historicalSuccesses < 1 || metadata.historicalFailures !== 0) {
+      errors.push('relearn_positive_history_missing');
+    }
   }
 
   return {
@@ -175,17 +209,23 @@ async function runGate(options = {}) {
     mode,
     task: task.instruction,
     memoryFile,
+    outcomeMemoryFile,
     actualSequence,
     expectedSequence,
     decisionSources: sources,
     recoveryLearning: result.recoveryLearning || null,
+    recoveryOutcomeLearning: result.recoveryOutcomeLearning || null,
     effects: (result.steps || []).map((step, index) => ({
       index,
       actionType: step?.action?.type || null,
       status: step?.effect?.status || null,
       codes: step?.effect?.codes || [],
       meaningfulCodes: step?.effect?.meaningfulCodes || [],
-      incidentalCodes: step?.effect?.incidentalCodes || []
+      incidentalCodes: step?.effect?.incidentalCodes || [],
+      historicalAttempts: step?.decision?.metadata?.historicalAttempts ?? null,
+      historicalSuccesses: step?.decision?.metadata?.historicalSuccesses ?? null,
+      historicalFailures: step?.decision?.metadata?.historicalFailures ?? null,
+      historicalConfidence: step?.decision?.metadata?.historicalConfidence ?? null
     })),
     finalOutcome: result.finalOutcome,
     finalControl: result.finalControl,
@@ -225,6 +265,7 @@ async function main(argv = process.argv.slice(2)) {
       mode: args.mode || 'learn',
       instruction: args.task || 'Complete the recovery self-learning challenge',
       memoryFile: args.memory || DEFAULT_MEMORY_FILE,
+      outcomeMemoryFile: args['outcome-memory'] || DEFAULT_OUTCOME_MEMORY_FILE,
       resetMemory: args['reset-memory'] === true,
       minimumScore: args['minimum-score'] == null ? 0.55 : Number(args['minimum-score'])
     });
@@ -249,8 +290,10 @@ if (require.main === module) {
 
 module.exports = {
   DEFAULT_MEMORY_FILE,
+  DEFAULT_OUTCOME_MEMORY_FILE,
   LEARN_SEQUENCE,
   RECALL_SEQUENCE,
+  RELEARN_SEQUENCE,
   makeTask,
   findVisible,
   createBaseProvider,
