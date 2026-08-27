@@ -11,7 +11,7 @@ const {
   recoveryOutcomeStats
 } = require('./recovery_outcome_memory.js');
 
-const ADAPTIVE_RECOVERY_VERSION = '0.2.0';
+const ADAPTIVE_RECOVERY_VERSION = '0.2.1';
 
 function clamp01(value, fallback) {
   const n = Number(value);
@@ -23,6 +23,9 @@ function recoverySelectionHistory(history = []) {
   const last = history[history.length - 1];
   const source = String(last?.decisionSource || '').trim();
   const rootActionType = String(last?.recoveryTriggerActionType || '').trim();
+  const lastEffectStatus = String(last?.effectStatus || '').trim();
+  const lastStillFailed = last?.controlStatus === 'failed' || lastEffectStatus === 'no_effect' || lastEffectStatus === 'execution_failed';
+  if (!lastStillFailed) return history;
   if ((source !== 'recoveryPolicy' && source !== 'recoveryExploration') || !rootActionType) return history;
   return [
     ...history.slice(0, -1),
