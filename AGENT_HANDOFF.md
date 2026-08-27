@@ -26,8 +26,10 @@ Read this file before changing the repository.
 - Agent is maturing but is not fully autonomous.
 - Collector/resolver/approval/dataset readiness are not current blockers.
 - v0.3.2 fixed the prior validation target-grounding failure exactly.
-- v0.3.3 now decouples **WHAT action selection** from **current-observation target ranking**, while retaining learned TRAIN lexical anchors and the v0.3.2 target-grounding policy.
-- Immediate next gate is the unchanged six-group v0.3.3 regression. This is regression evidence, not pristine unseen proof.
+- v0.3.3 decouples **WHAT action selection** from **current-observation target ranking**, while retaining learned TRAIN lexical anchors and the v0.3.2 target-grounding policy.
+- The unchanged six-group v0.3.3 regression now **PASSes exactly** on validation and test.
+- This six-group result is regression evidence, not pristine unseen proof, because prior heldout failures informed v0.3.x redesigns.
+- Immediate next gate is a **fresh unseen controlled/native family or mission**. Do not reuse/relabel the six to manufacture fresh evidence.
 
 ## Collector / teaching state — CLOSED
 
@@ -247,6 +249,7 @@ Provider/fitter/test commits:
 - `ccc88d94377eb4b7e772eb8ff3191973f97e5752` — model version `0.3.3` + model metadata
 - `2cb60b28eddb0aea271e2ee3be477c420cd4463d` — offline contract aligned to v0.3.3
 - `a542737d3e4152069a73d35d4fda3988d87e1c57` — history contract aligned to v0.3.3
+- `d073f5b1eab801cb5815458d350f9079c045b9a3` — pre-rerun v0.3.3 handoff milestone
 
 Model metadata:
 
@@ -303,49 +306,81 @@ After all v0.3.3 contract expectations were aligned on HEAD `a542737d3e4152069a7
 - strategy-offline-baseline run `33080180912`: success
 - runtime-syntax run `33080180866`: success
 
+## v0.3.3 real six-group regression — PASS
+
+User reran the unchanged approved six-group dataset at repository HEAD `d073f5b`.
+
+Fitter summary:
+
+- result `PASS`
+- modelVersion `0.3.3`
+- trainRecords 4
+- validationRecords 1
+- testRecords 1
+- actionPrototypeCount 3
+- historyPrototypeCount 4
+
+Fit policy remained leakage-safe:
+
+- `trainOnly:true`
+- `validationUsedForFit:false`
+- `testUsedForFit:false`
+- `evaluationHistoryUsesModelPredictions:true`
+
+Validation / Topic Search (`human-ep-1787828642619`):
+
+- total 2
+- actionTypeCorrect 2
+- targetRefCorrect 2
+- exactSemanticCorrect 2
+- actionTypeAccuracy 1
+- targetRefAccuracy 1
+- exactSemanticAccuracy 1
+- step 0: expected `typeText@e1`, predicted `typeText@e1`
+- step 1: expected `submit@e1`, predicted `submit@e1`
+
+Test / Google Search (`human-ep-1787826618214`):
+
+- total 2
+- actionTypeCorrect 2
+- targetRefCorrect 2
+- exactSemanticCorrect 2
+- actionTypeAccuracy 1
+- targetRefAccuracy 1
+- exactSemanticAccuracy 1
+- step 0: expected `typeText@e1`, predicted `typeText@e1`
+- step 1: expected `submit@e1`, predicted `submit@e1`
+
+Interpretation:
+
+- v0.3.3 preserves the v0.3.2 target-grounding fix and removes the Google action-selection regression
+- action sequence and target grounding are exact across the current validation/test records
+- this closes the current six-group regression gate
+- this does **not** establish pristine unseen generalization because the prior validation/test failures influenced v0.3.x redesigns
+- do not continue tuning on these six records unless a later generic regression requires it
+
 ## Evaluation methodology
 
 Topic Search and Google Search were originally legitimate heldout records, but their failures have now influenced generic redesigns. Repeated evaluation is therefore regression testing, not pristine unseen proof.
 
-If v0.3.3 regression passes, use a **fresh unseen controlled/native family or mission** before claiming broader Strategy generalization.
+The next proof must use a **fresh unseen controlled/native family or mission** that was not used to design v0.3.x.
 
-Do not recollect/relabel the six to manufacture a new heldout claim.
+Do not recollect/relabel the six to manufacture a new heldout claim. Do not move heldout records into TRAIN.
 
-## Immediate next step — v0.3.3 unchanged six-group regression
+## Immediate next step — fresh unseen proof, then runtime learned Strategy integration
 
-Do **not** rerun collector, resolver, approval, or dataset builder.
+The six-group regression gate is closed PASS. Do **not** rerun collector, resolver, approval, dataset builder, or the same six-group baseline again just to accumulate PASSes.
 
-Windows CMD:
+Before coding runtime integration, inspect the existing manager/runtime Strategy model loading and selection path so the next implementation uses the repository's actual architecture rather than inventing a parallel path.
 
-```bat
-cd /d C:\Users\duong\Downloads\extension_agent
-git pull
-git rev-parse --short HEAD
+Next gate order:
 
-set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
+1. inspect existing Strategy creation/provider/model-loading mechanism
+2. define a fresh unseen controlled/native mission/family that is not one of the six and is not derived from their heldout failure details
+3. run fresh unseen proof without fitting on that family
+4. if fresh unseen PASS, integrate learned Strategy model loading beside learned Behavior using the existing manager architecture
+5. then validate native long mission, multi-subgoal execution, replan, recovery, and semantic memory
 
-node training-collector\tools\fit_strategy_offline_baseline.js "%SIX%\strategy-approved-dataset-v03\dataset" --output "%SIX%\strategy-approved-dataset-v03\baseline-v033"
-
-type "%SIX%\strategy-approved-dataset-v03\baseline-v033\evaluation.json"
-```
-
-Desired regression target, without forcing it:
-
-- modelVersion `0.3.3`
-- validation actionTypeAccuracy 1, targetRefAccuracy 1, exactSemanticAccuracy 1
-- test actionTypeAccuracy 1, targetRefAccuracy 1, exactSemanticAccuracy 1
-
-If PASS:
-
-1. record exact regression PASS in this handoff
-2. state explicitly that it is regression evidence, not fresh-unseen proof
-3. next gate is a fresh unseen controlled/native family/mission
-4. only after fresh unseen PASS inspect/integrate learned Strategy model loading beside learned Behavior for native long-mission validation
-
-If FAIL:
-
-1. inspect exact remaining action/target details
-2. improve generic model only with evidence and contracts
-3. do not alter split policy, weaken exact evaluation, or recollect the six
+Do not claim broad Strategy generalization until the fresh unseen gate passes.
 
 Never promote to `main` without explicit user approval after verified PASS.
