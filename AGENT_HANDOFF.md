@@ -1,58 +1,61 @@
 # Agent development handoff
 
-This file is the durable continuation point for future ChatGPT sessions. Read this file before changing the repository.
+Read this file before changing the repository.
 
 ## Working rules
 
 - Active development branch: `feat/agent-tab-context`.
-- Do **not** promote or merge to `main` without explicit user approval after a verified PASS.
-- Every meaningful development/diagnostic action must be committed to GitHub, and this handoff must be updated whenever current state or next step changes.
-- User works in Windows CMD and wants exact sequential commands.
-- User does not want long technical explanations; say whether the agent is maturing / being taught, then give the next action.
-- Preserve boundaries: Strategy chooses WHAT, Behavior chooses HOW, executor does not choose strategy, Goal Checker does not choose the next action.
-- Do not persist selectors, coordinates, tab IDs, raw CDP methods, credentials, secrets, passwords, typed sensitive values, or private reasoning in Strategy/recovery/training memory.
-- Human demonstrations never auto-promote to Strategy training; explicit human review remains required.
-- Recovery/learning must remain semantic and evidence-based; do not hard-code site-specific PASS titles or generic `failure => scroll` rules.
+- Do **not** merge/promote to `main` without explicit user approval after verified PASS.
+- Commit every meaningful development/diagnostic/test milestone to GitHub.
+- Update this handoff after each milestone.
+- User uses Windows CMD, not PowerShell.
+- Keep technical explanation short; say whether agent is maturing / being taught and give next action.
+- Strategy chooses WHAT. Behavior chooses HOW.
+- Do not persist selectors, coordinates, tab IDs, raw CDP, credentials, secrets, passwords, typed sensitive values, or private reasoning in Strategy/memory/training.
+- No literal trajectory replay.
+- No generic `failure => scroll` behavior.
+- Human demonstrations never auto-promote; explicit human digest confirmation remains required.
 
-## Agent maturity status
+## Agent maturity
 
 - Behavior/HOW: learned from real human demonstrations and runtime-loadable.
-- Strategy/WHAT: still supervised; first explicit human-approved 3-family dataset already exists.
-- Overall: the agent is maturing, but it is still being taught.
+- Strategy/WHAT: still supervised.
+- Agent is maturing but not fully autonomous.
+- Recovery/replan/semantic memory already exist.
+- Current bottleneck is Strategy teaching coverage for semantic text-entry + submit sequences.
 
-## First approved Strategy teaching batch
+## First approved Strategy batch
 
-Explicitly human-confirmed first batch:
-
-- approvedEpisodeCount: 3
-- approvedStrategyStepCount: 5
-- distinctSplitGroupCount: 3
-- datasetBuilt: true
-- splitCounts: train=1, validation=1, test=1
-- baselineReady: false
-- readiness error: `test_action_types_unseen_in_train:submit,typeText`
-
-Approved semantic groups:
+Human-approved semantic groups:
 
 1. `semantic-sequence:click:gmail`
 2. `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
 3. `semantic-sequence:click:mission-atlas>click:mission-orion`
 
-Do not move held-out examples into train and do not alter split policy to force readiness.
+Dataset state:
+
+- adaptedEpisodeCount: 3
+- distinctSplitGroupCount: 3
+- datasetBuilt: true
+- train=1, validation=1, test=1
+- baselineReady: false
+- readiness error: `test_action_types_unseen_in_train:submit,typeText`
+
+Do not move heldout data into train to force readiness.
 
 ## Collector bug is closed
 
-The previous `episode_success_has_pending_transition` problem on Message Composer + Enter was fixed by serialized episode-state mutation queue.
+The prior `episode_success_has_pending_transition` bug was fixed by serialized episode-state mutation queue.
 
-Native proof already exists:
+Message Composer proof already exists:
 
-- task export: `training-collector-ep-1787831377719.task-episode-review.json`
-- final outcome: `success`
-- `strategyReady: true`
-- no pending transitions
+- export: `training-collector-ep-1787831377719.task-episode-review.json`
+- final outcome: success
+- strategyReady: true
+- no pending transition
 - Enter is a completed transition
 
-Therefore **do not ask the user to recollect Message Composer or the six-task set**. Collector is not the blocker.
+Do **not** recollect Message Composer or the six-task set.
 
 ## Current six-demonstration teaching set
 
@@ -69,97 +72,98 @@ Episodes:
 5. `ep-1787831377719` — Message Composer -> type Orion -> Enter
 6. `ep-1787828809498` — Teaching Confirm click
 
-## Generic semantic text/form resolver milestone
-
-Important commits:
-
-- `74cb9a2c721a0fe9b201b8ecac0a02837ba6c558` — generic semantic text/submit sequence resolver
-- `d89e1ac3e3cf9978f6372d0bf8ee8c8e1dfffb7b` — generic resolver contract
-- `d4cf192ca27e6e8ba83f19c777a56e961f0803d5` — CI gate
-
-Resolver version: `0.2.0`.
-
-Synthetic contract proves generic search/composer-like `typeText -> submit`, HOW/capture-noise collapse, negative ambiguity blocking, privacy rules, semantic progress `0.5 -> 1`, and no hard-coded teaching-site names.
-
-GitHub Actions run `33070246090` passed.
-
-## Real six-group validation on resolver 0.2.0 — NOT YET PASS
-
-User pulled HEAD `beb15f3` and ran the requested local validation.
-
-Confirmed PASS:
-
-- `training-collector/tests/strategy_text_form_sequence_resolver_contract.js` => PASS
-- resolver CLI completed successfully
-- approval-candidate CLI completed successfully
-- no recollection needed
-
-But the real six-group target was **not** met:
-
-Resolver output:
-
-- episodeCount: 6
-- ambiguousTransitionCount: 36
-- resolvedSemanticActionCount: 4
-- captureNoiseCount: 22
-- unresolvedHumanReviewCount: 20
-- fullyResolvedEpisodeCount: 4
-- autoTrainEligible: false
-
-Approval candidates:
+Previous real-data approval attempt on resolver 0.2.0:
 
 - candidateEpisodeCount: 4
 - blockedEpisodeCount: 2
-- ambiguityAidCandidateEpisodeCount: 3
-- digestHash: `7926cdedd75156338847b25707214b68f98ad2ef2c9bfbca7b29bf3753eabef2`
-- autoTrainEligible: false
+- blocked: `ep-1787828642619`, `ep-1787831377719`
+- digest: `7926cdedd75156338847b25707214b68f98ad2ef2c9bfbca7b29bf3753eabef2`
 
-Still blocked:
+Do **not** approve digest `7926cd...`.
 
-- `ep-1787828642619`: `unresolved_ambiguous_transition, suggested_action_missing`
-- `ep-1787831377719`: `unresolved_ambiguous_transition, suggested_action_missing`
+## Privacy-safe diagnostic findings from real data
 
-**Do not approve digest `7926cd...`.** It still excludes the two new text+submit teaching examples.
+Diagnostic tool/contract commits:
 
-This means the synthetic contract shape is still narrower than the real capture shape. The next step is diagnosis of the real semantic transition shape, not collection and not approval.
-
-## Privacy-safe real-data diagnostic added
-
-New commits:
-
-- `e715630c9f5dd7400d06fcf50be1fa293de9713f` — `diag(strategy): add privacy-safe text form sequence diagnostic`
+- `e715630c9f5dd7400d06fcf50be1fa293de9713f` — privacy-safe diagnostic
 - `bf1319e94c7983ed7b1489ae534605cff1f5695a` — diagnostic privacy contract
-- `1ac35e65894f84d245e8d128e588d146cbd1dcdd` — CI gate for diagnostic
+- `1ac35e65894f84d245e8d128e588d146cbd1dcdd` — diagnostic CI gate
 
-Tool:
+Diagnostic does not expose typed values, raw key characters, selectors, coordinates, tab IDs, or raw CDP.
 
-`training-collector/tools/diagnose_strategy_text_form_sequences.js`
+Real Topic Search shape:
 
-The diagnostic intentionally does **not** print:
+- finalOutcomeSuccess: true
+- declaredTextPresent: true
+- taskSubmitIntent: true
+- typeCharCount: 5
+- one semantic editable target
+- Enter on same target
+- sequence detector already recognized the core sequence
+- one leading ambiguous `text-key/other-key` on same editable target caused approval blocking
 
-- typed values
-- raw key characters
-- selectors
-- coordinates
-- tab IDs
-- raw CDP
-- targetRef values
+Real Message Composer shape:
 
-It prints only evidence needed to identify the resolver mismatch:
+- finalOutcomeSuccess: true
+- declaredTextPresent: true
+- taskSubmitIntent: true
+- typeCharCount: 8
+- one semantic editable target throughout
+- several `text-key/other-key` and `backspace` operations interleaved with text entry
+- Enter on same editable target
+- one later no-observable-change submit-surface click
+- previous resolver rejected the sequence because editing mechanics were not accepted as HOW noise and the later submit click competed with Enter
 
-- raw action kind/operation class
-- Enter control classification
-- semantic target label/role/tag/editable state
-- semantic target continuity key
-- action success
-- observable semantic state-change boolean
-- coarse rejection reason codes
+## Generic resolver fix v0.3.0 — implemented and CI PASS
 
-CI job for GitHub Actions run `33070658960` completed successfully, including diagnostic syntax and privacy contract.
+Important commits:
+
+- `673e3fbb5671dc24b993f342dd0a2f920b0434d9` — `fix(strategy): resolve real editable text mechanics generically`
+- `91605b632f7ac8cb7634ce6d53e04754ead7eabd` — `test(strategy): cover real text editing and competing submit shapes`
+
+Resolver version: `0.3.0`.
+
+Implemented generic semantics:
+
+- focus/click acquisition on editable target => HOW/capture noise
+- `type-char` transitions on one semantic editable target => collapse into one Strategy `typeText`
+- `other-key`, `backspace`, `delete`, and text-change during the same text-entry sequence => HOW/capture noise
+- no raw typed characters are used or persisted
+- Enter on same target may become Strategy `submit` only with task submit intent + successful final outcome
+- if a competing submit action exists after Enter, Enter is accepted only when:
+  - task explicitly requests Enter, or
+  - Enter itself has observable semantic state change
+- when task explicitly requests Enter, a later no-observable-change semantic submit-surface click can be excluded as redundant HOW noise
+- if task does not explicitly request Enter and a competing submit click exists with no Enter outcome evidence, the episode remains blocked
+- no site/task names are hard-coded
+- `autoTrainEligible:false` remains unchanged
+
+Updated contract now covers:
+
+1. ordinary search-like `typeText -> submit`
+2. Topic-like leading `other-key` + per-character capture + Enter
+3. Composer-like `other-key`/`backspace` interleaving + Enter + redundant post-Enter submit click
+4. semantic progress `0.5 -> 1`
+5. competing submit negative case remains blocked when task does not explicitly request Enter
+6. Enter on different editable target remains blocked
+7. failed final outcome remains blocked
+8. source guard against site-specific hard-coding and privacy violations
+
+CI PASS:
+
+- strategy teaching resolver workflow run `33071121431`: success
+- runtime syntax workflow run `33071121512`: success
 
 ## Immediate next step
 
-Do not rerun collection, resolver, or approval candidates yet. Pull the diagnostic commit and run only the privacy-safe diagnostic on the two blocked episodes.
+Do not recollect anything and do not rerun diagnostics already completed.
+
+User should pull latest HEAD and rerun only:
+
+1. updated resolver contract
+2. resolver on existing six-group pack
+3. approval candidate generation
+4. print approval candidate markdown
 
 Windows CMD:
 
@@ -170,36 +174,44 @@ git rev-parse --short HEAD
 
 set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
 
-node training-collector\tools\diagnose_strategy_text_form_sequences.js --pack "%SIX%\review-pack-v01\review-pack.json" --triage "%SIX%\review-pack-v01\triage.v01.json" --episode ep-1787828642619,ep-1787831377719
+node training-collector\tests\strategy_text_form_sequence_resolver_contract.js
+
+node training-collector\tools\resolve_strategy_teaching_batch.js --pack "%SIX%\review-pack-v01\review-pack.json" --triage "%SIX%\review-pack-v01\triage.v01.json" --out "%SIX%\teaching-resolution-v03"
+
+node training-collector\tools\prepare_strategy_approval_candidates.js --digest "%SIX%\review-drafts-v01\approval-digest.json" --resolution "%SIX%\teaching-resolution-v03\ambiguity-resolution.json" --out "%SIX%\approval-candidates-v03"
+
+type "%SIX%\approval-candidates-v03\approval-candidates.md"
 ```
 
-When the user sends that diagnostic output, read it directly and implement the resolver fix. Do not ask the user to repeat already-PASS steps.
+Target before any approval:
 
-After the fix, add/update contract, CI, and handoff, then ask user to rerun only resolver -> approval candidates. Target remains:
-
+- contract PASS
+- resolver version `0.3.0`
 - candidateEpisodeCount = 6
 - blockedEpisodeCount = 0
 - six genuinely distinct semantic split groups
 - Topic Search = `typeText -> submit`
 - Message Composer = `typeText -> submit`
 - progress `0.5 -> 1`
-- autoTrainEligible = false until explicit human digest confirmation
+- autoTrainEligible = false
 
-Only after explicit digest confirmation:
+If target is met, show the new digest to the user and wait for explicit human confirmation. Do not auto-approve.
+
+Only after explicit confirmation:
 
 1. apply approvals
 2. build Strategy dataset
 3. require `distinctSplitGroupCount >= 6`
 4. require `datasetBuilt:true`
 5. require `baselineReady:true`
-6. require TRAIN contains `click`, `typeText`, `submit`
+6. require TRAIN contains click + typeText + submit
 7. keep validation/test held out
 
-Only when `baselineReady=true`:
+Only when baselineReady=true:
 
 - fit Strategy from TRAIN only
 - heldout evaluation
-- runtime-load learned Strategy alongside learned Behavior
+- load learned Strategy beside learned Behavior at runtime
 - native long-mission test
 - multi-subgoal
 - replan
