@@ -1,0 +1,33 @@
+name: strategy-fresh-native-text
+
+on:
+  push:
+    branches: [feat/agent-tab-context]
+    paths:
+      - 'control-center/script/offline_strategy_fresh_native_text_gate.js'
+      - 'control-center/manager/strategy/**'
+      - 'control-center/manager/agent/**'
+      - 'control-center/manager/execution/text_plan.js'
+      - 'control-center/manager/execution/submit_plan.js'
+      - 'training-collector/tests/strategy_fresh_native_text_gate_contract.js'
+      - '.github/workflows/strategy-fresh-native-text.yml'
+  pull_request:
+    paths:
+      - 'control-center/script/offline_strategy_fresh_native_text_gate.js'
+      - 'control-center/manager/strategy/**'
+      - 'control-center/manager/agent/**'
+      - 'control-center/manager/execution/text_plan.js'
+      - 'control-center/manager/execution/submit_plan.js'
+      - 'training-collector/tests/strategy_fresh_native_text_gate_contract.js'
+      - '.github/workflows/strategy-fresh-native-text.yml'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run fresh native text gate contract
+        run: node training-collector/tests/strategy_fresh_native_text_gate_contract.js
