@@ -14,6 +14,7 @@ on:
       - 'training-collector/tests/strategy_multistep_play_mute_contract.js'
       - 'training-collector/tests/strategy_multistep_play_mute_unmute_contract.js'
       - 'control-center/manager/strategy/offline_baseline_provider.js'
+      - 'control-center/manager/strategy/self_experience_memory.js'
       - 'control-center/manager/strategy/index.js'
       - 'control-center/manager/agent/one_action_bridge.js'
       - 'control-center/manager/agent/bounded_two_step_execution.js'
@@ -25,10 +26,13 @@ on:
       - 'control-center/script/offline_strategy_history_multistep_gate.js'
       - 'control-center/script/offline_strategy_history_three_step_gate.js'
       - 'control-center/script/offline_strategy_compositional_unseen_gate.js'
+      - 'control-center/script/offline_strategy_self_experience_gate.js'
       - 'control-center/script/checks/one_action_semantic_settle.js'
       - 'control-center/script/checks/offline_strategy_provider.js'
       - 'control-center/script/checks/offline_strategy_history_provider.js'
       - 'control-center/script/checks/offline_strategy_compositional_unseen.js'
+      - 'control-center/script/checks/offline_strategy_self_experience.js'
+      - 'control-center/script/checks/offline_strategy_self_experience_gate.js'
       - 'control-center/script/checks/offline_strategy_native_one_action.js'
       - 'control-center/script/checks/offline_strategy_replan.js'
       - 'control-center/script/checks/offline_strategy_bounded_two_step.js'
@@ -56,6 +60,7 @@ jobs:
           node --check training-collector/tests/strategy_multistep_play_mute_contract.js
           node --check training-collector/tests/strategy_multistep_play_mute_unmute_contract.js
           node --check control-center/manager/strategy/offline_baseline_provider.js
+          node --check control-center/manager/strategy/self_experience_memory.js
           node --check control-center/manager/agent/one_action_bridge.js
           node --check control-center/manager/agent/bounded_two_step_execution.js
           node --check control-center/manager/agent/bounded_episode_loop.js
@@ -63,6 +68,8 @@ jobs:
           node --check control-center/script/checks/offline_strategy_provider.js
           node --check control-center/script/checks/offline_strategy_history_provider.js
           node --check control-center/script/checks/offline_strategy_compositional_unseen.js
+          node --check control-center/script/checks/offline_strategy_self_experience.js
+          node --check control-center/script/checks/offline_strategy_self_experience_gate.js
           node --check control-center/script/offline_strategy_native_one_action_gate.js
           node --check control-center/script/checks/offline_strategy_native_one_action.js
           node --check control-center/script/offline_strategy_replan_gate.js
@@ -76,6 +83,7 @@ jobs:
           node --check control-center/script/offline_strategy_history_three_step_gate.js
           node --check control-center/script/checks/offline_strategy_history_three_step.js
           node --check control-center/script/offline_strategy_compositional_unseen_gate.js
+          node --check control-center/script/offline_strategy_self_experience_gate.js
       - name: Run semantic post-action settle contract
         run: node control-center/script/checks/one_action_semantic_settle.js
       - name: Run offline Strategy baseline contract
@@ -92,6 +100,10 @@ jobs:
         run: node control-center/script/checks/offline_strategy_history_provider.js
       - name: Run unseen compositional Strategy contract
         run: node control-center/script/checks/offline_strategy_compositional_unseen.js
+      - name: Run self-experience memory contract
+        run: node control-center/script/checks/offline_strategy_self_experience.js
+      - name: Run self-experience gate contract
+        run: node control-center/script/checks/offline_strategy_self_experience_gate.js
       - name: Run native offline Strategy one-action contract
         run: node control-center/script/checks/offline_strategy_native_one_action.js
       - name: Run offline Strategy one-step replan contract
