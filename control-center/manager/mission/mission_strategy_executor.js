@@ -7,7 +7,7 @@ const { executeMission } = require('./mission_executor.js');
 const { createSemanticMissionInterpreter } = require('./semantic_mission_interpreter.js');
 const { createSemanticGoalResolver } = require('./semantic_goal_resolver.js');
 
-const MISSION_STRATEGY_EXECUTOR_VERSION = '0.3.0';
+const MISSION_STRATEGY_EXECUTOR_VERSION = '0.4.0';
 
 function semanticBySubgoal(semanticMission) {
   return new Map((Array.isArray(semanticMission?.subgoals) ? semanticMission.subgoals : [])
@@ -60,7 +60,25 @@ async function executeMissionWithStrategy(input = {}) {
         task,
         baseline: behaviorBaseline.artifact,
         budgets: input.episodeBudgets,
-        postActionSettle: input.postActionSettle
+        postActionSettle: input.postActionSettle,
+        resolveTransientActionArgs: typeof input.resolveTransientActionArgs === 'function'
+          ? context => input.resolveTransientActionArgs({
+            mission,
+            subgoal,
+            semantic,
+            subgoalIndex,
+            ...context
+          })
+          : null,
+        onStep: typeof input.onStep === 'function'
+          ? context => input.onStep({
+            mission,
+            subgoal,
+            semantic,
+            subgoalIndex,
+            ...context
+          })
+          : null
       });
       return {
         ...result,
@@ -75,6 +93,7 @@ async function executeMissionWithStrategy(input = {}) {
     }
   });
 
+  const completed = missionResult.subgoalResults.filter(item => item.status === 'done');
   return {
     missionStrategyExecutorVersion: MISSION_STRATEGY_EXECUTOR_VERSION,
     semanticMission,
@@ -83,13 +102,13 @@ async function executeMissionWithStrategy(input = {}) {
     invariant: {
       ...(missionResult.invariant || {}),
       semanticSubgoalCountMatchesPlan: semanticMission.subgoals.length === missionResult.plan.subgoals.length,
-      allCompletedSubgoalsUsedGoalCheckedEpisodes: missionResult.subgoalResults
-        .filter(item => item.status === 'done')
+      allCompletedSubgoalsUsedGoalCheckedEpisodes: completed
         .every(item => item?.result?.finalBudget?.reasonCode === 'goal_satisfied'),
-      noPassTitleCriterionRequired: missionResult.subgoalResults
-        .filter(item => item.status === 'done')
+      noPassTitleCriterionRequired: completed
         .every(item => item?.result?.task?.metadata?.titlePassCriterionRequired !== true),
-      behaviorBaselineNeverReplaysLiteralTrajectory: behaviorBaseline.metadata.literalTrajectoryReplay === false
+      behaviorBaselineNeverReplaysLiteralTrajectory: behaviorBaseline.metadata.literalTrajectoryReplay === false,
+      transientPayloadRedactedAcrossCompletedSubgoals: completed
+        .every(item => item?.result?.invariant?.transientPayloadRedacted === true)
     }
   };
 }
