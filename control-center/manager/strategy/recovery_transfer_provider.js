@@ -5,14 +5,14 @@ const { validateAgentAction } = require('./agent_action_contract.js');
 const {
   readRecoveryMemory,
   triggerFromHistory,
-  validateRecoveryRecord,
-  labelSimilarity
+  validateRecoveryRecord
 } = require('./recovery_policy_memory.js');
 const { readRecoveryOutcomeMemory } = require('./recovery_outcome_memory.js');
 const {
   readRecoverySummaryMemory,
   combinedRecoveryOutcomeStats
 } = require('./recovery_memory_consolidation.js');
+const { normalizeInstruction } = require('./self_experience_memory.js');
 const { tokens, jaccard } = require('./offline_baseline_provider.js');
 
 const RECOVERY_TRANSFER_VERSION = '0.1.0';
@@ -39,6 +39,15 @@ function normalizeCodes(values) {
 
 function structuralCodes(values) {
   return normalizeCodes(values).filter(code => !INCIDENTAL_TRIGGER_CODES.has(code));
+}
+
+function labelSimilarity(a, b) {
+  const aa = normalizeInstruction(a);
+  const bb = normalizeInstruction(b);
+  if (!aa && !bb) return 1;
+  if (!aa || !bb) return 0;
+  if (aa === bb) return 1;
+  return jaccard(tokens(aa), tokens(bb));
 }
 
 function reasonClass(value) {
@@ -228,6 +237,7 @@ module.exports = {
   INCIDENTAL_TRIGGER_CODES,
   normalizeCodes,
   structuralCodes,
+  labelSimilarity,
   reasonClass,
   codeSimilarity,
   generalizedTriggerScore,
