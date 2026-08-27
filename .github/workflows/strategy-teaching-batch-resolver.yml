@@ -6,11 +6,13 @@ on:
       - feat/agent-tab-context
     paths:
       - 'training-collector/tools/resolve_strategy_teaching_batch.js'
+      - 'training-collector/tools/diagnose_strategy_text_form_sequences.js'
       - 'training-collector/tools/prepare_strategy_review_pack.js'
       - 'training-collector/tools/prepare_strategy_review_drafts.js'
       - 'training-collector/tools/prepare_strategy_approval_candidates.js'
       - 'training-collector/tests/strategy_teaching_batch_resolver_contract.js'
       - 'training-collector/tests/strategy_text_form_sequence_resolver_contract.js'
+      - 'training-collector/tests/strategy_text_form_sequence_diagnostic_contract.js'
       - '.github/workflows/strategy-teaching-batch-resolver.yml'
   workflow_dispatch:
 
@@ -25,9 +27,12 @@ jobs:
       - name: Check syntax
         run: |
           node --check training-collector/tools/resolve_strategy_teaching_batch.js
+          node --check training-collector/tools/diagnose_strategy_text_form_sequences.js
           node --check training-collector/tests/strategy_teaching_batch_resolver_contract.js
           node --check training-collector/tests/strategy_text_form_sequence_resolver_contract.js
+          node --check training-collector/tests/strategy_text_form_sequence_diagnostic_contract.js
       - name: Run Strategy teaching batch resolver contracts
         run: |
           node training-collector/tests/strategy_teaching_batch_resolver_contract.js
           node training-collector/tests/strategy_text_form_sequence_resolver_contract.js
+          node training-collector/tests/strategy_text_form_sequence_diagnostic_contract.js
