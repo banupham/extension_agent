@@ -14,7 +14,7 @@ const background = read('background.js');
 const routeTrace = read('observer/route_trace.js');
 const rawStore = read('core/raw_session_store.js');
 
-assert.equal(manifest.version, '0.8.1');
+assert.equal(manifest.version, '0.8.2');
 assert.ok(manifest.name.includes('V0.8'));
 assert.equal(manifest.content_scripts[0].all_frames, true);
 assert.equal(manifest.content_scripts[0].match_about_blank, true);
@@ -49,4 +49,4 @@ assert.ok(rawStore.includes('all-frame-content-capture'));
 assert.ok(rawStore.includes('sanitized-spa-route-change'));
 assert.ok(rawStore.includes('collector-stream-start-health-stop'));
 
-console.log('Training Collector inherited V0.7.2 frame-aware + stream diagnostics contract OK under V0.8.1');
+console.log('Training Collector inherited V0.7.2 frame-aware + stream diagnostics contract OK under V0.8.2');

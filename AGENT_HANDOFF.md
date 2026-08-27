@@ -419,3 +419,22 @@ Current eight-task Codex curation decision:
 - REDO: `ep-1787851685350` — capture proves opening HTML but not a distinct HTML elements action
 
 No episode is REJECTed for privacy. Preserve all original evidence. Do not expose raw diagnostics to the user unless requested.
+
+## Training Collector displayed-version mismatch — FIXED
+
+The repository manifest was correctly versioned `0.8.2`, but `popup.html` still hardcoded `V0.8.1`. Reinstalling the unpacked extension therefore continued to display `0.8.1` even when Chrome loaded the correct directory. This was a UI/version-label defect, not proof that Chrome loaded an old extension copy.
+
+Fix:
+
+- popup title/header now display `V0.8.2`
+- inherited storage/frame contracts now expect manifest `0.8.2`
+- socket mirror contract verifies popup label matches `0.8.2`
+
+Local verification PASS:
+
+- `v06_storage_contract.js`
+- `v072_frame_stream_contract.js`
+- `v08_socket_mirror_contract.js`
+- `episode_cross_document_settlement_contract.js`
+
+The separately observed popup `Loading socket status/raw session...` state is not declared fixed by this label correction and still requires a real Chrome retest/diagnosis.

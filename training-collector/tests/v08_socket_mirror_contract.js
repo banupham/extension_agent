@@ -13,6 +13,7 @@ const background = read('background.js');
 const mirror = read('core/socket_mirror.js');
 const rawStore = read('core/raw_session_store.js');
 const popup = read('popup.js');
+const popupHtml = read('popup.html');
 const server = read('socket-server/server.js');
 const serverPkg = JSON.parse(read('socket-server/package.json'));
 
@@ -67,6 +68,7 @@ assert.ok(rawStore.includes("const VERSION = '0.7.2'"));
 assert.ok(rawStore.includes('localhost-websocket-replay-mirror'));
 assert.ok(rawStore.includes('manual-chunked-jsonl-gzip-fallback-only'));
 assert.ok(popup.includes('GET_SOCKET_STATUS'));
+assert.ok(popupHtml.includes('Training Collector V0.8.2 Socket Mirror'), 'popup version label must match the manifest version');
 assert.ok(!popup.includes('RETRY_AUTO_EXPORT'));
 
 console.log('Training Collector V0.8.2 socket mirror inheritance contract OK');
