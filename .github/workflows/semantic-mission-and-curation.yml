@@ -1,0 +1,45 @@
+name: semantic-mission-and-curation
+
+on:
+  push:
+    branches:
+      - feat/agent-tab-context
+    paths:
+      - 'control-center/manager/mission/semantic_goal_resolver.js'
+      - 'control-center/manager/mission/semantic_mission_interpreter.js'
+      - 'control-center/manager/mission/mission_strategy_executor.js'
+      - 'control-center/manager/world/semantic_world_model.js'
+      - 'control-center/script/page_semantic_mission_lab.js'
+      - 'control-center/script/offline_strategy_semantic_mission_gate.js'
+      - 'control-center/script/checks/semantic_goal_resolver.js'
+      - 'control-center/script/checks/mission_semantic_goal_execution.js'
+      - 'control-center/script/checks/offline_strategy_semantic_mission.js'
+      - 'training-collector/tools/curate_random_human_data.js'
+      - 'training-collector/tests/random_human_data_curator_contract.js'
+      - '.github/workflows/semantic-mission-and-curation.yml'
+  workflow_dispatch:
+
+jobs:
+  semantic-mission-curation-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check syntax
+        run: |
+          node --check control-center/manager/mission/semantic_goal_resolver.js
+          node --check control-center/script/page_semantic_mission_lab.js
+          node --check control-center/script/offline_strategy_semantic_mission_gate.js
+          node --check control-center/script/checks/offline_strategy_semantic_mission.js
+          node --check training-collector/tools/curate_random_human_data.js
+          node --check training-collector/tests/random_human_data_curator_contract.js
+      - name: Run semantic goal resolver contract
+        run: node control-center/script/checks/semantic_goal_resolver.js
+      - name: Run semantic mission execution contract
+        run: node control-center/script/checks/mission_semantic_goal_execution.js
+      - name: Run semantic mission native gate contract
+        run: node control-center/script/checks/offline_strategy_semantic_mission.js
+      - name: Run random human data curator contract
+        run: node training-collector/tests/random_human_data_curator_contract.js
