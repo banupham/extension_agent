@@ -36,6 +36,41 @@
     return !NON_TEXT_INPUT_TYPES.has(normalizedInputType(inputType));
   }
 
+  function normalizeAccessibleText(value) {
+    return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 160) : '';
+  }
+
+  function labelFromParts(parts = {}) {
+    return normalizeAccessibleText(
+      parts.ariaLabel || parts.ariaLabelledBy || parts.associatedLabel || parts.placeholder ||
+      parts.title || parts.imageAlt || parts.visibleText || ''
+    );
+  }
+
+  function labelledByText(el) {
+    const ids = String(el.getAttribute('aria-labelledby') || '').trim().split(/\s+/).filter(Boolean);
+    return normalizeAccessibleText(ids.map(id => document.getElementById(id)?.textContent || '').filter(Boolean).join(' '));
+  }
+
+  function semanticAccessibleLabel(el, meta) {
+    const tag = el.tagName.toLowerCase();
+    const editable = textEntryEditableFromSemantics({
+      tag,
+      inputType: tag === 'input' ? normalizedInputType(meta.type) : null,
+      isContentEditable: el.isContentEditable === true
+    });
+    const mayUseVisibleText = !editable && ['a', 'button', 'summary', 'option'].includes(tag);
+    return labelFromParts({
+      ariaLabel: meta.ariaLabel,
+      ariaLabelledBy: labelledByText(el),
+      associatedLabel: meta.label,
+      placeholder: meta.placeholder,
+      title: el.getAttribute('title'),
+      imageAlt: el.getAttribute('alt') || el.querySelector?.('img[alt]')?.getAttribute('alt'),
+      visibleText: mayUseVisibleText ? (el.innerText || el.textContent || '') : ''
+    });
+  }
+
   function getRef(el) {
     if (!(el instanceof Element)) return null;
     if (registry) return registry.getRef(el);
@@ -90,16 +125,20 @@
     };
   }
 
-  function privacyFor(el) { return Privacy.classifyElementMeta(rawMeta(el)); }
+  function privacyFor(el) {
+    const meta = rawMeta(el);
+    return Privacy.classifyElementMeta({ ...meta, label: semanticAccessibleLabel(el, meta) || meta.label });
+  }
   function isSensitive(el) { return !!privacyFor(el).sensitive; }
 
   function semanticElement(el) {
     if (!(el instanceof Element)) return null;
     const meta = rawMeta(el);
-    if (Privacy.classifyElementMeta(meta).sensitive) return null;
+    const accessibleLabel = semanticAccessibleLabel(el, meta);
+    if (Privacy.classifyElementMeta({ ...meta, label: accessibleLabel || meta.label }).sensitive) return null;
     const rect = el.getBoundingClientRect();
     const state = renderState(el);
-    const label = meta.ariaLabel || meta.placeholder || meta.label || '';
+    const label = accessibleLabel;
     const tag = el.tagName.toLowerCase();
     const inputType = tag === 'input' ? normalizedInputType(meta.type) : null;
     const candidates = selectorCandidates(el);
@@ -154,6 +193,13 @@
     renderState,
     isSensitive,
     normalizedInputType,
-    textEntryEditableFromSemantics
+    textEntryEditableFromSemantics,
+    normalizeAccessibleText,
+    labelFromParts,
+    semanticAccessibleLabel
   };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { normalizeAccessibleText, labelFromParts };
+  }
 })(typeof globalThis !== 'undefined' ? globalThis : this);

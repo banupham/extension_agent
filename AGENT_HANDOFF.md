@@ -501,3 +501,26 @@ The fitter was minimally extended with optional `--model-version` so a new artif
 Heldout result: FAIL. Action types were correct, but both MDN HTML heldout click targets were grounded incorrectly because the captured Strategy observations contain empty labels for the expected link refs. Old validation and old/new text-submit test records remained exact. This is a target-grounding/collector-evidence failure, not a reason to move the MDN heldout episode into TRAIN or tune against it.
 
 Candidate `0.3.4` is rejected and must not be promoted or used as the active model. Keep v0.3.3 frozen/active. Next technical phase: repair generic accessible semantic labeling in the collector, then evaluate with appropriate new evidence without leaking heldout into fit.
+
+## Training Collector 0.8.3 accessible semantic labels — CODE/CONTRACT PASS
+
+Root cause of the MDN heldout target-grounding failure was confirmed in `observer/semantic_observer.js`: labels were limited to `aria-label`, placeholder, or associated `<label>`, so visible nested text in links/buttons and `aria-labelledby` were discarded.
+
+Generic fix, with no site hardcoding:
+
+- accessible-name precedence now includes `aria-labelledby`, associated labels, title, image alt, and visible text for non-editable actionable link/button/summary/option elements
+- whitespace is normalized and labels remain length-limited/redacted
+- visible text is never read from editable inputs, textarea, or contenteditable elements, preserving the raw typed-value boundary
+- the computed accessible label is included in sensitive-metadata classification before capture
+- extension version bumped to `0.8.3` with matching popup label
+
+Local PASS:
+
+- semantic accessible label contract
+- task-episode architecture contract
+- inherited storage contract
+- frame/stream contract
+- socket mirror contract
+- cross-document settlement contract
+
+Real Chrome reload and browser capture verification are still required. This fix does not retroactively mutate the rejected 0.3.4 heldout record or promote the rejected model.
