@@ -9,13 +9,14 @@ const { executeBoundedEpisodeLoop } = require('../manager/agent/bounded_episode_
 const { createStrategy } = require('../manager/strategy');
 const { parseArgs, discoverRuntimeAgent } = require('./agent_one_action.js');
 
-const GATE_VERSION = '0.1.0';
+const GATE_VERSION = '0.1.1';
 const HOST = '127.0.0.1';
 const INITIAL_TITLE = 'Cargo Routing Lab';
 const PASS_TITLE = 'CARGO INSTRUCTION PASS';
 const TARGET_LABEL = 'Cargo Instruction';
 const EXPECTED_ACTION_TYPES = Object.freeze(['typeText', 'submit']);
 const EXPECTED_TARGET_LABELS = Object.freeze([TARGET_LABEL, TARGET_LABEL]);
+const SERVER_CLOSE_TIMEOUT_MS = 1500;
 
 function labHtml() {
   return `<!doctype html>
@@ -75,6 +76,7 @@ function labHtml() {
 }
 
 function createLabServer() {
+  const sockets = new Set();
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || '/', `http://${HOST}/`);
     if (url.pathname !== '/') {
@@ -86,6 +88,16 @@ function createLabServer() {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.end(labHtml());
+  });
+  server.on('connection', socket => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+  });
+  Object.defineProperty(server, '__freshNativeSockets', {
+    value: sockets,
+    enumerable: false,
+    configurable: false,
+    writable: false
   });
   return server;
 }
@@ -105,9 +117,39 @@ async function listen(server) {
   return Number(address.port);
 }
 
-async function closeServer(server) {
-  if (!server?.listening) return;
-  await new Promise(resolve => server.close(() => resolve()));
+async function closeServer(server, timeoutMs = SERVER_CLOSE_TIMEOUT_MS) {
+  if (!server?.listening) return { closed: true, forced: false };
+  let forced = false;
+  await new Promise(resolve => {
+    let settled = false;
+    let timer = null;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve();
+    };
+    timer = setTimeout(() => {
+      forced = true;
+      try { server.closeIdleConnections?.(); } catch (_) {}
+      try { server.closeAllConnections?.(); } catch (_) {}
+      const sockets = server.__freshNativeSockets;
+      if (sockets && typeof sockets[Symbol.iterator] === 'function') {
+        for (const socket of sockets) {
+          try { socket.destroy(); } catch (_) {}
+        }
+      }
+      finish();
+    }, Math.max(50, Number(timeoutMs) || SERVER_CLOSE_TIMEOUT_MS));
+
+    try {
+      server.close(finish);
+      try { server.closeIdleConnections?.(); } catch (_) {}
+    } catch (_) {
+      finish();
+    }
+  });
+  return { closed: true, forced };
 }
 
 function sha256File(file) {
@@ -342,6 +384,7 @@ module.exports = {
   TARGET_LABEL,
   EXPECTED_ACTION_TYPES,
   EXPECTED_TARGET_LABELS,
+  SERVER_CLOSE_TIMEOUT_MS,
   labHtml,
   createLabServer,
   listen,
