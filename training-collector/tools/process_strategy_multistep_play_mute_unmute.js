@@ -101,22 +101,36 @@ function transitionTargetLabel(transition) {
   return elements.find(el => el?.ref === ref)?.label || null;
 }
 
+function transitionSummary(review) {
+  return (Array.isArray(review?.transitions) ? review.transitions : []).map((transition, index) => {
+    const id = transition?.transitionId || `#${index}`;
+    const status = transition?.status || 'unknown';
+    const kind = transition?.rawAction?.kind || 'unknown';
+    const ref = transition?.rawAction?.targetRef || '-';
+    const label = transitionTargetLabel(transition) || '-';
+    return `${id}:${status}:${kind}:${ref}:${label}`;
+  }).join(' | ');
+}
+
 function findSequence(review) {
   const transitions = Array.isArray(review?.transitions) ? review.transitions : [];
   const hits = SEQUENCE.map(spec => transitions
     .map((transition, index) => ({ transition, index }))
     .filter(item =>
       item.transition?.status === 'complete' &&
-      item.transition?.rawAction?.kind === 'click' &&
+      typeof item.transition?.rawAction?.targetRef === 'string' &&
+      item.transition.rawAction.targetRef.trim() &&
       transitionTargetLabel(item.transition) === spec.label
     ));
 
   for (let i = 0; i < hits.length; i += 1) {
-    if (hits[i].length !== 1) die(`expected_exactly_one_${SEQUENCE[i].type}_transition: found=${hits[i].length}`);
+    if (hits[i].length !== 1) {
+      die(`expected_exactly_one_${SEQUENCE[i].type}_transition: found=${hits[i].length}; transitions=${transitionSummary(review) || '<none>'}`);
+    }
   }
   const indexes = hits.map(items => items[0].index);
   if (!(indexes[0] < indexes[1] && indexes[1] < indexes[2])) {
-    die('play_mute_unmute_transition_order_invalid');
+    die(`play_mute_unmute_transition_order_invalid; transitions=${transitionSummary(review) || '<none>'}`);
   }
   return hits.map(items => items[0].transition);
 }
@@ -193,7 +207,6 @@ function runNode(toolPath, args) {
 
 function processItem(item, repoRoot, sourceDir) {
   const cfg = TASKS[item.instruction];
-  const included = findSequence(item.review);
   const tools = path.join(repoRoot, 'training-collector', 'tools');
   const checker = path.join(tools, 'check_task_episode_review.js');
   const maker = path.join(tools, 'make_strategy_review_template.js');
@@ -201,6 +214,7 @@ function processItem(item, repoRoot, sourceDir) {
 
   console.log(`\n[${item.instruction}] play -> mute -> unmute`);
   console.log(`INPUT: ${item.file}`);
+  const included = findSequence(item.review);
   runNode(checker, [item.file]);
   runNode(maker, [item.file]);
 
@@ -268,6 +282,7 @@ module.exports = {
   discoverInputs,
   selectLatestTaskFiles,
   transitionTargetLabel,
+  transitionSummary,
   findSequence,
   applyAnnotation,
   main
