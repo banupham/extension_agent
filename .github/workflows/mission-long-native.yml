@@ -10,6 +10,7 @@ on:
       - 'control-center/manager/execution/**'
       - 'control-center/script/offline_strategy_fresh_long_mission_gate.js'
       - 'training-collector/tests/mission_transient_payload_contract.js'
+      - 'training-collector/tests/recovery_progression_guard_contract.js'
       - 'training-collector/tests/strategy_fresh_long_mission_contract.js'
       - '.github/workflows/mission-long-native.yml'
   pull_request:
@@ -20,6 +21,7 @@ on:
       - 'control-center/manager/execution/**'
       - 'control-center/script/offline_strategy_fresh_long_mission_gate.js'
       - 'training-collector/tests/mission_transient_payload_contract.js'
+      - 'training-collector/tests/recovery_progression_guard_contract.js'
       - 'training-collector/tests/strategy_fresh_long_mission_contract.js'
       - '.github/workflows/mission-long-native.yml'
 
@@ -33,6 +35,8 @@ jobs:
           node-version: '20'
       - name: Run mission transient payload contract
         run: node training-collector/tests/mission_transient_payload_contract.js
+      - name: Run recovery planned progression guard contract
+        run: node training-collector/tests/recovery_progression_guard_contract.js
       - name: Run long mission contract when present
         shell: bash
         run: |
