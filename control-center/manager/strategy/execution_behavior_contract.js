@@ -52,24 +52,25 @@ function validateExecutionBehavior(value) {
 
 function defaultBehaviorFor(mappedAction) {
   if (!mappedAction || typeof mappedAction.type !== 'string') throw new Error('mapped action required');
+  const family = mappedAction.behaviorFamily || 'generic';
   const base = {
     actionType: mappedAction.type,
     targetRef: mappedAction.targetRef || null,
     profile: 'empirical-v0',
     timing: { profile: 'empirical' },
-    metadata: { behaviorFamily: mappedAction.behaviorFamily || 'generic' }
+    metadata: { behaviorFamily: family }
   };
 
-  if (String(mappedAction.behaviorFamily || '').startsWith('pointer-') || mappedAction.behaviorFamily === 'focus-acquisition') {
+  if (String(family).startsWith('pointer-') || family === 'focus-acquisition' || family === 'form-control') {
     base.pointer = { profile: 'empirical', targetAcquisition: 'adaptive', constraints: {} };
   }
-  if (String(mappedAction.behaviorFamily || '').startsWith('keyboard-')) {
+  if (String(family).startsWith('keyboard-')) {
     base.keyboard = { profile: 'empirical', burstProfile: 'context-conditioned', constraints: {} };
   }
-  if (String(mappedAction.behaviorFamily || '').startsWith('scroll-')) {
+  if (String(family).startsWith('scroll-')) {
     base.scroll = {
       profile: 'empirical',
-      axis: mappedAction.behaviorFamily === 'scroll-horizontal' ? 'horizontal' : 'vertical',
+      axis: family === 'scroll-horizontal' ? 'horizontal' : 'vertical',
       burstProfile: 'context-conditioned',
       constraints: {}
     };
