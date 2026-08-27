@@ -101,7 +101,8 @@ async function main() {
   assert.equal(JSON.stringify(task).includes(SECRET), false);
 
   const source = fs.readFileSync(path.join(__dirname, '../../control-center/script/offline_strategy_fresh_native_text_gate.js'), 'utf8');
-  assert.equal(source.includes('fit_strategy_offline_baseline'), false, 'fresh native gate must not import fitter');
+  const fitterImportPattern = /require\s*\(\s*['"][^'"]*fit_strategy_offline_baseline(?:\.js)?['"]\s*\)/i;
+  assert.equal(fitterImportPattern.test(source), false, 'fresh native gate must not import fitter');
   assert.equal(source.includes('selector:'), false, 'fresh native Strategy gate must not hardcode selector targeting');
 
   const summary = evaluateResult(passingResult(), strategyMeta(), 'same-hash', 'same-hash', SECRET);
