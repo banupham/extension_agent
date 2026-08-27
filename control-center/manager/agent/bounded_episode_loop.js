@@ -31,10 +31,12 @@ function mergeSemanticFeedback(historyBefore, budgetHistory, effect) {
     const out = { ...entry };
     if (prior?.effectStatus) out.effectStatus = prior.effectStatus;
     if (Array.isArray(prior?.effectCodes)) out.effectCodes = [...prior.effectCodes];
+    if (typeof prior?.observableEffectExpected === 'boolean') out.observableEffectExpected = prior.observableEffectExpected;
     if (Number(entry?.stepIndex) === latestStepIndex && effect) {
       out.effectStatus = effect.status;
       out.effectCodes = [...effect.codes];
       out.effectConfidence = effect.confidence;
+      out.observableEffectExpected = effect.observableEffectExpected === true;
     }
     return out;
   });
@@ -98,6 +100,7 @@ async function executeBoundedEpisodeLoop(input = {}) {
         actionEffectStatus: effect.status,
         actionEffectConfidence: effect.confidence,
         actionEffectCodes: [...effect.codes],
+        actionEffectExpected: effect.observableEffectExpected === true,
         semanticChangeCount: effect.semanticChangeCount
       }
     };
