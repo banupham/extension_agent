@@ -7,6 +7,7 @@ const Dispatcher = require('../../control-center/extension/agent-runtime-extensi
 const {
   SUBMIT_PLAN_VERSION,
   CDP_PLAN_VERSION,
+  ENTER_TEXT,
   buildSubmitCdpPlan
 } = require('../../control-center/manager/execution/submit_plan.js');
 
@@ -15,8 +16,9 @@ function behaviorFor(action, target) {
 }
 
 function main() {
-  assert.equal(SUBMIT_PLAN_VERSION, '0.2.1');
+  assert.equal(SUBMIT_PLAN_VERSION, '0.2.2');
   assert.equal(CDP_PLAN_VERSION, '0.1.2');
+  assert.equal(ENTER_TEXT, '\r');
   assert.equal(Dispatcher.SUPPORTED_PLAN_VERSIONS.has(CDP_PLAN_VERSION), true);
 
   const editable = {
@@ -43,6 +45,9 @@ function main() {
   assert.deepStrictEqual(enterEvents.map(step => step.params.type), ['keyDown', 'keyUp']);
   assert.equal(enterEvents[0].params.code, 'Enter');
   assert.equal(enterEvents[0].params.windowsVirtualKeyCode, 13);
+  assert.equal(enterEvents[0].params.text, '\r');
+  assert.equal(enterEvents[0].params.unmodifiedText, '\r');
+  assert.equal(Object.prototype.hasOwnProperty.call(enterEvents[1].params, 'text'), false);
   assert.equal(enterEvents.some(step => step.params.type === 'rawKeyDown'), false);
   assert.ok(editablePlan.steps.some(step =>
     step.method === 'Input.dispatchMouseEvent' && step.params?.type === 'mousePressed'
