@@ -31,7 +31,8 @@ Read this file before changing the repository.
 - Strategy model-file runtime loading is implemented with privacy validation.
 - Native `typeText` now receives text through a **transient execution payload**; typed values are redacted from public episode result/history and are not stored in the Strategy model.
 - Native `submit` routing and text-target acquisition are implemented and contract-tested.
-- A fresh browser-native text gate now exists and its contract + full runtime suite are PASS. The next gate is the user's local real browser run with the frozen v0.3.3 model.
+- The user's first local browser-native run visibly opened the Cargo lab and typed into `Cargo Instruction`; the run then hung during local HTTP server cleanup after the lab tab closed. This is execution evidence, not a native PASS.
+- Fresh native gate cleanup is now bounded and force-closes lingering localhost sockets after a deadline; dedicated contract and full runtime suite are PASS. The next gate is rerunning the same frozen model locally.
 
 ## Collector / teaching state — CLOSED
 
@@ -359,7 +360,7 @@ Full runtime suite after compatibility fixture alignment:
 
 This work does not change model v0.3.3 scoring or retrain Strategy.
 
-## Fresh browser-native text gate — READY FOR USER RUN
+## Fresh browser-native text gate — READY FOR USER RERUN
 
 Gate:
 
@@ -395,17 +396,41 @@ Native gate contract history:
 - dedicated native contract run `33085920612`: success
 - full runtime-syntax run `33085920613`: success
 
+### First local browser-native attempt — execution reached target, cleanup hung
+
+Observed locally by the user:
+
+- gate opened the localhost Cargo Routing Lab from an `https://example.com` anchor tab
+- Agent Runtime visibly selected `Cargo Instruction`
+- native text insertion visibly began with the generated `cargo-...` value
+- lab tab was later closed and browser returned to the anchor tab
+- CMD did not return a JSON result, so this is **not** a native PASS
+
+Diagnosis:
+
+- `runGate()` had already entered `finally` because the created lab tab was closed
+- `closeServer()` used an unbounded `await server.close(...)`
+- a lingering Chrome localhost HTTP connection could keep that callback pending indefinitely
+
+Generic cleanup fix:
+
+- commit `13b96925ca927e3f496c71a7e36449352c07278a` — gate v0.1.1 tracks local sockets and bounds server shutdown to 1500ms; after deadline it closes idle/all connections and destroys tracked sockets
+- commit `65ec3cfaa4d9e5c197ef8fbaee5892892efeb8a9` — contract simulates a server whose `close()` callback never fires and requires bounded forced cleanup
+- dedicated native contract run `33087500659`: success
+- full runtime-syntax job in run `33087500282`: success
+
+This cleanup fix does not change model v0.3.3, Strategy scoring, target grounding, or transient typed data handling.
+
 Current code HEAD before this handoff-only commit:
 
-`53d98946acf2a6e6dec5d0b18b1fb7dea1cea5bd`
+`65ec3cfaa4d9e5c197ef8fbaee5892892efeb8a9`
 
-### User local run prerequisites
+### User local rerun prerequisites
 
-1. Pull the latest branch.
-2. Start Control Center with `npm start` from `control-center`; it automatically starts broker on `127.0.0.1:3000`.
-3. Browser must have the unpacked Agent Runtime extension loaded from:
-   `control-center\extension\agent-runtime-extension`
-4. `/agents` must show exactly one connected entry whose `meta.product` is `agent-runtime`.
+1. Stop the currently hung old gate with `Ctrl+C` if it is still running.
+2. Pull the latest branch.
+3. Keep Control Center running; reload the unpacked Agent Runtime extension only if needed after pulling extension-runtime changes (the cleanup fix itself is Node-side only).
+4. Keep one normal `http(s)` web tab such as `https://example.com` open as the anchor.
 5. Use the existing frozen model:
    `%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827\strategy-approved-dataset-v03\baseline-v033\model.json`
 
