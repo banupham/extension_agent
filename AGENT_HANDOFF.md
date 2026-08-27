@@ -27,9 +27,9 @@ Read this file before changing the repository.
 - Frozen v0.3.3 passed two fresh-unseen semantic decision families.
 - Frozen v0.3.3 passed a real fresh browser-native Cargo end-to-end family.
 - Mission/replan/recovery/world-model infrastructure is integrated with the learned Strategy.
-- Signal Relay long browser-native regression now passes all 3 subgoals with real recovery, progression guard, goal checks, privacy redaction, and frozen model invariants.
-- Signal Relay is regression evidence only because its first failure influenced diagnosis and page repair.
-- Next capability gate is a **different fresh long browser-native family** created after the Signal Relay regression PASS.
+- Signal Relay long browser-native regression passes all 3 subgoals with real recovery, progression guard, goal checks, privacy redaction, and frozen model invariants.
+- Signal Relay is regression evidence only because its first failure influenced diagnosis/page repair.
+- A different **fresh Harbor Dispatch long browser-native family** is now implemented and CI-green; it is the immediate pristine user gate.
 - Agent is maturing but is not broadly autonomous.
 
 ## Historical teaching data — CLOSED
@@ -82,150 +82,164 @@ Policy:
 - `actionSelectionUsesCurrentTargetRanking:false`
 - `targetGroundingPolicy: current-task-dominant-with-action-affordance`
 
-Real six-group regression:
+Do not keep tuning on the six historical records.
 
-- validation Topic Search: action/target/exact semantic all 1.0
-- test Google Search: action/target/exact semantic all 1.0
+## Fresh semantic + Cargo evidence
 
-Do not keep tuning on these six records.
+Frozen v0.3.3, no fit/mutation:
 
-## Fresh-unseen frozen-model semantic gate — PASS
+- fresh parcel approval: click + correct target
+- fresh dispatch note: `typeText -> submit` + target continuity
+- Cargo native: exact `typeText -> submit`, exact `Cargo Instruction -> Cargo Instruction`, real Chrome goal PASS
+- model unchanged, transient text redacted, no selectors/literal replay
 
-Frozen `baseline-v033/model.json`, no fit/mutation:
+Cargo is closed evidence. Do not optimize/train on it.
 
-- `fresh-parcel-approval`: click + correct target
-- `fresh-dispatch-note`: `typeText -> submit` + target continuity
-- no literal trajectory replay
-- no selector/coordinate targeting
-
-## Browser-native Cargo — PASS / CLOSED
-
-Real local PASS with frozen v0.3.3:
-
-- exact `typeText -> submit`
-- exact `Cargo Instruction -> Cargo Instruction`
-- final title `CARGO INSTRUCTION PASS`
-- model file unchanged
-- transient text redacted
-- no selector targeting by Strategy
-- no literal trajectory replay
-- created tab closed
-
-Cargo is closed evaluation evidence. Do not optimize/train on it.
-
-## Mission stack upgrades
+## Mission runtime upgrades
 
 ### Transient payload + step hooks
 
-- `4cec004bd51a01185f59e2b16f4f56f2252e45d6` — mission executor passes `resolveTransientActionArgs` + `onStep` into each subgoal and checks cross-subgoal redaction
+- `4cec004bd51a01185f59e2b16f4f56f2252e45d6` — mission executor passes execution-time transient args + step hook into each subgoal and verifies cross-subgoal redaction
 - `32f6df2540f3e946491118f0c116669813ebf5d1` — contract
-- `6e2eab02a70c6e42ff4257fc7ac8de427461422c` — mission CI
 
 ### Recovery planned-progression guard
 
-Generic rule:
+Generic behavior:
 
-- ask base Strategy for its planned next semantic decision before recovery
-- if action type changes, preserve planned progression
-- if same action type but semantic target changes, preserve planned progression
-- recovery explores only when base repeats the same failed action/semantic target or otherwise does not progress
+- ask base Strategy for planned next semantic decision before recovery
+- if action type changes, preserve progression
+- if same action type but semantic target changes, preserve progression
+- recovery explores only when base repeats the same failed action/target or otherwise does not progress
 - no generic `failure => scroll`
 
 Commits:
 
-- `cc7acf88e2a559c9229c366a8c208cf4118ee587` — recovery exploration v0.5.0
-- `f42a1f38f719c6c7c509b0f2aabf633f0a6dd5b4` — progression guard contract
+- `cc7acf88e2a559c9229c366a8c208cf4118ee587`
+- `f42a1f38f719c6c7c509b0f2aabf633f0a6dd5b4`
 
-## Signal Relay long browser-native — REGRESSION PASS / CLOSED
-
-Gate:
-
-`control-center/script/offline_strategy_fresh_long_mission_gate.js`
+## Signal Relay — REGRESSION PASS / CLOSED
 
 Mission:
 
 `Click Open Relay Console, then type the provided value into Relay Note and press Enter, then click Finalize Relay`
 
-First real run exposed a controlled-page defect: the form had two text inputs but no submit control, while page progression depended on the form `submit` event. Strategy/model were not changed.
+After fixing only the controlled page's native form semantics, real browser regression returned:
 
-Repair:
-
-- real hidden native `type="submit"` control added to the form
-- no keydown handler, `requestSubmit()`, or direct `.submit()` bypass
-- gate version `0.1.1`
-- evidence class `regression-after-diagnosis`
-
-Repair commits:
-
-- `972b78c5d4ea20b0477f2910e7a1b2f5a2d5c83e`
-- `3cba592894bc7b4e6373a36c570499eee0230e99`
-- `9c2f94bf47afb963b337091edd08dd99d315bb3f`
-- `5edd70c875339ba2e64da0cbf9681199371ae3e1`
-
-CI:
-
-- full runtime `33091479720`: success
-- dedicated mission `33091577192`: success
-
-### Real browser regression PASS
-
-User ran frozen v0.3.3 and received:
-
-- `ok:true`
-- `result:PASS`
+- `ok:true`, `result:PASS`
 - `gateVersion:0.1.1`
 - `evidenceClass:regression-after-diagnosis`
 - `missionReasonCode:mission_satisfied`
-- progress `3/3`, `missionDone:true`
-- exact actions:
-  1. `click -> waitAndObserve`
-  2. `typeText -> submit`
-  3. `click`
-- exact targets:
-  1. `Open Relay Console -> null`
-  2. `Relay Note -> Relay Note`
-  3. `Finalize Relay`
-- subgoal 1: click produced `no_effect`; recovery `waitAndObserve` came from `recoveryExploration`, observed elements added/removed, then goal satisfied
-- subgoal 2: `typeText` transient payload applied/redacted; base Strategy progressed to `submit` with `recoveryDeferredForBaseProgression:true`; submit produced target disappearance + elements added/removed and goal satisfied
-- subgoal 3: `click@Finalize Relay` produced target disappearance + elements added/removed and goal satisfied
-- `frozenModelOnly:true`
-- `modelLoadedFromFile:true`
-- `modelFileMutated:false`
-- `transientPayloadRedacted:true`
-- `publicResultContainsTransientText:false`
-- `orderedExecution:true`
-- `semanticSubgoalCountMatchesPlan:true`
-- `allCompletedSubgoalsGoalChecked:true`
-- `noLiteralTrajectoryReplay:true`
+- progress `3/3`
+- exact actions `[["click","waitAndObserve"],["typeText","submit"],["click"]]`
+- exact targets `[["Open Relay Console",null],["Relay Note","Relay Note"],["Finalize Relay"]]`
+- recovery on subgoal 1 came from `recoveryExploration`
+- subgoal 2 preserved planned `typeText -> submit` with `recoveryDeferredForBaseProgression:true`
+- model frozen/unchanged
+- transient payload redacted and absent from public result
+- ordered execution / semantic goal checks / no literal replay all true
+- errors empty, created tab closed
+
+Signal Relay is closed regression evidence. Do not optimize it further.
+
+## Fresh Harbor Dispatch long browser-native gate — READY / PRISTINE
+
+Gate:
+
+`control-center/script/offline_strategy_fresh_long_harbor_gate.js`
+
+This family was created only after the Signal Relay regression PASS and has not yet been run by the user or used to diagnose/tune Strategy/runtime.
+
+Mission:
+
+`type the provided value into Dispatch Token and press Enter, then click Open Berth Schedule, then click Confirm Berth`
+
+Expected subgoals:
+
+1. `typeText@Dispatch Token -> submit@Dispatch Token`
+   - transient text execution-time only
+   - privacy-safe observer may classify typeText as `no_effect`
+   - progression guard must preserve base Strategy `submit`
+   - native submit reveals `Open Berth Schedule`
+2. `click@Open Berth Schedule -> waitAndObserve`
+   - click schedules a 1200ms delayed transition with no immediate semantic mutation
+   - first click must become real `no_effect`
+   - base Strategy repeats same click/target, so recovery exploration may select `waitAndObserve`
+   - wait reveals `Confirm Berth`
+3. `click@Confirm Berth`
+   - reveals final semantic element `Berth Confirmed`
+
+Exact expected actions:
+
+`[["typeText","submit"],["click","waitAndObserve"],["click"]]`
+
+Exact expected targets:
+
+`[["Dispatch Token","Dispatch Token"],["Open Berth Schedule",null],["Confirm Berth"]]`
+
+Fresh gate invariants:
+
+- `evidenceClass:fresh-unseen-controlled-native`
+- frozen v0.3.3 loaded from file
+- no fit module imported / model file unchanged
+- exact action and target sequences
+- all 3 subgoals goal-checked and done
+- planned progression evidence on subgoal 1
+- recovery evidence on subgoal 2
+- transient text redacted / absent from public result
+- ordered execution / no literal trajectory replay
+- created tab cleanup
+
+Commits:
+
+- `a20b0395a6a2bf8590bb5431aa54a5b3891c2bb8` — fresh Harbor browser gate
+- `181f5cccc8b3b15a2cf01cc1e1a6a4ae5fb2219a` — fresh Harbor contract
+- `ba55e442a76370336d4c0b28acb898d700504a12` — mission CI gates Harbor
+
+CI:
+
+- full runtime-syntax on Harbor gate/contract commit `33092139022`: success
+- dedicated mission-long-native `33092170119`: success
+  - transient mission contract PASS
+  - recovery progression guard PASS
+  - Signal Relay regression contracts PASS
+  - fresh Harbor contract PASS
+
+Important: if the first real Harbor run fails and that failure influences a fix, Harbor loses pristine status. Do not tune model/dataset on it; create another fresh family later for pristine proof.
+
+## Immediate user action
+
+Keep Control Center running and one normal `http(s)` anchor tab such as `https://example.com` open.
+
+Windows CMD:
+
+```bat
+cd /d C:\Users\duong\Downloads\extension_agent
+git pull
+git rev-parse --short HEAD
+
+set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
+node control-center\script\offline_strategy_fresh_long_harbor_gate.js --model "%SIX%\strategy-approved-dataset-v03\baseline-v033\model.json"
+```
+
+Expected HEAD is this handoff commit.
+
+Desired fresh PASS:
+
+- `ok:true`
+- `result:PASS`
+- `gate:offline-strategy-fresh-long-harbor`
+- `gateVersion:0.1.0`
+- `evidenceClass:fresh-unseen-controlled-native`
+- `missionReasonCode:mission_satisfied`
+- exact actions/targets above
+- all 3 subgoals done
+- frozen model / privacy / recovery / progression / goal-check invariants true
 - `errors:[]`
 - `createdTabClosed:true`
 
-Interpretation:
+## Continuous-learning phase after fresh Harbor proof
 
-- long mission orchestration, real recovery, planned progression, transient text privacy, observe-after, semantic goal checking, and multi-subgoal execution are now proven together in a real Chrome regression run
-- because Signal Relay was repaired after its first failure, it is **not** pristine fresh-unseen evidence
-- stop optimizing Signal Relay now
-
-## Immediate next development — fresh long family
-
-Create a different family after this regression PASS. Requirements:
-
-1. not Cargo/Signal Relay/Google/Topic/Message relabel
-2. frozen v0.3.3; no fit/mutation
-3. multiple ordered subgoals
-4. use supported learned actions first (`click`, `typeText`, `submit`)
-5. at least one real recoverable delayed/no-effect transition
-6. preserve planned `typeText -> submit` progression under privacy-safe observation
-7. semantic goals after each subgoal
-8. typed payload transient and redacted
-9. exact action/target sequences required for PASS
-10. if this new family fails and influences fixes, retire it from pristine status and create another new family later
-
-Only after a pristine fresh long family PASS should broader multi-subgoal generalization be claimed.
-
-## Continuous-learning phase after fresh long runtime proof
-
-Target pipeline:
+If Harbor passes pristine, shift emphasis from plumbing to approved new user data:
 
 `new user interaction -> raw capture -> privacy/noise filter -> semantic episode candidate -> resolver -> human review/explicit digest approval -> approved dataset -> retrain -> fresh evaluation`
 
