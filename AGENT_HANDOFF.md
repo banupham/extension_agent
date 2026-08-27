@@ -28,9 +28,9 @@ Historical real-data result remains:
 - Strategy/WHAT: still in supervised teaching stage. Some verified semantic experience exists, but there is not yet enough diverse trusted Strategy data for a new general Strategy fit.
 - Overall: agent is maturing, but it is still being taught.
 
-## New provenance-learning milestone
+## Provenance-learning milestone
 
-The feature branch now records future episode-linked semantic action anchors so new demonstrations can be connected back to the correct episode even when old page identity linkage is unreliable.
+The feature branch records future episode-linked semantic action anchors so new demonstrations can be connected back to the correct episode even when old page identity linkage is unreliable.
 
 Commits:
 
@@ -42,24 +42,28 @@ Commits:
 
 GitHub Actions run `33061242955` completed successfully. The new `Strategy episode provenance contract` passed together with all existing semantic mission, behavior, ambiguity, target-backfill, and approval pipeline gates.
 
+## Review of first new teaching attempt
+
+User uploaded three review-export files after completing the requested three teaching tasks.
+
+Observed result:
+
+- only **2 unique episode IDs** are present;
+- two uploaded files are duplicate exports of `ep-1787825498018`;
+- the other unique episode is `ep-1787825857553`;
+- both unique episodes carry the same task instruction: `Một nhiệm vụ khác hẳn hai bài trên`;
+- therefore these exports are not suitable as three distinct Strategy teaching families because the intended task semantics are not explicitly recorded.
+
+Do not infer the missing task intent from browsing actions alone and do not promote these episodes to Strategy training.
+
 ## Immediate next action
 
-The code path is ready. The next step is to collect a **small new teaching batch** after reloading the updated Training Collector extension.
+Collect a replacement small teaching batch using concrete task instructions exactly as written:
 
-Goal of the batch: create at least 3 genuinely different semantic task families, not three paraphrases of the same task.
+1. `Trên Google, mở liên kết Gmail ở góc trên bên phải.`
+2. `Trên Google, nhập OpenAI vào ô Tìm kiếm rồi bấm Tìm trên Google.`
+3. `Trên http://127.0.0.1:8091/, bấm Play rồi Mute.`
 
-Recommended first batch:
+Export each episode separately immediately after completion. Before accepting the batch, verify that the three exported files contain three different `episodeId` values and that each `task.instruction` matches its concrete task.
 
-1. media control task;
-2. navigation / open-choice task;
-3. form / interface-control task.
-
-After the user records and exports the new episodes, run the normal review-pack/triage path, then run:
-
-```bat
-node training-collector\tools\backfill_strategy_episode_provenance.js --pack <new-review-pack.json> --raw training-collector\socket-data --out <new-target-evidence.json>
-```
-
-Success criterion for the new capture path: `provenanceAnchorCount > 0` and at least some previously ambiguous clicks produce `recoveredSemanticTargetCount > 0`.
-
-If the new batch proves this, continue through ambiguity resolution -> human approval -> Strategy dataset build. Once there are at least 3 distinct semantic split groups, fit the Strategy model using TRAIN only and keep validation/test held out.
+After a valid three-episode batch is available, create a new review pack, triage it, then run the episode-provenance backfill against `training-collector/socket-data`. Success criterion: `provenanceAnchorCount > 0` and at least some ambiguous clicks recover semantic targets. Then continue through ambiguity resolution -> explicit human approval -> Strategy dataset build. Fit Strategy only after at least 3 distinct semantic split groups exist; TRAIN only for fitting, validation/test held out.
