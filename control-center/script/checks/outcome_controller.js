@@ -45,11 +45,25 @@ function main() {
   assert.equal(unchanged.shouldReplan, true);
   assert.equal(unchanged.reasonCode, 'goal_not_yet_satisfied');
 
+  const optionalNoEffect = reduceOutcomeToControl({
+    outcome: outcome({
+      metadata: {
+        progressDelta: 0,
+        actionEffectStatus: 'no_effect',
+        actionEffectExpected: false,
+        actionEffectCodes: []
+      }
+    })
+  });
+  assert.equal(optionalNoEffect.status, 'continue');
+  assert.equal(optionalNoEffect.reasonCode, 'goal_not_yet_satisfied');
+
   const noEffect = reduceOutcomeToControl({
     outcome: outcome({
       metadata: {
         progressDelta: 0,
         actionEffectStatus: 'no_effect',
+        actionEffectExpected: true,
         actionEffectCodes: []
       }
     })
@@ -59,12 +73,14 @@ function main() {
   assert.equal(noEffect.shouldReplan, true);
   assert.equal(noEffect.reasonCode, 'action_no_observable_effect');
   assert.equal(noEffect.effectStatus, 'no_effect');
+  assert.equal(noEffect.effectExpected, true);
 
   const observedEffect = reduceOutcomeToControl({
     outcome: outcome({
       metadata: {
         progressDelta: 0,
         actionEffectStatus: 'effect_observed',
+        actionEffectExpected: true,
         actionEffectCodes: ['target_disappeared']
       }
     })
