@@ -12,7 +12,7 @@ Read this file before changing the repository.
 - Strategy chooses **WHAT**; Behavior chooses **HOW**.
 - No site/ref hardcode to force PASS.
 - Do not change split seed/ratios or move heldout into TRAIN to force PASS.
-- Do not recollect the six teaching tasks to force PASS.
+- Do not recollect/relabel the six teaching tasks to force PASS or manufacture fresh heldout proof.
 - No generic `failure => scroll`.
 - Do not persist selectors, coordinates, tab IDs, raw CDP, credentials, passwords, secrets, typed sensitive values, or private reasoning in Strategy/recovery/memory/training.
 - No literal trajectory replay.
@@ -25,7 +25,9 @@ Read this file before changing the repository.
 - Recovery/replan/semantic memory already exist.
 - Agent is maturing but is not fully autonomous.
 - Collector/resolver/approval/dataset readiness are not current blockers.
-- Current Strategy blocker is now **action selection stability across semantic target-grounding changes**.
+- v0.3.2 fixed the prior validation target-grounding failure exactly.
+- v0.3.3 now decouples **WHAT action selection** from **current-observation target ranking**, while retaining learned TRAIN lexical anchors and the v0.3.2 target-grounding policy.
+- Immediate next gate is the unchanged six-group v0.3.3 regression. This is regression evidence, not pristine unseen proof.
 
 ## Collector / teaching state — CLOSED
 
@@ -135,8 +137,8 @@ Topic Search:
 
 - no `focusedElementRef`
 - e1 and e3 both looked like available editable inputs
-- e1 had current-task similarity `0.2222`, TRAIN prototype-label similarity 0
-- e3 had current-task similarity 0, TRAIN prototype-label similarity 1
+- e1 current-task similarity `0.2222`, TRAIN prototype-label similarity 0
+- e3 current-task similarity 0, TRAIN prototype-label similarity 1
 - e3 won because TRAIN-local target label memory dominated current-task semantics
 
 Google Search:
@@ -168,16 +170,9 @@ Generic v0.3.2 behavior:
 - TRAIN target labels and learned tag/role traits are supporting evidence
 - no site/ref hardcode
 
-Repository CI before real rerun:
-
-- strategy-offline-baseline run `33076663823`: success
-- runtime-syntax run `33076663685`: success
-
-## v0.3.2 real six-group regression — FAIL, but validation target grounding FIXED
+## v0.3.2 real six-group regression — FAIL, but validation exact grounding PASS
 
 User ran v0.3.2 on the unchanged approved dataset.
-
-Overall: FAIL.
 
 Validation / Topic Search:
 
@@ -185,10 +180,9 @@ Validation / Topic Search:
 - actionTypeAccuracy 1
 - targetRefAccuracy 1
 - exactSemanticAccuracy 1
-- step 0 expected `typeText@e1`, predicted `typeText@e1`
-- step 1 expected `submit@e1`, predicted `submit@e1`
+- `typeText@e1 -> submit@e1` exactly correct
 
-This is the first full exact-semantic PASS for the prior Topic Search target-grounding failure. Preserve this fix.
+Preserve this target-grounding fix.
 
 Test / Google Search:
 
@@ -196,65 +190,130 @@ Test / Google Search:
 - actionTypeAccuracy 0
 - targetRefAccuracy 0
 - exactSemanticAccuracy 0
-- step 0 expected `typeText@e1`, predicted `click@e4`, score `0.4125`
-- step 1 evaluation history therefore begins with predicted `click`
-- step 1 expected `submit@e1`, predicted `click@e10`, score `0.2845`
-- both predictions report `historyMatched:true`
+- step 0 expected `typeText@e1`, predicted `click@e4`
+- step 1 inherited predicted click history and predicted `click@e10` instead of `submit@e1`
 
-Important interpretation:
+This exposed an action-selection regression rather than a target-grounding failure.
 
-- target-grounding work fixed validation exactly
-- v0.3.2 introduced/exposed an action-selection regression on the Google test
-- do **not** undo the target fix or alter split policy
-- current provider action scoring mixes task/action evidence with `semanticTargetScore`; changing target-grounding semantics can therefore change action ranking
-- this coupling is a plausible cause, but it is **not yet confirmed** from the real action candidate scores
-- do not change action weights blindly
+## Real action-selection diagnostic — PASS and decisive
 
-## Action-selection diagnostic — READY, CI PASS
+Privacy-safe action diagnostic was run on the same unchanged dataset at HEAD `c552c57`.
 
-New privacy-safe tool:
+Google test step 0 task features:
 
-`training-collector/tools/diagnose_strategy_action_selection.js`
+- `textEntryIntent:true`
+- `submitIntent:true`
+- `enterIntent:false`
+- `clickIntent:true`
 
-Commits:
+History-eligible candidate comparison:
 
-- `24ed4361c0aa0c5f48077bf61a88ada7af4d921d` — action-selection diagnostic
-- `4e95a3aace50f78a079ee228b5496b88797a71bd` — diagnostic privacy contract
-- `00ebc762cfb47e91596f66b58d41f4bc4b5c9fca` — dedicated CI gate
+`click`:
 
-CI:
+- total score `0.4125`
+- instruction similarity `0.166666...`
+- learned target-label similarity `0`
+- task feature score `0.444444...`
+- semantic target score `0.55`
+- eligibleTargetCount `72`
 
-- strategy-action-selection-diagnostic run `33077622407`: completed success
+`typeText`:
 
-Diagnostic output intentionally omits raw instructions, raw labels, typed values, selectors, coordinates, tab IDs, and raw CDP.
+- total score `0.396644...`
+- instruction similarity `0.235294...`
+- learned target-label similarity `0`
+- task feature score `0.666666...`
+- semantic target score `0.195454...`
+- eligibleTargetCount `3`
 
-For each validation/test step it reports:
+Conclusion confirmed by real evidence:
 
-- expected/predicted action type
-- prior predicted action types
-- current task semantic feature booleans
-- history/composition match metadata
-- per action candidate:
-  - type
-  - total score
-  - instruction similarity
-  - learned target-label similarity
-  - task feature score
-  - semantic target score
-  - eligible target count
-  - learned task-feature rates
+- `typeText` had stronger task-level evidence
+- `click` won only because its current-observation `semanticTargetScore` was much higher
+- current target-ranking quality was improperly influencing **WHAT action selection**
+- the wrong first click then constrained step 1 through autoregressive predicted history
 
-Purpose: confirm whether `click` beats `typeText` because target compatibility is leaking too strongly into **action choice**, or whether another scoring component is responsible.
+This justified architectural decoupling rather than another target-weight tweak.
+
+## v0.3.3 — WHAT selection decoupled from current target ranking
+
+Provider/fitter/test commits:
+
+- `4db6fd71f88de78943a52dd886146a2aacdb0208` — initial action/target decoupling
+- `c72c8683a6bfc05348436f4fae9730735ec34e48` — generic action/target decoupling contract
+- `82225a43597ecf459b03135585a6ce0cd136e78b` — dedicated decoupling CI gate
+- `07a99b51889a48598a398bc4d892c70a94d6546a` — block ungrounded text actions explicitly
+- `14a75c87acc749b318198858b4d5083cdd11eaa3` — refined action score preserving TRAIN lexical anchors
+- `ccc88d94377eb4b7e772eb8ff3191973f97e5752` — model version `0.3.3` + model metadata
+- `2cb60b28eddb0aea271e2ee3be477c420cd4463d` — offline contract aligned to v0.3.3
+- `a542737d3e4152069a73d35d4fda3988d87e1c57` — history contract aligned to v0.3.3
+
+Model metadata:
+
+- `actionSelectionPolicy: task-history-decoupled-from-current-target-ranking`
+- `actionSelectionUsesCurrentTargetRanking:false`
+- `targetGroundingPolicy: current-task-dominant-with-action-affordance`
+
+### v0.3.3 action score
+
+Current-observation `semanticTargetScore` is still computed for diagnostics/grounding evidence but is **not** used to rank WHAT action.
+
+Action score preserves the prior TRAIN-level evidence ratio and removes only the current-target term:
+
+```text
+score = (
+  0.12 * instructionSimilarity +
+  0.08 * learned TRAIN target-label similarity +
+  0.45 * learned task-feature score
+) / 0.65
+```
+
+Important distinction:
+
+- learned TRAIN target labels remain a small static lexical anchor so semantic action categories such as play/mute are still distinguishable
+- current observation target landscape cannot flip WHAT action
+- after WHAT is selected, target grounding uses the existing v0.3.2 semantic policy
+- if a selected text action has no valid editable target, provider blocks with `offline_baseline_target_not_found` and `reobserve`; it does not act with null target and does not fall through to a different action
+
+### Contract findings during implementation
+
+The new contract deliberately caught two issues before user rerun:
+
+1. Initial provider could return `status:act` with `targetRef:null` for `typeText` because the generic action contract did not itself require a target for that action. Provider now explicitly blocks ungrounded text actions.
+2. Removing all learned target-label evidence from action scoring caused `Play Media` to regress to `mute`, because current task-feature extraction has no media-specific feature. The refined policy therefore retains TRAIN lexical label anchors while still removing current-observation target ranking from WHAT selection.
+
+These are generic architecture guards, not six-task/site hardcodes.
+
+### CI — PASS
+
+On provider architecture HEAD `14a75c87acc749b318198858b4d5083cdd11eaa3`:
+
+- strategy-action-target-decoupling run `33079737881`: success
+- strategy-action-selection-diagnostic run `33079737922`: success
+- strategy-offline-baseline run `33079737926`: success
+- runtime-syntax run `33079737904`: success
+
+With v0.3.3 fitter/model metadata:
+
+- dedicated action-target decoupling run `33080054925`: success
+- action-selection diagnostic run `33080054901`: success
+
+After all v0.3.3 contract expectations were aligned on HEAD `a542737d3e4152069a73d35d4fda3988d87e1c57`:
+
+- strategy-offline-baseline run `33080180912`: success
+- runtime-syntax run `33080180866`: success
 
 ## Evaluation methodology
 
 Topic Search and Google Search were originally legitimate heldout records, but their failures have now influenced generic redesigns. Repeated evaluation is therefore regression testing, not pristine unseen proof.
 
-After regression passes, use a fresh unseen family/native mission before claiming broader Strategy generalization.
+If v0.3.3 regression passes, use a **fresh unseen controlled/native family or mission** before claiming broader Strategy generalization.
 
-## Immediate next step — action diagnostic only
+Do not recollect/relabel the six to manufacture a new heldout claim.
 
-Do **not** rerun collector, resolver, approval, dataset builder, or baseline fit yet.
+## Immediate next step — v0.3.3 unchanged six-group regression
+
+Do **not** rerun collector, resolver, approval, or dataset builder.
 
 Windows CMD:
 
@@ -265,16 +324,28 @@ git rev-parse --short HEAD
 
 set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
 
-node training-collector\tools\diagnose_strategy_action_selection.js "%SIX%\strategy-approved-dataset-v03\dataset"
+node training-collector\tools\fit_strategy_offline_baseline.js "%SIX%\strategy-approved-dataset-v03\dataset" --output "%SIX%\strategy-approved-dataset-v03\baseline-v033"
+
+type "%SIX%\strategy-approved-dataset-v03\baseline-v033\evaluation.json"
 ```
 
-When output arrives:
+Desired regression target, without forcing it:
 
-1. compare `click` vs `typeText` candidate score components at Google test step 0
-2. compare predicted-history candidates at step 1
-3. if target score is causing action flip, separate action-type selection from target grounding generically rather than hardcoding Google
-4. preserve v0.3.2 validation grounding PASS
-5. add generic positive/negative contract and require CI before rerunning regression
-6. never move heldout or recollect to force PASS
+- modelVersion `0.3.3`
+- validation actionTypeAccuracy 1, targetRefAccuracy 1, exactSemanticAccuracy 1
+- test actionTypeAccuracy 1, targetRefAccuracy 1, exactSemanticAccuracy 1
+
+If PASS:
+
+1. record exact regression PASS in this handoff
+2. state explicitly that it is regression evidence, not fresh-unseen proof
+3. next gate is a fresh unseen controlled/native family/mission
+4. only after fresh unseen PASS inspect/integrate learned Strategy model loading beside learned Behavior for native long-mission validation
+
+If FAIL:
+
+1. inspect exact remaining action/target details
+2. improve generic model only with evidence and contracts
+3. do not alter split policy, weaken exact evaluation, or recollect the six
 
 Never promote to `main` without explicit user approval after verified PASS.
