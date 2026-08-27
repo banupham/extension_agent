@@ -6,7 +6,7 @@ const AGENT_ACTION_CONTRACT_VERSION = CONTRACT.contractVersion;
 const ACTION_TYPES = new Set(Object.values(CONTRACT.actionFamilies).flat());
 const TARGET_REQUIRED = new Set([
   'click', 'doubleClick', 'hover', 'moveTo', 'drag',
-  'scrollIntoView', 'focus', 'replaceText', 'clear',
+  'scrollIntoView', 'focus', 'typeText', 'replaceText', 'clear',
   'selectOption', 'setChecked', 'toggle', 'submit',
   'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek',
   'changePlaybackRate', 'hoverAndObserve', 'dismiss'
@@ -20,8 +20,8 @@ const EXECUTION_INTERNAL_FIELDS = [
   'hwnd'
 ];
 
-function isPlainObject(value) {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
+function isPlainObject(action) {
+  return !!action && typeof action === 'object' && !Array.isArray(action);
 }
 
 function validateAgentAction(action) {
@@ -96,7 +96,7 @@ function cdpPrimitiveFor(type) {
     scrollHorizontal: ['Input.dispatchMouseEvent(mouseWheel)'],
     scrollIntoView: ['Input.dispatchMouseEvent(mouseWheel)'],
     focus: ['Runtime.callFunctionOn|DOM.focus'],
-    typeText: ['Input.dispatchKeyEvent|Input.insertText'],
+    typeText: ['Input.dispatchMouseEvent|Input.insertText'],
     replaceText: ['Input.dispatchMouseEvent|Input.dispatchKeyEvent|Input.insertText'],
     clear: ['Input.dispatchMouseEvent|Input.dispatchKeyEvent'],
     pressKey: ['Input.dispatchKeyEvent'],
