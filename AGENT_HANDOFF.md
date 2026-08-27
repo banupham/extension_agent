@@ -15,15 +15,18 @@ Read this file before changing the repository.
 - No literal trajectory replay.
 - No generic `failure => scroll` behavior.
 - Human demonstrations never auto-promote; exact digest confirmation is required before approval annotations are created.
+- Do not change split policy or move heldout groups into TRAIN to force evaluation PASS.
 
 ## Agent maturity
 
 - Behavior/HOW: learned from real human demonstrations and runtime-loadable.
-- Strategy/WHAT: still supervised.
+- Strategy/WHAT: supervised and now has its first human-approved, leakage-safe six-group dataset.
 - Agent is maturing but not fully autonomous.
 - Recovery/replan/semantic memory already exist.
-- Six-group Strategy teaching batch is now human-approved, dataset-built, leakage-safe, and `baselineReady:true`.
-- Next gate: fit the first offline Strategy baseline from TRAIN only and evaluate validation/test heldout.
+- Dataset gate is `baselineReady:true`.
+- First real offline Strategy baseline v0.2.0 failed heldout evaluation; this exposed genuine model weaknesses rather than a dataset/collector problem.
+- Strategy baseline v0.3.0 has now been implemented generically and its repository contracts + runtime syntax CI pass.
+- Immediate next gate: rerun the six-group dataset as a **regression check** with v0.3.0. Do not call this rerun pristine heldout proof because the prior validation/test failures have already been observed and influenced the model redesign.
 
 ## Collector state
 
@@ -63,7 +66,7 @@ Six distinct semantic split groups:
 5. `semantic-sequence:click:teaching-confirm`
 6. `semantic-sequence:typeText:message-composer>submit:message-composer`
 
-A split group is a leakage boundary for one semantic family of examples. All records from one family must remain in one assigned split; train/validation/test must not contain the same split group. This prevents memorized family-specific evidence from appearing in heldout evaluation.
+A split group is a leakage boundary for one semantic family. All records from one family remain in exactly one assigned split; the same split group must not appear in train/validation/test simultaneously.
 
 ## Resolver milestone — PASS
 
@@ -104,8 +107,6 @@ Do not ask the user to reconfirm this digest.
 
 ## Approved annotations + six-group dataset — PASS
 
-User ran the approval applicator on HEAD `cac7dcb`.
-
 Approval receipt:
 
 - result: PASS
@@ -117,7 +118,7 @@ Approval receipt:
 - blockedEpisodeCount: 0
 - explicitHumanConfirmationVerified: true
 
-Dataset builder:
+Dataset builder/readiness:
 
 - result: PASS
 - approvedDatasetBuilderVersion: `0.1.0`
@@ -127,14 +128,6 @@ Dataset builder:
 - splitCounts: train=4, validation=1, test=1
 - baselineReady: true
 - baselineReadinessErrors: []
-
-Readiness gate:
-
-- result: PASS
-- ready: true
-- trainRecords: 4
-- validationRecords: 1
-- testRecords: 1
 - TRAIN action coverage: click=3, typeText=1, submit=1
 - validation action coverage: typeText=1, submit=1
 - test action coverage: typeText=1, submit=1
@@ -150,22 +143,96 @@ Actual deterministic split assignment with seed `strategy-episode-v0`:
 - validation: `semantic-sequence:typeText:topic-search>submit:topic-search`
 - test: `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
 
-Do not alter seed, ratios, split policy, or move heldout groups into TRAIN to force future evaluation PASS.
+Important interpretation: `baselineReady:true` means data and leakage boundaries are valid for fitting. It does **not** establish broad Strategy generalization; only four records are in TRAIN and the semantic action space remains small.
 
-Important interpretation: `baselineReady:true` means the dataset and leakage boundaries are technically valid for fitting the first offline Strategy baseline. It does **not** mean the agent is broadly generalizable yet; only four records are in TRAIN and the current semantic action space is still very small.
+## First real offline Strategy baseline v0.2.0 — genuine FAIL
 
-## Immediate next step — offline Strategy fit + heldout eval
+User ran the train-only fitter on the six-group dataset at HEAD `f0507cc`.
 
-Use existing tool:
+Fit policy was correct:
 
-`training-collector/tools/fit_strategy_offline_baseline.js`
+- trainRecords: 4
+- validationRecords: 1
+- testRecords: 1
+- validation/test were not used for fit
 
-It enforces:
+Observed result:
 
-- readiness must already PASS
-- fit source = TRAIN only
-- validation/test are not used for fit
-- heldout validation/test evaluation occurs after fit
+- overall: FAIL
+- validation total=2, actionTypeAccuracy=1.0, exactSemanticAccuracy=0.0
+- test total=2, actionTypeAccuracy=0.5, exactSemanticAccuracy=0.0
+
+Failure details:
+
+- Topic Search validation: correctly predicted `typeText -> submit`, but selected the wrong semantic target for both steps (`e3` instead of expected `e1`).
+- Google Search test: first step predicted `click` instead of `typeText`; submit type was correct on step two; both target selections were wrong.
+
+This is not a collector or split failure. It demonstrated that baseline v0.2.0 was too weak to transfer from Message Composer training to unseen editable/search-like targets.
+
+## v0.2.0 diagnosis
+
+Generic model limitations identified from repository code and the real FAIL:
+
+1. fitter tokenization used ASCII-only `[a-z0-9]`, degrading Vietnamese task semantics
+2. action prototype scoring relied mostly on instruction/target-label lexical overlap
+3. target selection relied on target-label similarity and ignored semantic role/tag/editable traits
+4. offline fitter and runtime provider had diverged decision logic
+5. evaluation history previously used expected action types rather than model predictions, making sequential evaluation partially teacher-forced
+
+No site-specific hardcode was introduced to address this.
+
+## Strategy baseline v0.3.0 — implemented generically, CI PASS
+
+Commits:
+
+- `42fa9d70b2449fdbadbca0a7eb8493bb24c07e1d` — `feat(strategy): learn semantic target traits at runtime`
+- `bfb274d199568d605af47c05a5702e3f8c1ef18f` — `feat(strategy): fit semantic target-aware baseline v0.3`
+- `478d57511fa82a5992fe62721494c2a2c37481bd` — `test(strategy): prove unseen editable target transfer`
+- `07cb9f362f78d1b5a6683c6bf2ef3c0b0cbe18fa` — `test(strategy): align history baseline with v0.3 model`
+
+Model version: `0.3.0`.
+
+Generic improvements:
+
+- Unicode/camel-aware semantic tokenization, including Vietnamese text
+- task-level semantic intent features for text entry / submit / Enter / click
+- learned target semantic traits from TRAIN: role, tag, editable state plus labels
+- target selection scores semantic compatibility rather than label overlap alone
+- learned local target-continuity relation, allowing a later semantic action such as `submit` to remain on the same current-observation target when TRAIN evidence supports it
+- target refs are transient observation references and are **not persisted in the learned model**
+- fitter and runtime provider use the same prototype/target-selection engine
+- heldout evaluation history now advances from the model's own predicted actions/targets rather than expected labels
+- no selector/coordinate/tabId/raw-CDP persistence
+- no website/task-name hardcode
+- no heldout split moved into TRAIN
+
+Synthetic generic transfer contract proves:
+
+- model trains on one editable form family
+- prediction transfers `typeText -> submit` to different unseen field labels/refs
+- distractor button/link targets are rejected in favor of semantic editable target
+- second action reuses the predicted current target when learned continuity supports it
+- model serialization contains no heldout IDs/refs, no `targetRef`, selector, rawCdp, or tabId
+
+CI on HEAD `07cb9f362f78d1b5a6683c6bf2ef3c0b0cbe18fa`:
+
+- strategy-offline-baseline run `33073634874`: completed success
+- runtime-syntax run `33073634892`: completed success
+
+## Evaluation methodology after observing v0.2.0 heldout failures
+
+The Topic Search validation record and Google Search test record were originally held out correctly and revealed the v0.2.0 weaknesses. Their failure details have now been inspected and used to motivate a **generic** model redesign.
+
+Therefore:
+
+- rerunning these same two records with v0.3.0 is useful and required as a regression check
+- a PASS on this rerun must **not** be described as pristine final unseen heldout generalization proof
+- after regression PASS, obtain a fresh unseen controlled/native mission or fresh evaluation family for the stronger generalization claim
+- do not recollect or relabel the existing six merely to create an artificial new heldout claim
+
+## Immediate next step — v0.3.0 six-group regression check
+
+Do not rerun collector, resolver, approval, or dataset builder.
 
 Windows CMD after pulling latest handoff commit:
 
@@ -176,20 +243,20 @@ git rev-parse --short HEAD
 
 set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
 
-node training-collector\tools\fit_strategy_offline_baseline.js "%SIX%\strategy-approved-dataset-v03\dataset" --output "%SIX%\strategy-approved-dataset-v03\baseline-v01"
+node training-collector\tools\fit_strategy_offline_baseline.js "%SIX%\strategy-approved-dataset-v03\dataset" --output "%SIX%\strategy-approved-dataset-v03\baseline-v03"
 
-type "%SIX%\strategy-approved-dataset-v03\baseline-v01\evaluation.json"
+type "%SIX%\strategy-approved-dataset-v03\baseline-v03\evaluation.json"
 ```
 
-Do not proceed to runtime integration unless heldout evaluation passes.
+Desired regression target, without forcing it:
 
-If offline fit + heldout evaluation PASS, next steps are:
+- modelVersion: `0.3.0`
+- result: PASS
+- validation total=2, actionTypeAccuracy=1, exactSemanticAccuracy=1
+- test total=2, actionTypeAccuracy=1, exactSemanticAccuracy=1
 
-1. load learned Strategy beside learned Behavior at runtime
-2. native long-mission test
-3. multi-subgoal
-4. replan
-5. recovery
-6. semantic memory
+If this regression still fails, diagnose the actual output and improve the generic Strategy model; do not change split policy or recollect the six tasks.
+
+If regression passes, the next gate is a fresh unseen proof before claiming broad generalization, followed by learned Strategy + learned Behavior runtime integration, native long mission, multi-subgoal, replan, recovery, and semantic memory validation.
 
 Never promote to `main` without explicit user approval after verified PASS.
