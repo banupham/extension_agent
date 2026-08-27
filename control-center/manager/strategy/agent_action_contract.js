@@ -62,7 +62,7 @@ function validateAgentAction(action) {
 }
 
 function behaviorFamilyFor(type) {
-  if (['click', 'doubleClick', 'toggle', 'submit', 'play', 'pause', 'mute', 'unmute', 'dismiss'].includes(type)) return 'pointer-click';
+  if (['click', 'doubleClick', 'toggle', 'play', 'pause', 'mute', 'unmute', 'dismiss'].includes(type)) return 'pointer-click';
   if (['hover', 'hoverAndObserve', 'moveTo'].includes(type)) return 'pointer-hover';
   if (type === 'drag' || ['setVolume', 'seek'].includes(type)) return 'pointer-drag';
   if (type === 'scrollVertical') return 'scroll-vertical';
@@ -71,7 +71,7 @@ function behaviorFamilyFor(type) {
   if (['typeText', 'replaceText', 'clear'].includes(type)) return 'keyboard-text';
   if (['pressKey', 'keyCombo'].includes(type)) return 'keyboard-key';
   if (type === 'focus') return 'focus-acquisition';
-  if (['selectOption', 'setChecked'].includes(type)) return 'form-control';
+  if (['selectOption', 'setChecked', 'submit'].includes(type)) return 'form-control';
   if (type === 'changePlaybackRate') return 'media-control';
   if (['waitAndObserve'].includes(type)) return 'observation-wait';
   if (['navigate', 'back', 'forward', 'reload', 'switchTab', 'openNewTab', 'closeTab'].includes(type)) return 'navigation';
