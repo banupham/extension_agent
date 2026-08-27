@@ -76,7 +76,7 @@ const runtime = {
     rng: () => 0.5,
     settleSleep: async () => {}
   });
-  assert.strictEqual(result.bridgeVersion, '0.2.1');
+  assert.strictEqual(result.bridgeVersion, '0.3.0');
   assert.strictEqual(brainSawObservationId, 'obs-1');
   assert.strictEqual(result.beforeObservationId, 'obs-1');
   assert.strictEqual(result.afterObservationId, 'obs-7');
@@ -97,6 +97,7 @@ const runtime = {
   assert.strictEqual(result.invariant.actionExecuted, true);
   assert.strictEqual(result.invariant.reObservedAfterExecution, true);
   assert.strictEqual(result.invariant.selectorUsedByStrategy, false);
+  assert.strictEqual(result.invariant.transientPayloadRedacted, true);
   assert.strictEqual(observeCount, 7);
 
   executed = null;
@@ -110,6 +111,7 @@ const runtime = {
   assert.strictEqual(terminal.execution, null);
   assert.strictEqual(terminal.postActionObservation, null);
   assert.strictEqual(terminal.invariant.actionExecuted, false);
+  assert.strictEqual(terminal.invariant.transientPayloadRedacted, true);
   assert.strictEqual(observeCount, beforeTerminalCount + 1);
 
   await assert.rejects(() => runOneAction({
