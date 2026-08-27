@@ -16,6 +16,7 @@ on:
       - 'control-center/manager/strategy/offline_baseline_provider.js'
       - 'control-center/manager/strategy/self_experience_memory.js'
       - 'control-center/manager/strategy/self_exploration_provider.js'
+      - 'control-center/manager/strategy/recovery_policy_memory.js'
       - 'control-center/manager/strategy/index.js'
       - 'control-center/manager/goal/semantic_effect_evaluator.js'
       - 'control-center/manager/goal/outcome_controller.js'
@@ -35,6 +36,7 @@ on:
       - 'control-center/script/checks/one_action_semantic_settle.js'
       - 'control-center/script/checks/semantic_action_effect.js'
       - 'control-center/script/checks/adaptive_outcome_feedback.js'
+      - 'control-center/script/checks/recovery_policy_learning.js'
       - 'control-center/script/checks/outcome_controller.js'
       - 'control-center/script/checks/offline_strategy_provider.js'
       - 'control-center/script/checks/offline_strategy_history_provider.js'
@@ -71,6 +73,7 @@ jobs:
           node --check control-center/manager/strategy/offline_baseline_provider.js
           node --check control-center/manager/strategy/self_experience_memory.js
           node --check control-center/manager/strategy/self_exploration_provider.js
+          node --check control-center/manager/strategy/recovery_policy_memory.js
           node --check control-center/manager/goal/semantic_effect_evaluator.js
           node --check control-center/manager/goal/outcome_controller.js
           node --check control-center/manager/agent/one_action_bridge.js
@@ -80,6 +83,7 @@ jobs:
           node --check control-center/script/checks/one_action_semantic_settle.js
           node --check control-center/script/checks/semantic_action_effect.js
           node --check control-center/script/checks/adaptive_outcome_feedback.js
+          node --check control-center/script/checks/recovery_policy_learning.js
           node --check control-center/script/checks/outcome_controller.js
           node --check control-center/script/checks/offline_strategy_provider.js
           node --check control-center/script/checks/offline_strategy_history_provider.js
@@ -110,6 +114,8 @@ jobs:
         run: node control-center/script/checks/outcome_controller.js
       - name: Run adaptive outcome feedback contract
         run: node control-center/script/checks/adaptive_outcome_feedback.js
+      - name: Run learned recovery policy contract
+        run: node control-center/script/checks/recovery_policy_learning.js
       - name: Run offline Strategy baseline contract
         run: node training-collector/tests/strategy_offline_baseline_contract.js
       - name: Run history-aware Strategy baseline contract
