@@ -146,24 +146,40 @@ function compositionalChoice(model, task, history = []) {
 }
 
 function choosePrototype(model, task, history = []) {
-  const composition = compositionalChoice(model, task, history);
-  if (composition) return composition;
-
   const priorActionTypes = historyActionTypes(history);
   const historyMatches = (model.historyPrototypes || []).filter(proto =>
     sameActionHistory(proto.priorActionTypes, priorActionTypes)
   );
-  const useHistory = historyMatches.length > 0;
-  const candidates = useHistory ? historyMatches : model.actionPrototypes;
-  const scored = scorePrototypes(candidates, task);
+  const historyScored = scorePrototypes(historyMatches, task);
+  const historyChosen = historyScored[0] || null;
+  const composition = compositionalChoice(model, task, history);
+
+  if (composition && (!historyChosen || historyChosen.proto.type !== composition.proto.type)) {
+    return composition;
+  }
+
+  if (historyChosen) {
+    return {
+      ...historyChosen,
+      historyMatched: true,
+      compositionMatched: false,
+      compositionSequence: composition?.compositionSequence || [],
+      priorActionTypes,
+      prototypeSource: 'historyPrototypes'
+    };
+  }
+
+  if (composition) return composition;
+
+  const scored = scorePrototypes(model.actionPrototypes, task);
   const chosen = scored[0] || null;
   return chosen ? {
     ...chosen,
-    historyMatched: useHistory,
+    historyMatched: false,
     compositionMatched: false,
     compositionSequence: [],
     priorActionTypes,
-    prototypeSource: useHistory ? 'historyPrototypes' : 'actionPrototypes'
+    prototypeSource: 'actionPrototypes'
   } : null;
 }
 
