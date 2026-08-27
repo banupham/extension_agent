@@ -10,6 +10,7 @@ const {
   TARGET_LABEL,
   EXPECTED_ACTION_TYPES,
   EXPECTED_TARGET_LABELS,
+  SERVER_CLOSE_TIMEOUT_MS,
   labHtml,
   createLabServer,
   listen,
@@ -81,7 +82,8 @@ function strategyMeta() {
 }
 
 async function main() {
-  assert.equal(GATE_VERSION, '0.1.0');
+  assert.equal(GATE_VERSION, '0.1.1');
+  assert.equal(SERVER_CLOSE_TIMEOUT_MS, 1500);
   assert.deepStrictEqual([...EXPECTED_ACTION_TYPES], ['typeText', 'submit']);
   assert.deepStrictEqual([...EXPECTED_TARGET_LABELS], [TARGET_LABEL, TARGET_LABEL]);
 
@@ -147,6 +149,22 @@ async function main() {
   const ready = await waitForLab(fakeClient, 9, 'http://127.0.0.1:9999/', 100);
   assert.equal(ready.title, INITIAL_TITLE);
 
+  let forcedCloseCalls = 0;
+  const hangingServer = {
+    listening: true,
+    close() {},
+    closeIdleConnections() {},
+    closeAllConnections() { forcedCloseCalls += 1; },
+    __freshNativeSockets: new Set()
+  };
+  const closeStarted = Date.now();
+  const hangingClose = await closeServer(hangingServer, 60);
+  const closeElapsed = Date.now() - closeStarted;
+  assert.equal(hangingClose.closed, true);
+  assert.equal(hangingClose.forced, true);
+  assert.equal(forcedCloseCalls, 1);
+  assert.ok(closeElapsed >= 50 && closeElapsed < 1000, `bounded cleanup should resolve promptly, elapsed=${closeElapsed}`);
+
   const server = createLabServer();
   try {
     const port = await listen(server);
@@ -156,7 +174,8 @@ async function main() {
     assert.ok(body.includes(TARGET_LABEL));
     assert.ok(body.includes(PASS_TITLE));
   } finally {
-    await closeServer(server);
+    const closeResult = await closeServer(server);
+    assert.equal(closeResult.closed, true);
   }
 
   console.log('Strategy fresh native text gate contract: PASS');
