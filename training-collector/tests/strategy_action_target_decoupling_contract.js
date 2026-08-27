@@ -9,6 +9,7 @@ const {
   historyActionTypes,
   scorePrototypes,
   choosePrototype,
+  chooseTargetRef,
   createOfflineBaselineProvider
 } = require('../../control-center/manager/strategy/offline_baseline_provider.js');
 
@@ -120,6 +121,40 @@ assert.strictEqual(stableClick.score, adversarialClick.score);
 assert.ok(adversarialClick.semanticTargetScore > adversarialType.semanticTargetScore);
 assert.ok(adversarialType.featureScore > adversarialClick.featureScore);
 assert.ok(adversarialType.score > adversarialClick.score);
+
+// Once WHAT=click has been selected, the current task must dominate target grounding.
+// A familiar TRAIN target label is only a weak prior and may not override a different
+// actionable target named by the current task. This is a generic target-grounding rule,
+// not a site- or ref-specific exception.
+const clickProto = model.actionPrototypes.find(proto => proto.type === 'click');
+assert.ok(clickProto);
+const currentTaskTargetObservation = {
+  observationId: 'current-task-target-dominance',
+  interactiveElements: [
+    { ref: 'familiar-train-target', label: 'Workspace', role: 'button', tag: 'button', editable: false, visible: true, enabled: true },
+    { ref: 'current-task-target', label: 'Reports', role: 'link', tag: 'a', editable: false, visible: true, enabled: true }
+  ],
+  privacy: { redacted: true }
+};
+assert.strictEqual(
+  chooseTargetRef(clickProto, { instruction: 'Open Reports' }, currentTaskTargetObservation, []),
+  'current-task-target'
+);
+
+// If the current task names a target only partially, semantic overlap still beats an
+// unrelated high-affordance control.
+const partialTaskTargetObservation = {
+  observationId: 'partial-current-task-target-dominance',
+  interactiveElements: [
+    { ref: 'unrelated-control', label: 'Toggle navigation', role: 'button', tag: 'button', editable: false, visible: true, enabled: true },
+    { ref: 'semantic-link', label: 'Report elements', role: 'link', tag: 'a', editable: false, visible: true, enabled: true }
+  ],
+  privacy: { redacted: true }
+};
+assert.strictEqual(
+  chooseTargetRef(clickProto, { instruction: 'Open the Report elements section' }, partialTaskTargetObservation, []),
+  'semantic-link'
+);
 
 // If WHAT=typeText is selected but no editable target exists, do not silently fall through
 // to a different action. Grounding failure must block and request a fresh observation.

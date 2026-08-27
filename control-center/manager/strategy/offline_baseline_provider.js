@@ -253,8 +253,11 @@ function elementTargetCompatibility(proto, task, element) {
   const score = textTarget
     ? (0.80 * taskLabelScore) + (0.10 * traitScore) + (0.10 * prototypeLabelScore)
     : hasTraits
-      ? (0.45 * taskLabelScore) + (0.20 * prototypeLabelScore) + (0.35 * traitScore)
-      : (0.75 * prototypeLabelScore) + (0.25 * taskLabelScore);
+      // Target grounding is current-task dominant. Learned target labels are only a weak
+      // prior and must not pull a click toward a familiar TRAIN target when the current
+      // task names a different actionable target. Affordance traits remain secondary.
+      ? (0.70 * taskLabelScore) + (0.05 * prototypeLabelScore) + (0.25 * traitScore)
+      : (0.80 * taskLabelScore) + (0.20 * prototypeLabelScore);
   return { score, prototypeLabelScore, taskLabelScore, traitScore, affordanceEligible: true };
 }
 

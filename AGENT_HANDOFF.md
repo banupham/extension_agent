@@ -524,3 +524,85 @@ Local PASS:
 - cross-document settlement contract
 
 Real Chrome reload and browser capture verification are still required. This fix does not retroactively mutate the rejected 0.3.4 heldout record or promote the rejected model.
+
+## Training Collector 0.8.3 real Chrome label verification — PASS / replacement approval pending
+
+Real Chrome verification for the generic accessible-label fix is now complete.
+
+Verification-only episode:
+
+- `ep-1787857506489` — `Mở tài liệu HTML trên MDN`
+- clicked target `e8`
+- captured actionable label `HTML`
+- final outcome `success`, `strategyReady:true`
+- privacy boundary remains clean
+
+Two replacement MDN demonstrations were then recollected with Training Collector `0.8.3`:
+
+- `ep-1787857678957` — `Mở tài liệu CSS trên MDN`
+  - semantic WHAT: `click@CSS`
+  - one incidental focus transition excluded as HOW/noise
+- `ep-1787857806791` — `Mở tài liệu HTML rồi mở phần HTML elements`
+  - observed browser labels: `HTML` then localized `éléments HTML`
+  - curated semantic WHAT: `click@HTML -> click@HTML elements`
+  - 34 focus/scroll capture transitions excluded as HOW/noise
+
+Both replacement reviews are successful, Strategy-ready and privacy-safe. The second localized browser label is intentionally normalized only at the semantic review layer to `HTML elements`; the raw browser observation remains unchanged. This preserves the existing semantic split group `semantic-sequence:click:html>click:html-elements` without site/ref hardcoding or trajectory replay.
+
+A new review-only two-episode replacement approval bundle was prepared. No approval, dataset build, or fit has been applied yet.
+
+- candidate episodes: 2
+- blocked episodes: 0
+- semantic steps: 3
+- excluded HOW/noise: 35
+- digest integrity: verified
+- digest: `6b2b40b24d3ffdd93e8ab3f86281e3a85634cb97f0cc630c2ed6c19d1e8e5ad7`
+- `autoTrainEligible:false`
+
+STOP at this digest until exact human confirmation is received.
+
+After exact approval, construct the corrected incremental candidate from frozen v0.3.3 plus the six previously approved non-MDN incremental episodes and these two replacement MDN episodes. Do not reuse the superseded collector-0.8.2 MDN episodes `ep-1787851361981` and `ep-1787855844011` in the corrected dataset. Because the semantic split groups are preserved and assignment is hash-stable, CSS remains TRAIN and HTML->HTML-elements remains VALIDATION without reshuffling historical heldout evidence.
+
+## Replacement MDN approval applied / Strategy 0.3.5 candidate — HELDOUT REGRESSION PASS AFTER GENERIC TARGET FIX
+
+The user supplied the exact required confirmation for replacement digest:
+
+`YES-I-REVIEWED-STRATEGY-APPROVAL-DIGEST 6b2b40b24d3ffdd93e8ab3f86281e3a85634cb97f0cc630c2ed6c19d1e8e5ad7`
+
+The uploaded workspace snapshot did not persist the exact two-episode approval-candidate JSON that originally produced this digest. The semantic approval was reconstructed only from the same two successful privacy-safe reviews plus the already-recorded handoff semantics/counts: `click@CSS` and `click@HTML -> click@HTML elements`, 3 Strategy steps, 35 HOW/noise transitions excluded. The approved digest remains the human trust proof; no additional episode or semantic step was added during reconstruction.
+
+Corrected incremental dataset was rebuilt from the frozen v0.3.3 six-record dataset plus exactly eight approved incremental episodes:
+
+- retained six non-MDN incremental episodes: `ep-1787851293595`, `ep-1787851404562`, `ep-1787851750688`, `ep-1787851808921`, `ep-1787854827031`, `ep-1787855724927`
+- replacement MDN `0.8.3` episodes: `ep-1787857678957`, `ep-1787857806791`
+- superseded collector-0.8.2 MDN episodes excluded: `ep-1787851361981`, `ep-1787855844011`
+- combined records: 14
+- split counts: train 10 / validation 2 / test 2
+- every original v0.3.3 split assignment preserved
+- `semantic-sequence:click:css` remains TRAIN
+- `semantic-sequence:click:html>click:html-elements` remains VALIDATION
+- baseline readiness PASS
+- frozen v0.3.3 model SHA-256 unchanged: `75a21fd12e2db304769b38b3f7b137105ed1930bac6f5554142200f8ab6b0f30`
+
+Candidate Strategy `0.3.5` was fit from TRAIN only. Its first heldout evaluation still failed exact target grounding on the replacement MDN validation episode even though accessible labels were now present. Diagnosis showed the generic click target compatibility weights contradicted the declared `current-task-dominant-with-action-affordance` policy: a familiar TRAIN target label could outweigh a different target explicitly named by the current task.
+
+Generic fix in `control-center/manager/strategy/offline_baseline_provider.js`:
+
+- non-editable target grounding now weights current task label 0.70, learned prototype label 0.05, and semantic affordance traits 0.25
+- no-traits fallback now weights current task 0.80 and prototype label 0.20
+- action selection remains target-independent; this changes only target grounding after WHAT is selected
+- no site/ref hardcode, no selector/coordinate targeting, no heldout-to-TRAIN move, no literal replay
+
+`training-collector/tests/strategy_action_target_decoupling_contract.js` now locks the generic rule that a current-task target beats a familiar TRAIN target and an unrelated high-affordance control.
+
+After that generic fix, candidate `0.3.5` heldout evaluation passes exactly:
+
+- validation: 4/4 action type, 4/4 exact semantic target
+- test: 4/4 action type, 4/4 exact semantic target
+- historical fixed six-group heldout regression with v0.3.5: PASS, validation exact 1.0 / test exact 1.0
+- existing frozen-model fresh-unseen decision families with v0.3.5: PASS (`fresh-parcel-approval`, `fresh-dispatch-note`), model file unchanged
+- all 61 Training Collector contracts: PASS
+
+Evidence classification matters: because the replacement MDN validation failure directly informed the generic target-grounding fix, the post-fix MDN validation PASS is regression-after-diagnosis, not pristine unseen evidence. The two pre-existing fresh semantic families are also regression gates, not new pristine evidence for 0.3.5.
+
+Do **not** promote `0.3.5` to active yet. Browser-native Cargo / Signal Relay / Harbor and user acceptance have not been rerun against this candidate in a live Chrome runtime in this environment. Next phase is live native regression/user acceptance; v0.3.3 remains the active frozen fallback until those checks pass and the user explicitly approves promotion.
