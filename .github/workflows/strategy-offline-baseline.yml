@@ -8,9 +8,11 @@ on:
       - 'training-collector/tools/fit_strategy_offline_baseline.js'
       - 'training-collector/tools/check_strategy_baseline_readiness.js'
       - 'training-collector/tools/process_strategy_multistep_play_mute.js'
+      - 'training-collector/tools/process_strategy_multistep_play_mute_unmute.js'
       - 'training-collector/tests/strategy_offline_baseline_contract.js'
       - 'training-collector/tests/strategy_history_baseline_contract.js'
       - 'training-collector/tests/strategy_multistep_play_mute_contract.js'
+      - 'training-collector/tests/strategy_multistep_play_mute_unmute_contract.js'
       - 'control-center/manager/strategy/offline_baseline_provider.js'
       - 'control-center/manager/strategy/index.js'
       - 'control-center/manager/agent/one_action_bridge.js'
@@ -21,6 +23,7 @@ on:
       - 'control-center/script/offline_strategy_bounded_two_step_gate.js'
       - 'control-center/script/offline_strategy_bounded_episode_loop_gate.js'
       - 'control-center/script/offline_strategy_history_multistep_gate.js'
+      - 'control-center/script/offline_strategy_history_three_step_gate.js'
       - 'control-center/script/checks/one_action_semantic_settle.js'
       - 'control-center/script/checks/offline_strategy_provider.js'
       - 'control-center/script/checks/offline_strategy_history_provider.js'
@@ -29,6 +32,7 @@ on:
       - 'control-center/script/checks/offline_strategy_bounded_two_step.js'
       - 'control-center/script/checks/offline_strategy_bounded_episode_loop.js'
       - 'control-center/script/checks/offline_strategy_history_multistep.js'
+      - 'control-center/script/checks/offline_strategy_history_three_step.js'
       - '.github/workflows/strategy-offline-baseline.yml'
   workflow_dispatch:
 
@@ -44,9 +48,11 @@ jobs:
         run: |
           node --check training-collector/tools/fit_strategy_offline_baseline.js
           node --check training-collector/tools/process_strategy_multistep_play_mute.js
+          node --check training-collector/tools/process_strategy_multistep_play_mute_unmute.js
           node --check training-collector/tests/strategy_offline_baseline_contract.js
           node --check training-collector/tests/strategy_history_baseline_contract.js
           node --check training-collector/tests/strategy_multistep_play_mute_contract.js
+          node --check training-collector/tests/strategy_multistep_play_mute_unmute_contract.js
           node --check control-center/manager/strategy/offline_baseline_provider.js
           node --check control-center/manager/agent/one_action_bridge.js
           node --check control-center/manager/agent/bounded_two_step_execution.js
@@ -64,6 +70,8 @@ jobs:
           node --check control-center/script/checks/offline_strategy_bounded_episode_loop.js
           node --check control-center/script/offline_strategy_history_multistep_gate.js
           node --check control-center/script/checks/offline_strategy_history_multistep.js
+          node --check control-center/script/offline_strategy_history_three_step_gate.js
+          node --check control-center/script/checks/offline_strategy_history_three_step.js
       - name: Run semantic post-action settle contract
         run: node control-center/script/checks/one_action_semantic_settle.js
       - name: Run offline Strategy baseline contract
@@ -72,6 +80,8 @@ jobs:
         run: node training-collector/tests/strategy_history_baseline_contract.js
       - name: Run multistep review processor contract
         run: node training-collector/tests/strategy_multistep_play_mute_contract.js
+      - name: Run three-step review processor contract
+        run: node training-collector/tests/strategy_multistep_play_mute_unmute_contract.js
       - name: Run offline Strategy provider contract
         run: node control-center/script/checks/offline_strategy_provider.js
       - name: Run offline Strategy history provider contract
@@ -86,3 +96,5 @@ jobs:
         run: node control-center/script/checks/offline_strategy_bounded_episode_loop.js
       - name: Run offline Strategy history multistep contract
         run: node control-center/script/checks/offline_strategy_history_multistep.js
+      - name: Run offline Strategy history three-step contract
+        run: node control-center/script/checks/offline_strategy_history_three_step.js
