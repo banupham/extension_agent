@@ -115,16 +115,19 @@ const train = [
 ];
 
 const model = fitBaseline(train);
-assert.strictEqual(model.modelVersion, '0.3.2');
+assert.strictEqual(model.modelVersion, '0.3.3');
 assert.strictEqual(model.fitSource, 'train-only');
 assert.strictEqual(model.heldOutUsedForFit, false);
 assert.strictEqual(model.localTargetRefsPersisted, false);
+assert.strictEqual(model.actionSelectionPolicy, 'task-history-decoupled-from-current-target-ranking');
+assert.strictEqual(model.actionSelectionUsesCurrentTargetRanking, false);
 assert.strictEqual(model.targetGroundingPolicy, 'current-task-dominant-with-action-affordance');
 assert.strictEqual(model.actionPrototypes.length, 8);
 
 const playPrediction = predictAction(model, { instruction: 'Play Media' }, observation());
 assert.strictEqual(playPrediction.action.type, 'play');
 assert.strictEqual(playPrediction.action.targetRef, 'e7');
+assert.strictEqual(playPrediction.evidence.actionSelectionTargetIndependent, true);
 
 const dismissPrediction = predictAction(model, { instruction: 'Dismiss Dismiss Target' }, observation());
 assert.strictEqual(dismissPrediction.action.type, 'dismiss');
@@ -139,6 +142,7 @@ const first = predictAction(
 );
 assert.strictEqual(first.action.type, 'typeText');
 assert.strictEqual(first.action.targetRef, 'heldout-field');
+assert.strictEqual(first.evidence.actionSelectionTargetIndependent, true);
 
 const second = predictAction(
   model,
