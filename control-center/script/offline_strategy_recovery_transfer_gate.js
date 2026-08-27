@@ -18,7 +18,7 @@ function makeTask(instruction = 'Advance a different concealed interface') {
     type: 'controlled-generalized-recovery-transfer',
     instruction,
     args: {},
-    successCriteria: [{ type: 'page', field: 'title', operator: 'equals', value: 'RECOVERY TRANSFER PASS' }],
+    successCriteria: [{ type: 'page', field: 'title', operator: 'equals', value: 'RECOVERY LEARNING PASS' }],
     constraints: {},
     metadata: { gate: 'offline-strategy-recovery-transfer' }
   };
@@ -35,7 +35,7 @@ function createTransferBaseProvider() {
     version: '0.1.0',
     async decide({ observation, history = [] }) {
       if (!history.length) {
-        const probe = findVisible(observation, 'Transfer Probe');
+        const probe = findVisible(observation, 'Recovery Probe');
         if (!probe) {
           return { status: 'blocked', confidence: 0, reasonCode: 'transfer_probe_missing', recovery: {}, metadata: { prototypeSource: 'base' } };
         }
@@ -50,7 +50,7 @@ function createTransferBaseProvider() {
         };
       }
 
-      const next = findVisible(observation, 'Transfer Continue');
+      const next = findVisible(observation, 'Recovery Continue');
       if (next) {
         return {
           status: 'act',
@@ -178,7 +178,7 @@ async function main(argv = process.argv.slice(2)) {
   try {
     const tabId = await resolveCommandTabId(client, {
       ...args,
-      'url-includes': args['url-includes'] || '127.0.0.1:8091/recovery-transfer?variant=horizontal'
+      'url-includes': args['url-includes'] || '127.0.0.1:8091/recovery?variant=horizontal'
     });
     const runtime = {
       observe: () => client.observe(tabId),
