@@ -7,9 +7,12 @@ const { buildDragCdpPlan } = require('../execution/drag_plan.js');
 const { buildFormCdpPlan } = require('../execution/form_plan.js');
 const { buildMediaCdpPlan } = require('../execution/media_plan.js');
 const { buildWaitAndObservePlan } = require('../execution/wait_plan.js');
+const { buildTypeTextCdpPlan } = require('../execution/text_plan.js');
+const { buildSubmitCdpPlan } = require('../execution/submit_plan.js');
 
-const BRIDGE_VERSION = '0.2.1';
+const BRIDGE_VERSION = '0.3.0';
 const BROWSER_ACTION_VERSION = '0.1.0';
+const TRANSIENT_REDACTION = '[transient-redacted]';
 const TAB_LIFECYCLE_ACTION_TYPES = new Set(['switchTab', 'openNewTab', 'closeTab']);
 const DEFAULT_POST_ACTION_SETTLE = Object.freeze({
   pollMs: 80,
@@ -30,6 +33,10 @@ const SETTLE_ACTION_TYPES = new Set([
   'setChecked', 'selectOption', 'setVolume', 'seek', 'changePlaybackRate',
   'waitAndObserve'
 ]);
+
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
 
 function findTarget(observation, targetRef) {
   if (!targetRef) return null;
@@ -199,6 +206,74 @@ async function decideOneAction(options, observation) {
   throw new Error('decide_or_agentAction_required');
 }
 
+async function resolveTransientActionPayload(options, chosen, observation) {
+  const originalArgs = isPlainObject(chosen?.action?.args) ? { ...chosen.action.args } : {};
+  if (typeof options?.resolveTransientActionArgs !== 'function') {
+    return { action: chosen.action, originalArgs, transientKeys: [], transientValues: [] };
+  }
+  const resolved = await options.resolveTransientActionArgs({
+    action: chosen.action,
+    decision: chosen.decision,
+    observation
+  });
+  if (resolved == null) {
+    return { action: chosen.action, originalArgs, transientKeys: [], transientValues: [] };
+  }
+  if (!isPlainObject(resolved)) throw new Error('transient_action_args_object_required');
+  const transientKeys = Object.keys(resolved);
+  const transientValues = Object.values(resolved)
+    .filter(value => typeof value === 'string' && value.length > 0);
+  return {
+    action: {
+      ...chosen.action,
+      args: { ...originalArgs, ...resolved }
+    },
+    originalArgs,
+    transientKeys,
+    transientValues
+  };
+}
+
+function publicMappedAction(mappedAction, originalArgs, transientKeys) {
+  if (!transientKeys.length) return mappedAction;
+  const args = { ...(mappedAction?.args || {}) };
+  for (const key of transientKeys) {
+    if (Object.prototype.hasOwnProperty.call(originalArgs, key)) args[key] = originalArgs[key];
+    else delete args[key];
+  }
+  return { ...mappedAction, args };
+}
+
+function redactTransientPayload(value, transientKeys = [], transientValues = [], currentKey = null) {
+  const keySet = new Set(transientKeys);
+  if (currentKey != null && keySet.has(currentKey)) return TRANSIENT_REDACTION;
+  if (Array.isArray(value)) {
+    return value.map(item => redactTransientPayload(item, transientKeys, transientValues, null));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [
+      key,
+      redactTransientPayload(child, transientKeys, transientValues, key)
+    ]));
+  }
+  if (typeof value === 'string') {
+    let out = value;
+    for (const secret of transientValues) {
+      if (secret) out = out.split(secret).join(TRANSIENT_REDACTION);
+    }
+    return out;
+  }
+  return value;
+}
+
+function transientPayloadMetadata(transientKeys) {
+  return {
+    applied: transientKeys.length > 0,
+    redacted: true,
+    keys: [...transientKeys]
+  };
+}
+
 async function runOneAction(options) {
   const runtime = options?.runtime;
   if (!runtime || typeof runtime.observe !== 'function' || typeof runtime.executePlan !== 'function') {
@@ -220,6 +295,7 @@ async function runOneAction(options) {
       cdpPlan: null,
       browserAction: null,
       execution: null,
+      transientPayload: transientPayloadMetadata([]),
       before,
       after: null,
       beforeBrowserContext: null,
@@ -230,35 +306,38 @@ async function runOneAction(options) {
         actionExecuted: false,
         reObservedAfterExecution: false,
         selectorUsedByStrategy: false,
-        literalTrajectoryReplay: false
+        literalTrajectoryReplay: false,
+        transientPayloadRedacted: true
       }
     };
   }
 
-  const mappedAction = mapAgentAction(chosen.action);
-  const target = mappedAction.targetRef ? findTarget(before, mappedAction.targetRef) : null;
-  if (mappedAction.targetRef && !target) throw new Error('target_ref_not_in_observation');
+  const payload = await resolveTransientActionPayload(options, chosen, before);
+  const executionMappedAction = mapAgentAction(payload.action);
+  const mappedAction = publicMappedAction(executionMappedAction, payload.originalArgs, payload.transientKeys);
+  const target = executionMappedAction.targetRef ? findTarget(before, executionMappedAction.targetRef) : null;
+  if (executionMappedAction.targetRef && !target) throw new Error('target_ref_not_in_observation');
 
-  const destinationRef = mappedAction.type === 'drag'
-    ? String(mappedAction.args?.destinationRef || '').trim()
+  const destinationRef = executionMappedAction.type === 'drag'
+    ? String(executionMappedAction.args?.destinationRef || '').trim()
     : '';
   const destination = destinationRef ? findTarget(before, destinationRef) : null;
   if (destinationRef && !destination) throw new Error('destination_ref_not_in_observation');
 
   const behavior = sampledBehavior({
     baseline: options.baseline || null,
-    mappedAction,
+    mappedAction: executionMappedAction,
     target,
     rng: options.rng || Math.random
   });
 
-  if (TAB_LIFECYCLE_ACTION_TYPES.has(mappedAction.type)) {
+  if (TAB_LIFECYCLE_ACTION_TYPES.has(executionMappedAction.type)) {
     if (typeof runtime.executeBrowserAction !== 'function') throw new Error('runtime executeBrowserAction required');
     if (typeof runtime.listTabs !== 'function') throw new Error('runtime listTabs required for browser-context observation');
 
     const beforeTabs = await runtime.listTabs({ mode: 'all' });
-    const browserAction = buildBrowserAction(mappedAction);
-    const execution = await runtime.executeBrowserAction({ action: browserAction });
+    const executionBrowserAction = buildBrowserAction(executionMappedAction);
+    const rawExecution = await runtime.executeBrowserAction({ action: executionBrowserAction });
     const afterTabs = await runtime.listTabs({ mode: 'all' });
     const semanticChanged = browserContextFingerprint(beforeTabs) !== browserContextFingerprint(afterTabs);
 
@@ -268,10 +347,11 @@ async function runOneAction(options) {
       afterObservationId: null,
       decision: chosen.decision,
       mappedAction,
-      behavior,
+      behavior: redactTransientPayload(behavior, payload.transientKeys, payload.transientValues),
       cdpPlan: null,
-      browserAction,
-      execution,
+      browserAction: redactTransientPayload(executionBrowserAction, payload.transientKeys, payload.transientValues),
+      execution: redactTransientPayload(rawExecution, payload.transientKeys, payload.transientValues),
+      transientPayload: transientPayloadMetadata(payload.transientKeys),
       before,
       after: null,
       beforeBrowserContext: { capturedAt: Date.now(), tabs: beforeTabs },
@@ -289,7 +369,8 @@ async function runOneAction(options) {
         reObservedAfterExecution: true,
         reObservedSurface: 'browser-context',
         selectorUsedByStrategy: false,
-        literalTrajectoryReplay: false
+        literalTrajectoryReplay: false,
+        transientPayloadRedacted: true
       }
     };
   }
@@ -299,22 +380,26 @@ async function runOneAction(options) {
     viewportCenter: pointerStartFor(before, null),
     rng: options.rng || Math.random
   };
-  const cdpPlan = mappedAction.type === 'drag'
-    ? buildDragCdpPlan({ mappedAction, behavior, source: target, destination, context })
-    : ['setChecked', 'selectOption'].includes(mappedAction.type)
-      ? buildFormCdpPlan({ mappedAction, behavior, target, context })
-      : ['setVolume', 'seek', 'changePlaybackRate'].includes(mappedAction.type)
-        ? buildMediaCdpPlan({ mappedAction, behavior, target, context })
-        : mappedAction.type === 'waitAndObserve'
-          ? buildWaitAndObservePlan({ mappedAction, behavior })
-          : buildCdpPlan({ mappedAction, behavior, target, context });
+  const executionCdpPlan = executionMappedAction.type === 'drag'
+    ? buildDragCdpPlan({ mappedAction: executionMappedAction, behavior, source: target, destination, context })
+    : executionMappedAction.type === 'typeText'
+      ? buildTypeTextCdpPlan({ mappedAction: executionMappedAction, behavior, target, context })
+      : executionMappedAction.type === 'submit'
+        ? buildSubmitCdpPlan({ mappedAction: executionMappedAction, behavior, target, context })
+        : ['setChecked', 'selectOption'].includes(executionMappedAction.type)
+          ? buildFormCdpPlan({ mappedAction: executionMappedAction, behavior, target, context })
+          : ['setVolume', 'seek', 'changePlaybackRate'].includes(executionMappedAction.type)
+            ? buildMediaCdpPlan({ mappedAction: executionMappedAction, behavior, target, context })
+            : executionMappedAction.type === 'waitAndObserve'
+              ? buildWaitAndObservePlan({ mappedAction: executionMappedAction, behavior })
+              : buildCdpPlan({ mappedAction: executionMappedAction, behavior, target, context });
 
-  const execution = await runtime.executePlan({
+  const rawExecution = await runtime.executePlan({
     observationId: before.observationId,
-    plan: cdpPlan
+    plan: executionCdpPlan
   });
 
-  const settled = await observeAfterAction(runtime, mappedAction, options);
+  const settled = await observeAfterAction(runtime, executionMappedAction, options);
   const after = settled.observation;
 
   return {
@@ -323,10 +408,11 @@ async function runOneAction(options) {
     afterObservationId: after?.observationId || null,
     decision: chosen.decision,
     mappedAction,
-    behavior,
-    cdpPlan,
+    behavior: redactTransientPayload(behavior, payload.transientKeys, payload.transientValues),
+    cdpPlan: redactTransientPayload(executionCdpPlan, payload.transientKeys, payload.transientValues),
     browserAction: null,
-    execution,
+    execution: redactTransientPayload(rawExecution, payload.transientKeys, payload.transientValues),
+    transientPayload: transientPayloadMetadata(payload.transientKeys),
     before,
     after,
     beforeBrowserContext: null,
@@ -338,7 +424,8 @@ async function runOneAction(options) {
       reObservedAfterExecution: !!after?.observationId,
       reObservedSurface: 'page',
       selectorUsedByStrategy: false,
-      literalTrajectoryReplay: false
+      literalTrajectoryReplay: false,
+      transientPayloadRedacted: true
     }
   };
 }
@@ -346,10 +433,12 @@ async function runOneAction(options) {
 module.exports = {
   BRIDGE_VERSION,
   BROWSER_ACTION_VERSION,
+  TRANSIENT_REDACTION,
   TAB_LIFECYCLE_ACTION_TYPES,
   DEFAULT_POST_ACTION_SETTLE,
   DEFAULT_WAIT_AND_OBSERVE_SETTLE,
   SETTLE_ACTION_TYPES,
+  isPlainObject,
   findTarget,
   pointerStartFor,
   semanticObservationFingerprint,
@@ -358,5 +447,9 @@ module.exports = {
   settlePolicy,
   observeAfterAction,
   decideOneAction,
+  resolveTransientActionPayload,
+  publicMappedAction,
+  redactTransientPayload,
+  transientPayloadMetadata,
   runOneAction
 };
