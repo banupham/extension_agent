@@ -21,7 +21,7 @@ const {
   evaluateBaselineReadiness
 } = require('./check_strategy_baseline_readiness.js');
 
-const MODEL_VERSION = '0.3.0';
+const MODEL_VERSION = '0.3.1';
 
 function die(message) {
   throw new Error(message);
