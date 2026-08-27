@@ -14,7 +14,7 @@ Read this file before changing the repository.
 - Do not persist selectors, coordinates, tab IDs, raw CDP, credentials, secrets, passwords, typed sensitive values, or private reasoning in Strategy/memory/training.
 - No literal trajectory replay.
 - No generic `failure => scroll` behavior.
-- Human demonstrations never auto-promote; explicit human digest confirmation remains required.
+- Human demonstrations never auto-promote; exact digest confirmation is required before approval annotations are created.
 
 ## Agent maturity
 
@@ -22,28 +22,10 @@ Read this file before changing the repository.
 - Strategy/WHAT: still supervised.
 - Agent is maturing but not fully autonomous.
 - Recovery/replan/semantic memory already exist.
-- Current Strategy text-entry + submit teaching bottleneck is now resolved for the six-group batch; next gate is explicit human approval of the new digest.
+- Six-group semantic text-entry + submit teaching coverage has passed review and has now received explicit human digest confirmation.
+- Next gate: apply approved annotations locally, build the six-group Strategy dataset, and require `baselineReady:true` before fitting any Strategy model.
 
-## First approved Strategy batch
-
-Human-approved semantic groups:
-
-1. `semantic-sequence:click:gmail`
-2. `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
-3. `semantic-sequence:click:mission-atlas>click:mission-orion`
-
-Dataset state:
-
-- adaptedEpisodeCount: 3
-- distinctSplitGroupCount: 3
-- datasetBuilt: true
-- train=1, validation=1, test=1
-- baselineReady: false
-- readiness error: `test_action_types_unseen_in_train:submit,typeText`
-
-Do not move heldout data into train to force readiness.
-
-## Collector bug is closed
+## Collector state
 
 The prior `episode_success_has_pending_transition` bug was fixed by serialized episode-state mutation queue.
 
@@ -57,7 +39,7 @@ Message Composer proof already exists:
 
 Do **not** recollect Message Composer or the six-task set.
 
-## Current six-demonstration teaching set
+## Six-demonstration teaching set
 
 Local folder:
 
@@ -72,85 +54,7 @@ Episodes:
 5. `ep-1787831377719` — Message Composer -> type Orion -> Enter
 6. `ep-1787828809498` — Teaching Confirm click
 
-Previous failed real-data approval attempt on resolver 0.2.0:
-
-- candidateEpisodeCount: 4
-- blockedEpisodeCount: 2
-- blocked: `ep-1787828642619`, `ep-1787831377719`
-- digest: `7926cdedd75156338847b25707214b68f98ad2ef2c9bfbca7b29bf3753eabef2`
-
-Do **not** approve digest `7926cd...`.
-
-## Privacy-safe diagnostic findings from real data
-
-Diagnostic commits:
-
-- `e715630c9f5dd7400d06fcf50be1fa293de9713f` — privacy-safe diagnostic
-- `bf1319e94c7983ed7b1489ae534605cff1f5695a` — diagnostic privacy contract
-- `1ac35e65894f84d245e8d128e588d146cbd1dcdd` — diagnostic CI gate
-
-Real Topic Search shape had one leading `text-key/other-key` plus same-target type chars + Enter.
-
-Real Message Composer shape had interleaved `other-key`/`backspace`, same-target type chars + Enter, then a later no-effect semantic send click.
-
-No typed values, raw key characters, selectors, coordinates, tab IDs, or raw CDP were exposed by the diagnostic.
-
-## Generic resolver fix v0.3.0 — implemented and CI PASS
-
-Important commits:
-
-- `673e3fbb5671dc24b993f342dd0a2f920b0434d9` — `fix(strategy): resolve real editable text mechanics generically`
-- `91605b632f7ac8cb7634ce6d53e04754ead7eabd` — `test(strategy): cover real text editing and competing submit shapes`
-
-Resolver version: `0.3.0`.
-
-Implemented generic semantics:
-
-- focus/click acquisition on editable target => HOW/capture noise
-- `type-char` transitions on one semantic editable target => collapse into one Strategy `typeText`
-- `other-key`, `backspace`, `delete`, and text-change during the same text-entry sequence => HOW/capture noise
-- no raw typed characters are used or persisted
-- Enter on same target may become Strategy `submit` only with task submit intent + successful final outcome
-- if a competing submit action exists after Enter, Enter is accepted only when task explicitly requests Enter or Enter itself has observable semantic state change
-- when task explicitly requests Enter, a later no-observable-change semantic submit-surface click can be excluded as redundant HOW noise
-- if task does not explicitly request Enter and a competing submit click exists with no Enter outcome evidence, the episode remains blocked
-- no site/task names are hard-coded
-- `autoTrainEligible:false` remains unchanged until explicit human confirmation
-
-CI PASS:
-
-- strategy teaching resolver workflow run `33071121431`: success
-- runtime syntax workflow run `33071121512`: success
-
-## Real six-group validation on resolver 0.3.0 — PASS, awaiting human digest confirmation
-
-User pulled HEAD `c6c530d` and ran the local resolver pipeline on the existing six-group folder.
-
-Contract:
-
-- `training-collector/tests/strategy_text_form_sequence_resolver_contract.js` => PASS
-
-Resolver output:
-
-- version: `0.3.0`
-- episodeCount: 6
-- ambiguousTransitionCount: 36
-- resolvedSemanticActionCount: 6
-- captureNoiseCount: 41
-- unresolvedHumanReviewCount: 0
-- fullyResolvedEpisodeCount: 6
-- autoTrainEligible: false
-
-Approval-candidate output:
-
-- candidateEpisodeCount: 6
-- blockedEpisodeCount: 0
-- ambiguityAidCandidateEpisodeCount: 5
-- ambiguityResolutionLoaded: true
-- digestHash: `8f18d4e5b053d9dae57107b4aa021dfbf46128df3c75b9c50dbad996346b8241`
-- autoTrainEligible: false
-
-Six distinct semantic split groups are present:
+Six distinct semantic split groups:
 
 1. `semantic-sequence:click:gmail`
 2. `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
@@ -159,46 +63,120 @@ Six distinct semantic split groups are present:
 5. `semantic-sequence:click:teaching-confirm`
 6. `semantic-sequence:typeText:message-composer>submit:message-composer`
 
-Required new text-entry semantics are correct:
+## Resolver milestone — PASS
 
+Important commits:
+
+- `673e3fbb5671dc24b993f342dd0a2f920b0434d9` — generic real editable text mechanics fix
+- `91605b632f7ac8cb7634ce6d53e04754ead7eabd` — real-shape + negative-case contract
+
+Resolver version: `0.3.0`.
+
+CI PASS:
+
+- strategy teaching resolver workflow run `33071121431`: success
+- runtime syntax workflow run `33071121512`: success
+
+Real six-group validation:
+
+- candidateEpisodeCount: 6
+- blockedEpisodeCount: 0
+- unresolvedHumanReviewCount: 0
+- fullyResolvedEpisodeCount: 6
 - Topic Search: `typeText -> submit`, progress `0.5 -> 1`
 - Message Composer: `typeText -> submit`, progress `0.5 -> 1`
-- edit/focus/click mechanics remain excluded as HOW/capture noise with provenance
-- the later Message Send click is excluded as `redundant_post_enter_submit_surface_click_how_not_strategy`
+- edit/focus/click/text mechanics remain HOW/capture noise with provenance
+- later Message Send click is excluded as redundant post-Enter HOW noise
 
-This milestone is PASS. Do not run collection or resolver again unless a later regression requires it.
+## Human approval — CONFIRMED
 
-## Immediate next step — wait for explicit human approval of exact digest
-
-Do **not** auto-approve.
-
-Exact digest awaiting human confirmation:
+Exact confirmed digest:
 
 `8f18d4e5b053d9dae57107b4aa021dfbf46128df3c75b9c50dbad996346b8241`
 
-Required confirmation phrase from the approval candidate pack:
+Exact confirmation phrase received from user:
 
 `YES-I-REVIEWED-STRATEGY-APPROVAL-DIGEST`
 
-Only after the user explicitly confirms this exact digest:
+The approval applicator already enforces:
 
-1. inspect/apply the repository's approval tooling using this exact confirmed digest
-2. build the Strategy dataset
-3. require `distinctSplitGroupCount >= 6`
-4. require `datasetBuilt:true`
-5. require `baselineReady:true`
-6. require TRAIN contains `click`, `typeText`, `submit`
-7. keep validation/test held out; do not move heldout into train to force readiness
+- candidate digest integrity verification
+- exact digest hash match
+- exact confirmation phrase match
+- no blocked episodes approved
+- excluded capture noise never becomes Strategy steps
+- annotations remain unassigned until dataset split
+
+Do not ask the user to reconfirm this digest.
+
+## Deterministic six-group split expectation
+
+Existing split policy remains unchanged:
+
+- seed: `strategy-episode-v0`
+- ratios: train 0.8 / validation 0.1 / test 0.1
+- assignment boundary: `splitGroup`
+- six distinct groups => train=4, validation=1, test=1
+
+With the current six group names and existing seed, deterministic assignment is expected to be:
+
+- test: `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
+- validation: `semantic-sequence:typeText:topic-search>submit:topic-search`
+- train: `semantic-sequence:click:mission-atlas>click:mission-orion`
+- train: `semantic-sequence:click:teaching-confirm`
+- train: `semantic-sequence:click:gmail`
+- train: `semantic-sequence:typeText:message-composer>submit:message-composer`
+
+Therefore TRAIN is expected to contain `click`, `typeText`, and `submit`, while validation/test remain held out. Do not alter seed, ratios, split policy, or move heldout data to force readiness.
+
+## Immediate next step — apply approval and build dataset locally
+
+Run in Windows CMD after pulling latest HEAD:
+
+```bat
+cd /d C:\Users\duong\Downloads\extension_agent
+git pull
+git rev-parse --short HEAD
+
+set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
+set DIGEST=8f18d4e5b053d9dae57107b4aa021dfbf46128df3c75b9c50dbad996346b8241
+
+node training-collector\tools\apply_strategy_approval_candidates.js --candidates "%SIX%\approval-candidates-v03\approval-candidates.json" --confirm-digest "%DIGEST%" --confirm "YES-I-REVIEWED-STRATEGY-APPROVAL-DIGEST" --out "%SIX%\approved-annotations-v03"
+
+node training-collector\tools\build_strategy_dataset_from_approvals.js --pack "%SIX%\review-pack-v01\review-pack.json" --annotations "%SIX%\approved-annotations-v03" --out "%SIX%\strategy-approved-dataset-v03" --seed "strategy-episode-v0"
+
+node training-collector\tools\check_strategy_baseline_readiness.js "%SIX%\strategy-approved-dataset-v03\dataset"
+
+type "%SIX%\approved-annotations-v03\approval-receipt.json"
+type "%SIX%\strategy-approved-dataset-v03\manifest.json"
+```
+
+Target:
+
+- approvedEpisodeCount = 6
+- blockedEpisodeCount = 0
+- explicitHumanConfirmationVerified = true
+- approvedStrategyStepCount = 10
+- excludedCaptureNoiseCount = 41
+- adaptedEpisodeCount = 6
+- distinctSplitGroupCount = 6
+- datasetBuilt = true
+- splitCounts = train 4, validation 1, test 1
+- baselineReady = true
+- baselineReadinessErrors = []
+- TRAIN action coverage contains `click`, `typeText`, `submit`
+
+If actual output differs, diagnose from output and repository code; do not recollect and do not change split policy just to force PASS.
 
 Only when `baselineReady=true`:
 
-- fit Strategy from TRAIN only
-- heldout evaluation
-- load learned Strategy beside learned Behavior at runtime
-- native long-mission test
-- multi-subgoal
-- replan
-- recovery
-- semantic memory
+1. fit Strategy from TRAIN only
+2. evaluate validation/test heldout
+3. load learned Strategy beside learned Behavior at runtime
+4. native long-mission test
+5. multi-subgoal
+6. replan
+7. recovery
+8. semantic memory
 
 Never promote to `main` without explicit user approval after verified PASS.
