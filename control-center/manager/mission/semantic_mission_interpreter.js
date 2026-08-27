@@ -41,11 +41,10 @@ function extractDestination(instruction) {
 
 function extractTopic(instruction) {
   const text = normalizeMissionText(instruction);
-  const raw = firstMatch(text, [
-    /(?:chủ\s+đề|topic)\s+([^,;.]+?)(?=\s+(?:và|rồi|sau\s+đó|then|and)\b|[,;.]|$)/iu,
-    /(?:video|videos|nội\s+dung|content)\s+(?:về|about)\s+([^,;.]+?)(?=\s+(?:và|rồi|sau\s+đó|then|and)\b|[,;.]|$)/iu
-  ]);
-  return raw || null;
+  const conjunction = '(?:và|rồi|sau\\s+đó|then|and)';
+  const topicPattern = new RegExp(`(?:chủ\\s+đề|topic)\\s+([^,;.]+?)(?=\\s+${conjunction}(?:\\s|$)|[,;.]|$)`, 'iu');
+  const contentPattern = new RegExp(`(?:video|videos|nội\\s+dung|content)\\s+(?:về|about)\\s+([^,;.]+?)(?=\\s+${conjunction}(?:\\s|$)|[,;.]|$)`, 'iu');
+  return firstMatch(text, [topicPattern, contentPattern]);
 }
 
 function extractTemporalWindow(instruction) {
