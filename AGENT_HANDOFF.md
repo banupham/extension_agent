@@ -22,7 +22,7 @@ Read this file before changing the repository.
 - Strategy/WHAT: still supervised.
 - Agent is maturing but not fully autonomous.
 - Recovery/replan/semantic memory already exist.
-- Current bottleneck is Strategy teaching coverage for semantic text-entry + submit sequences.
+- Current Strategy text-entry + submit teaching bottleneck is now resolved for the six-group batch; next gate is explicit human approval of the new digest.
 
 ## First approved Strategy batch
 
@@ -72,7 +72,7 @@ Episodes:
 5. `ep-1787831377719` — Message Composer -> type Orion -> Enter
 6. `ep-1787828809498` — Teaching Confirm click
 
-Previous real-data approval attempt on resolver 0.2.0:
+Previous failed real-data approval attempt on resolver 0.2.0:
 
 - candidateEpisodeCount: 4
 - blockedEpisodeCount: 2
@@ -83,36 +83,17 @@ Do **not** approve digest `7926cd...`.
 
 ## Privacy-safe diagnostic findings from real data
 
-Diagnostic tool/contract commits:
+Diagnostic commits:
 
 - `e715630c9f5dd7400d06fcf50be1fa293de9713f` — privacy-safe diagnostic
 - `bf1319e94c7983ed7b1489ae534605cff1f5695a` — diagnostic privacy contract
 - `1ac35e65894f84d245e8d128e588d146cbd1dcdd` — diagnostic CI gate
 
-Diagnostic does not expose typed values, raw key characters, selectors, coordinates, tab IDs, or raw CDP.
+Real Topic Search shape had one leading `text-key/other-key` plus same-target type chars + Enter.
 
-Real Topic Search shape:
+Real Message Composer shape had interleaved `other-key`/`backspace`, same-target type chars + Enter, then a later no-effect semantic send click.
 
-- finalOutcomeSuccess: true
-- declaredTextPresent: true
-- taskSubmitIntent: true
-- typeCharCount: 5
-- one semantic editable target
-- Enter on same target
-- sequence detector already recognized the core sequence
-- one leading ambiguous `text-key/other-key` on same editable target caused approval blocking
-
-Real Message Composer shape:
-
-- finalOutcomeSuccess: true
-- declaredTextPresent: true
-- taskSubmitIntent: true
-- typeCharCount: 8
-- one semantic editable target throughout
-- several `text-key/other-key` and `backspace` operations interleaved with text entry
-- Enter on same editable target
-- one later no-observable-change submit-surface click
-- previous resolver rejected the sequence because editing mechanics were not accepted as HOW noise and the later submit click competed with Enter
+No typed values, raw key characters, selectors, coordinates, tab IDs, or raw CDP were exposed by the diagnostic.
 
 ## Generic resolver fix v0.3.0 — implemented and CI PASS
 
@@ -130,84 +111,86 @@ Implemented generic semantics:
 - `other-key`, `backspace`, `delete`, and text-change during the same text-entry sequence => HOW/capture noise
 - no raw typed characters are used or persisted
 - Enter on same target may become Strategy `submit` only with task submit intent + successful final outcome
-- if a competing submit action exists after Enter, Enter is accepted only when:
-  - task explicitly requests Enter, or
-  - Enter itself has observable semantic state change
+- if a competing submit action exists after Enter, Enter is accepted only when task explicitly requests Enter or Enter itself has observable semantic state change
 - when task explicitly requests Enter, a later no-observable-change semantic submit-surface click can be excluded as redundant HOW noise
 - if task does not explicitly request Enter and a competing submit click exists with no Enter outcome evidence, the episode remains blocked
 - no site/task names are hard-coded
-- `autoTrainEligible:false` remains unchanged
-
-Updated contract now covers:
-
-1. ordinary search-like `typeText -> submit`
-2. Topic-like leading `other-key` + per-character capture + Enter
-3. Composer-like `other-key`/`backspace` interleaving + Enter + redundant post-Enter submit click
-4. semantic progress `0.5 -> 1`
-5. competing submit negative case remains blocked when task does not explicitly request Enter
-6. Enter on different editable target remains blocked
-7. failed final outcome remains blocked
-8. source guard against site-specific hard-coding and privacy violations
+- `autoTrainEligible:false` remains unchanged until explicit human confirmation
 
 CI PASS:
 
 - strategy teaching resolver workflow run `33071121431`: success
 - runtime syntax workflow run `33071121512`: success
 
-## Immediate next step
+## Real six-group validation on resolver 0.3.0 — PASS, awaiting human digest confirmation
 
-Do not recollect anything and do not rerun diagnostics already completed.
+User pulled HEAD `c6c530d` and ran the local resolver pipeline on the existing six-group folder.
 
-User should pull latest HEAD and rerun only:
+Contract:
 
-1. updated resolver contract
-2. resolver on existing six-group pack
-3. approval candidate generation
-4. print approval candidate markdown
+- `training-collector/tests/strategy_text_form_sequence_resolver_contract.js` => PASS
 
-Windows CMD:
+Resolver output:
 
-```bat
-cd /d C:\Users\duong\Downloads\extension_agent
-git pull
-git rev-parse --short HEAD
+- version: `0.3.0`
+- episodeCount: 6
+- ambiguousTransitionCount: 36
+- resolvedSemanticActionCount: 6
+- captureNoiseCount: 41
+- unresolvedHumanReviewCount: 0
+- fullyResolvedEpisodeCount: 6
+- autoTrainEligible: false
 
-set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
+Approval-candidate output:
 
-node training-collector\tests\strategy_text_form_sequence_resolver_contract.js
+- candidateEpisodeCount: 6
+- blockedEpisodeCount: 0
+- ambiguityAidCandidateEpisodeCount: 5
+- ambiguityResolutionLoaded: true
+- digestHash: `8f18d4e5b053d9dae57107b4aa021dfbf46128df3c75b9c50dbad996346b8241`
+- autoTrainEligible: false
 
-node training-collector\tools\resolve_strategy_teaching_batch.js --pack "%SIX%\review-pack-v01\review-pack.json" --triage "%SIX%\review-pack-v01\triage.v01.json" --out "%SIX%\teaching-resolution-v03"
+Six distinct semantic split groups are present:
 
-node training-collector\tools\prepare_strategy_approval_candidates.js --digest "%SIX%\review-drafts-v01\approval-digest.json" --resolution "%SIX%\teaching-resolution-v03\ambiguity-resolution.json" --out "%SIX%\approval-candidates-v03"
+1. `semantic-sequence:click:gmail`
+2. `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
+3. `semantic-sequence:click:mission-atlas>click:mission-orion`
+4. `semantic-sequence:typeText:topic-search>submit:topic-search`
+5. `semantic-sequence:click:teaching-confirm`
+6. `semantic-sequence:typeText:message-composer>submit:message-composer`
 
-type "%SIX%\approval-candidates-v03\approval-candidates.md"
-```
+Required new text-entry semantics are correct:
 
-Target before any approval:
+- Topic Search: `typeText -> submit`, progress `0.5 -> 1`
+- Message Composer: `typeText -> submit`, progress `0.5 -> 1`
+- edit/focus/click mechanics remain excluded as HOW/capture noise with provenance
+- the later Message Send click is excluded as `redundant_post_enter_submit_surface_click_how_not_strategy`
 
-- contract PASS
-- resolver version `0.3.0`
-- candidateEpisodeCount = 6
-- blockedEpisodeCount = 0
-- six genuinely distinct semantic split groups
-- Topic Search = `typeText -> submit`
-- Message Composer = `typeText -> submit`
-- progress `0.5 -> 1`
-- autoTrainEligible = false
+This milestone is PASS. Do not run collection or resolver again unless a later regression requires it.
 
-If target is met, show the new digest to the user and wait for explicit human confirmation. Do not auto-approve.
+## Immediate next step — wait for explicit human approval of exact digest
 
-Only after explicit confirmation:
+Do **not** auto-approve.
 
-1. apply approvals
-2. build Strategy dataset
+Exact digest awaiting human confirmation:
+
+`8f18d4e5b053d9dae57107b4aa021dfbf46128df3c75b9c50dbad996346b8241`
+
+Required confirmation phrase from the approval candidate pack:
+
+`YES-I-REVIEWED-STRATEGY-APPROVAL-DIGEST`
+
+Only after the user explicitly confirms this exact digest:
+
+1. inspect/apply the repository's approval tooling using this exact confirmed digest
+2. build the Strategy dataset
 3. require `distinctSplitGroupCount >= 6`
 4. require `datasetBuilt:true`
 5. require `baselineReady:true`
-6. require TRAIN contains click + typeText + submit
-7. keep validation/test held out
+6. require TRAIN contains `click`, `typeText`, `submit`
+7. keep validation/test held out; do not move heldout into train to force readiness
 
-Only when baselineReady=true:
+Only when `baselineReady=true`:
 
 - fit Strategy from TRAIN only
 - heldout evaluation
