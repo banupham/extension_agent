@@ -12,6 +12,7 @@ on:
       - 'training-collector/tests/mission_transient_payload_contract.js'
       - 'training-collector/tests/recovery_progression_guard_contract.js'
       - 'training-collector/tests/strategy_fresh_long_mission_contract.js'
+      - 'training-collector/tests/signal_relay_enter_submit_contract.js'
       - '.github/workflows/mission-long-native.yml'
   pull_request:
     paths:
@@ -23,6 +24,7 @@ on:
       - 'training-collector/tests/mission_transient_payload_contract.js'
       - 'training-collector/tests/recovery_progression_guard_contract.js'
       - 'training-collector/tests/strategy_fresh_long_mission_contract.js'
+      - 'training-collector/tests/signal_relay_enter_submit_contract.js'
       - '.github/workflows/mission-long-native.yml'
 
 jobs:
@@ -37,9 +39,7 @@ jobs:
         run: node training-collector/tests/mission_transient_payload_contract.js
       - name: Run recovery planned progression guard contract
         run: node training-collector/tests/recovery_progression_guard_contract.js
-      - name: Run long mission contract when present
-        shell: bash
-        run: |
-          if [ -f training-collector/tests/strategy_fresh_long_mission_contract.js ]; then
-            node training-collector/tests/strategy_fresh_long_mission_contract.js
-          fi
+      - name: Run Signal Relay Enter-submit semantics contract
+        run: node training-collector/tests/signal_relay_enter_submit_contract.js
+      - name: Run long mission regression contract
+        run: node training-collector/tests/strategy_fresh_long_mission_contract.js
