@@ -36,14 +36,24 @@ for (let i = 0; i < 20; i += 1) {
       rhythm: { interKeyMedianMs: 70 + i, interKeyP90Ms: 120 + i, holdMedianMs: 60 + i / 2, holdP90Ms: 90 + i, pauseCount450Ms: i % 2 }
     }
   });
+  featureSet.rows.push({
+    actionType: 'focus',
+    features: {
+      leadInTiming: { durationMs: 140 + i, gapMedianMs: 18 + i / 10 },
+      pointerLeadIn: { durationMs: 120 + i, straightness: 0.82, meanSpeedPxS: 430 + i * 3, meanAbsTurnDeg: 12 },
+      target: { widthPx: 180, heightPx: 36, areaPx2: 6480 }
+    }
+  });
 }
 featureSet.rows.push({ actionType: 'drag', features: { durationMs: 300, displacementPx: 100, path: { straightness: 0.9, meanSpeedPxS: 400 } } });
 
 const baseline = fitBehaviorBaseline(featureSet, { minContextSamples: 12 });
-assert.strictEqual(baseline.behaviorBaselineVersion, '0.1.0');
+assert.strictEqual(baseline.behaviorBaselineVersion, '0.2.0');
 assert.strictEqual(baseline.design.literalTrajectoryReplay, false);
+assert.strictEqual(baseline.design.unmodeledRowCount, 0);
 assert.ok(baseline.families['pointer-click'].contexts['targetSize:small']);
 assert.strictEqual(baseline.families['pointer-drag'].sparse, true);
+assert.strictEqual(baseline.families['form-control'].global.sampleCount, 20);
 assert.ok(baseline.warnings.some(x => x.code === 'drag_sparse'));
 
 const fixedRng = () => 0.5;
@@ -74,8 +84,24 @@ const humanBatchClick = sampledBehavior({
 });
 assert.strictEqual(humanBatchClick.profile, 'empirical-quantile-v01');
 assert.strictEqual(humanBatchClick.metadata.batchBaselineVersion, '0.1.0');
-assert.strictEqual(humanBatchClick.metadata.baselineVersion, '0.1.0');
+assert.strictEqual(humanBatchClick.metadata.baselineVersion, '0.2.0');
 assert.ok(Number.isFinite(humanBatchClick.pointer.holdMs));
+
+const focus = sampledBehavior({
+  baseline: batchWrapper,
+  mappedAction: mapAgentAction({ type: 'focus', targetRef: 'search' }),
+  target: { rect: { width: 180, height: 36 } },
+  rng: fixedRng
+});
+assert.strictEqual(focus.metadata.behaviorFamily, 'focus-acquisition');
+assert.strictEqual(focus.metadata.baselineFamily, 'form-control');
+assert.ok(Number.isFinite(focus.pointer.constraints.approachDurationMs));
+
+const submitMapped = mapAgentAction({ type: 'submit', targetRef: 'form' });
+assert.strictEqual(submitMapped.behaviorFamily, 'form-control');
+const submit = sampledBehavior({ baseline: batchWrapper, mappedAction: submitMapped, target: { rect: { width: 180, height: 36 } }, rng: fixedRng });
+assert.strictEqual(submit.metadata.baselineFamily, 'form-control');
+assert.ok(Number.isFinite(submit.pointer.constraints.leadInDurationMs));
 
 const scroll = sampledBehavior({
   baseline,
