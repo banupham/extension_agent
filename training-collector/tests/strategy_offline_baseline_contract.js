@@ -7,6 +7,9 @@ const {
   evaluateHeldOut,
   chooseTargetRef
 } = require('../tools/fit_strategy_offline_baseline.js');
+const {
+  safeCandidateSummary
+} = require('../tools/diagnose_strategy_target_grounding.js');
 
 function observation() {
   return {
@@ -154,6 +157,36 @@ assert.strictEqual(chooseTargetRef(
   },
   []
 ), null);
+
+const privacyDiagnostic = safeCandidateSummary({
+  element: {
+    ref: 'private-field',
+    label: 'SUPER SECRET TYPED VALUE',
+    role: 'textbox',
+    tag: 'input',
+    editable: true,
+    visible: true,
+    enabled: true,
+    selector: 'input#private-secret',
+    rect: { x: 999, y: 888, width: 777, height: 666 }
+  },
+  expectedRef: 'private-field',
+  predictedRef: 'private-field',
+  observation: { focusedElementRef: 'private-field' },
+  task: { instruction: 'Type a value into the field' },
+  proto: typeTextProto
+});
+assert.strictEqual(privacyDiagnostic.isExpectedTarget, true);
+assert.strictEqual(privacyDiagnostic.isPredictedTarget, true);
+assert.strictEqual(privacyDiagnostic.isFocusedTarget, true);
+assert.strictEqual(privacyDiagnostic.affordanceEligible, true);
+const serializedDiagnostic = JSON.stringify(privacyDiagnostic);
+assert.ok(!serializedDiagnostic.includes('SUPER SECRET TYPED VALUE'));
+assert.ok(!serializedDiagnostic.includes('input#private-secret'));
+assert.ok(!serializedDiagnostic.includes('999'));
+assert.ok(!serializedDiagnostic.includes('888'));
+assert.ok(!serializedDiagnostic.includes('777'));
+assert.ok(!serializedDiagnostic.includes('666'));
 
 const validationForm = formRecord(
   'validation-form',
