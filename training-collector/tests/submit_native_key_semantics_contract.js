@@ -3,8 +3,10 @@
 const assert = require('assert');
 const { mapAgentAction } = require('../../control-center/manager/strategy/agent_action_contract.js');
 const { sampledBehavior } = require('../../control-center/manager/behavior/empirical_policy.js');
+const Dispatcher = require('../../control-center/extension/agent-runtime-extension/cdp_plan_dispatcher.js');
 const {
   SUBMIT_PLAN_VERSION,
+  CDP_PLAN_VERSION,
   buildSubmitCdpPlan
 } = require('../../control-center/manager/execution/submit_plan.js');
 
@@ -13,7 +15,9 @@ function behaviorFor(action, target) {
 }
 
 function main() {
-  assert.equal(SUBMIT_PLAN_VERSION, '0.2.0');
+  assert.equal(SUBMIT_PLAN_VERSION, '0.2.1');
+  assert.equal(CDP_PLAN_VERSION, '0.1.2');
+  assert.equal(Dispatcher.SUPPORTED_PLAN_VERSIONS.has(CDP_PLAN_VERSION), true);
 
   const editable = {
     ref: 'editable-submit-target',
@@ -31,6 +35,8 @@ function main() {
     context: { pointerStart: { x: 0, y: 0 }, rng: () => 0.5 }
   });
 
+  assert.equal(editablePlan.cdpPlanVersion, CDP_PLAN_VERSION);
+  assert.doesNotThrow(() => Dispatcher.validatePlan(editablePlan));
   const enterEvents = editablePlan.steps.filter(step =>
     step.method === 'Input.dispatchKeyEvent' && step.params?.key === 'Enter'
   );
@@ -57,6 +63,8 @@ function main() {
     target: button,
     context: { pointerStart: { x: 0, y: 0 }, rng: () => 0.5 }
   });
+  assert.equal(buttonPlan.cdpPlanVersion, CDP_PLAN_VERSION);
+  assert.doesNotThrow(() => Dispatcher.validatePlan(buttonPlan));
   assert.equal(buttonPlan.steps.some(step => step.method === 'Input.dispatchKeyEvent'), false);
   assert.ok(buttonPlan.steps.some(step =>
     step.method === 'Input.dispatchMouseEvent' && step.params?.type === 'mousePressed'
