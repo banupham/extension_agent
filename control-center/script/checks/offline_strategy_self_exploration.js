@@ -3,17 +3,20 @@
 const assert = require('assert');
 const {
   candidateTargets,
+  explorationCandidates,
   createSelfExplorationProvider,
   explorationStateSignature,
   stepChangedSemantically,
   progressiveExperienceResult
 } = require('../../manager/strategy/self_exploration_provider.js');
 
-function observation(id, enabled = {}) {
+function observation(id, enabled = {}, scrollY = 0) {
   return {
     observationId: id,
     url: 'http://127.0.0.1:8091/',
     title: enabled.pass ? 'DISCOVERY PASS' : 'PAGE_CDP Batch Lab',
+    viewport: { width: 800, height: 600 },
+    scroll: { x: 0, y: scrollY },
     interactiveElements: [
       { ref: 'e20', tag: 'button', role: 'button', label: 'Discovery Alpha', visible: true, enabled: enabled.alpha !== false },
       { ref: 'e21', tag: 'button', role: 'button', label: 'Discovery Beta', visible: true, enabled: enabled.beta !== false },
@@ -32,29 +35,45 @@ function observation(id, enabled = {}) {
     'Discovery Beta',
     'Discovery Gamma'
   ]);
+  assert.deepStrictEqual(explorationCandidates(initial).map(x => `${x.type}:${x.label}`), [
+    'click:Discovery Alpha',
+    'click:Discovery Beta',
+    'click:Discovery Gamma',
+    'scrollIntoView:Discovery Alpha',
+    'scrollIntoView:Discovery Beta',
+    'scrollIntoView:Discovery Gamma'
+  ]);
 
   const provider = createSelfExplorationProvider();
   const first = await provider.decide({ observation: initial });
-  assert.equal(first.status, 'act');
-  assert.equal(first.action.type, 'click');
-  assert.equal(first.action.targetRef, 'e20');
-  assert.equal(first.metadata.targetLabel, 'Discovery Alpha');
-
   const second = await provider.decide({ observation: initial });
-  assert.equal(second.action.targetRef, 'e21');
+  const third = await provider.decide({ observation: initial });
+  const fourth = await provider.decide({ observation: initial });
+
+  assert.equal(first.action.type, 'click');
+  assert.equal(first.metadata.targetLabel, 'Discovery Alpha');
+  assert.equal(second.action.type, 'click');
   assert.equal(second.metadata.targetLabel, 'Discovery Beta');
+  assert.equal(third.action.type, 'click');
+  assert.equal(third.metadata.targetLabel, 'Discovery Gamma');
+  assert.equal(fourth.action.type, 'scrollIntoView');
+  assert.equal(fourth.metadata.targetLabel, 'Discovery Alpha');
 
-  const afterBeta = observation('obs-1', { beta: false });
-  const third = await provider.decide({ observation: afterBeta });
-  assert.equal(third.action.targetRef, 'e20');
-  assert.equal(third.metadata.targetLabel, 'Discovery Alpha');
+  const afterScroll = observation('obs-scroll', {}, 650);
+  assert.notEqual(explorationStateSignature(initial), explorationStateSignature(afterScroll));
+  const fifth = await provider.decide({ observation: afterScroll });
+  assert.equal(fifth.action.type, 'click');
+  assert.equal(fifth.metadata.targetLabel, 'Discovery Alpha');
 
-  const afterAlpha = observation('obs-2', { alpha: false, beta: false });
-  const fourth = await provider.decide({ observation: afterAlpha });
-  assert.equal(fourth.action.targetRef, 'e22');
-  assert.equal(fourth.metadata.targetLabel, 'Discovery Gamma');
+  const afterBeta = observation('obs-beta', { beta: false }, 650);
+  const sixth = await provider.decide({ observation: afterBeta });
+  assert.equal(sixth.action.type, 'click');
+  assert.equal(sixth.metadata.targetLabel, 'Discovery Alpha');
 
-  assert.notEqual(explorationStateSignature(initial), explorationStateSignature(afterBeta));
+  const afterAlpha = observation('obs-alpha', { alpha: false, beta: false }, 650);
+  const seventh = await provider.decide({ observation: afterAlpha });
+  assert.equal(seventh.action.type, 'click');
+  assert.equal(seventh.metadata.targetLabel, 'Discovery Gamma');
 
   const unchangedStep = {
     before: initial,
@@ -62,27 +81,44 @@ function observation(id, enabled = {}) {
     outcome: { taskSucceeded: false },
     action: first.action
   };
-  const changedStep = {
+  const scrollStep = {
     before: initial,
+    after: afterScroll,
+    outcome: { taskSucceeded: false },
+    action: fourth.action
+  };
+  const betaStep = {
+    before: afterScroll,
     after: afterBeta,
     outcome: { taskSucceeded: false },
     action: second.action
   };
+  const alphaStep = {
+    before: afterBeta,
+    after: afterAlpha,
+    outcome: { taskSucceeded: false },
+    action: sixth.action
+  };
   const successStep = {
     before: afterAlpha,
-    after: observation('obs-3', { alpha: false, beta: false, gamma: false, pass: true }),
+    after: observation('obs-pass', { alpha: false, beta: false, gamma: false, pass: true }, 650),
     outcome: { taskSucceeded: true },
-    action: fourth.action
+    action: seventh.action
   };
+
   assert.equal(stepChangedSemantically(unchangedStep), false);
-  assert.equal(stepChangedSemantically(changedStep), true);
+  assert.equal(stepChangedSemantically(scrollStep), true);
+  assert.equal(stepChangedSemantically(betaStep), true);
 
-  const filtered = progressiveExperienceResult({ steps: [unchangedStep, changedStep, successStep] });
-  assert.equal(filtered.steps.length, 2);
-  assert.equal(filtered.steps[0].action.targetRef, 'e21');
-  assert.equal(filtered.steps[1].action.targetRef, 'e22');
+  const filtered = progressiveExperienceResult({ steps: [unchangedStep, scrollStep, betaStep, alphaStep, successStep] });
+  assert.deepStrictEqual(filtered.steps.map(step => `${step.action.type}:${step.action.targetRef}`), [
+    'scrollIntoView:e20',
+    'click:e21',
+    'click:e20',
+    'click:e22'
+  ]);
 
-  for (const decision of [first, second, third, fourth]) {
+  for (const decision of [first, second, third, fourth, fifth, sixth, seventh]) {
     const text = JSON.stringify(decision);
     assert(!text.includes('selector'));
     assert(!text.includes('cdpMethod'));
