@@ -9,7 +9,7 @@ const { evaluateActionEffect } = require('../goal/semantic_effect_evaluator.js')
 const { reduceOutcomeToControl } = require('../goal/outcome_controller.js');
 const { evaluateEpisodeBudget, DEFAULT_BUDGETS } = require('../goal/episode_budget.js');
 
-const BOUNDED_EPISODE_LOOP_VERSION = '0.5.0';
+const BOUNDED_EPISODE_LOOP_VERSION = '0.6.0';
 
 function validateSemanticDecision(rawDecision) {
   const decision = validateDecision(rawDecision);
@@ -116,6 +116,9 @@ async function executeBoundedEpisodeLoop(input = {}) {
       baseline: input.baseline || null,
       rng: input.rng,
       postActionSettle: input.postActionSettle,
+      resolveTransientActionArgs: typeof input.resolveTransientActionArgs === 'function'
+        ? context => input.resolveTransientActionArgs({ task, history, ...context })
+        : null,
       decide: async observation => {
         strategyCallCount += 1;
         const raw = await strategy.decide({ task, observation, history });
@@ -180,6 +183,7 @@ async function executeBoundedEpisodeLoop(input = {}) {
       decision: chosenDecision || step.decision || null,
       action: step.mappedAction || null,
       execution: step.execution,
+      transientPayload: step.transientPayload || { applied: false, redacted: true, keys: [] },
       before: step.before || null,
       after: step.after || null,
       beforeBrowserContext: step.beforeBrowserContext || null,
@@ -228,7 +232,8 @@ async function executeBoundedEpisodeLoop(input = {}) {
       stoppedOnTerminalBudget: finalBudget == null || finalBudget.terminal === true || terminalDecision != null,
       noActionAfterTerminalBudget: true,
       selectorUsedByStrategy: false,
-      literalTrajectoryReplay: false
+      literalTrajectoryReplay: false,
+      transientPayloadRedacted: steps.every(step => step?.transientPayload?.redacted === true)
     }
   };
 }
