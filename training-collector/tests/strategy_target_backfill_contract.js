@@ -78,7 +78,6 @@ function main() {
   try {
     const rawDir = path.join(temp, 'raw');
     fs.mkdirSync(rawDir, { recursive: true });
-    const reviews = [];
     const items = [];
     const triageItems = [];
     const cases = [
@@ -89,7 +88,6 @@ function main() {
     for (const [episodeId, transitionId, ref] of cases) {
       const file = path.join(temp, `${episodeId}.task-episode-review.json`);
       fs.writeFileSync(file, JSON.stringify(review(episodeId, transitionId, ref)));
-      reviews.push(file);
       items.push(packItem(episodeId, file, transitionId));
       triageItems.push(triageItem(episodeId, transitionId));
     }
@@ -132,11 +130,11 @@ function main() {
     assert.equal(backfill.result.items[0].transitions[0].semanticTarget.tag, 'button');
     assert.equal(backfill.result.items[1].transitions[0].semanticTarget.tag, 'a');
     const serializedEvidence = JSON.stringify(backfill.result);
-    assert.equal(serializedEvidence.includes('"selector"'), false);
-    assert.equal(serializedEvidence.includes('selectorCandidates'), false);
-    assert.equal(serializedEvidence.includes('"rect"'), false);
-    assert.equal(serializedEvidence.includes('"pageInstanceId"'), false);
-    assert.equal(serializedEvidence.includes('"targetRef"'), false);
+    assert.equal(serializedEvidence.includes('"selector":'), false);
+    assert.equal(serializedEvidence.includes('"selectorCandidates":'), false);
+    assert.equal(serializedEvidence.includes('"rect":'), false);
+    assert.equal(serializedEvidence.includes('"pageInstanceId":'), false);
+    assert.equal(serializedEvidence.includes('"targetRef":'), false);
     assert.equal(serializedEvidence.includes('#alpha'), false);
 
     const resolved = resolveReviewPack(packFile, triageFile, evidenceFile, path.join(temp, 'resolved'));
