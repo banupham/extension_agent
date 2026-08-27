@@ -1,10 +1,16 @@
 'use strict';
 
-const SEMANTIC_EFFECT_VERSION = '0.1.0';
+const SEMANTIC_EFFECT_VERSION = '0.1.1';
 const EFFECT_STATUSES = new Set(['execution_failed', 'no_effect', 'effect_observed']);
+const OBSERVABLE_EFFECT_OPTIONAL_TYPES = new Set(['moveTo', 'hover', 'hoverAndObserve', 'waitAndObserve']);
 
 function normalizeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function observableEffectExpectedFor(action) {
+  const type = String(action?.type || '').trim();
+  return !!type && !OBSERVABLE_EFFECT_OPTIONAL_TYPES.has(type);
 }
 
 function elementIdentity(element) {
@@ -110,11 +116,14 @@ function browserContextChanged(beforeBrowserContext, afterBrowserContext) {
 
 function evaluateActionEffect(input = {}) {
   const execution = input.execution || null;
+  const action = input.action || null;
+  const effectExpected = observableEffectExpectedFor(action);
   const executionOk = execution?.ok === true;
   if (!executionOk) {
     return {
       semanticEffectVersion: SEMANTIC_EFFECT_VERSION,
       status: 'execution_failed',
+      observableEffectExpected: effectExpected,
       confidence: 1,
       codes: ['execution_failed'],
       targetIdentityAvailable: false,
@@ -124,7 +133,6 @@ function evaluateActionEffect(input = {}) {
 
   const before = input.before || null;
   const after = input.after || null;
-  const action = input.action || null;
   const codes = [];
   let strongEvidence = 0;
 
@@ -178,6 +186,7 @@ function evaluateActionEffect(input = {}) {
   return {
     semanticEffectVersion: SEMANTIC_EFFECT_VERSION,
     status,
+    observableEffectExpected: effectExpected,
     confidence,
     codes: uniqueCodes,
     targetIdentityAvailable: !!findTargetBefore(action, before),
@@ -188,7 +197,9 @@ function evaluateActionEffect(input = {}) {
 module.exports = {
   SEMANTIC_EFFECT_VERSION,
   EFFECT_STATUSES,
+  OBSERVABLE_EFFECT_OPTIONAL_TYPES,
   normalizeText,
+  observableEffectExpectedFor,
   elementIdentity,
   elementState,
   elementStateChangeCodes,
