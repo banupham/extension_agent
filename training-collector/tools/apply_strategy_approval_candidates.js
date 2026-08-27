@@ -8,7 +8,7 @@ const {
   verifyDigest
 } = require('./prepare_strategy_approval_candidates.js');
 
-const APPROVAL_APPLICATOR_VERSION = '0.1.0';
+const APPROVAL_APPLICATOR_VERSION = '0.2.0';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -49,7 +49,17 @@ function assertExplicitHumanConfirmation(candidateFile, candidate, options = {})
 
 function annotationForCandidate(candidate, proof) {
   const steps = (Array.isArray(candidate?.proposedSteps) ? candidate.proposedSteps : []).map(step => {
-    if (step?.proposedInclude !== true) throw new Error(`candidate_step_not_included:${step?.transitionId || '<missing>'}`);
+    if (step?.proposedInclude === false) {
+      if (!step?.exclusionReason) throw new Error(`candidate_excluded_step_reason_missing:${step?.transitionId || '<missing>'}`);
+      return {
+        transitionId: step.transitionId,
+        include: false,
+        exclusionReason: step.exclusionReason,
+        action: null,
+        outcome: null
+      };
+    }
+    if (step?.proposedInclude !== true) throw new Error(`candidate_step_include_decision_missing:${step?.transitionId || '<missing>'}`);
     if (!step?.proposedAction || !step?.proposedOutcome) throw new Error(`candidate_step_proposal_incomplete:${step?.transitionId || '<missing>'}`);
     return {
       transitionId: step.transitionId,
@@ -65,7 +75,8 @@ function annotationForCandidate(candidate, proof) {
       }
     };
   });
-  if (!steps.length) throw new Error(`candidate_episode_has_no_steps:${candidate?.episodeId || '<missing>'}`);
+  const includedCount = steps.filter(step => step.include === true).length;
+  if (!includedCount) throw new Error(`candidate_episode_has_no_strategy_steps:${candidate?.episodeId || '<missing>'}`);
   return {
     contractVersion: '0.1.1',
     episodeId: candidate.episodeId,
@@ -85,6 +96,7 @@ function annotationForCandidate(candidate, proof) {
     policy: {
       createdOnlyAfterExplicitDigestConfirmation: true,
       rawEvidenceNeverAutoPromotedWithoutHumanConfirmation: true,
+      excludedCaptureNoisePreservedAsExcludedProvenance: true,
       autoTrainEligibleBeforeDatasetSplit: false
     }
   };
@@ -98,10 +110,14 @@ function applyApprovalCandidates(candidateFile, outputDir, options = {}) {
   fs.mkdirSync(outDir, { recursive: true });
 
   const files = [];
-  let approvedTransitionCount = 0;
+  let reviewedTransitionCount = 0;
+  let approvedStrategyStepCount = 0;
+  let excludedCaptureNoiseCount = 0;
   for (const item of Array.isArray(candidate?.candidates) ? candidate.candidates : []) {
     const annotation = annotationForCandidate(item, proof);
-    approvedTransitionCount += annotation.steps.length;
+    reviewedTransitionCount += annotation.steps.length;
+    approvedStrategyStepCount += annotation.steps.filter(step => step.include === true).length;
+    excludedCaptureNoiseCount += annotation.steps.filter(step => step.include === false).length;
     const file = path.join(outDir, `${safeName(item.episodeId)}.strategy-review.approved.json`);
     fs.writeFileSync(file, `${JSON.stringify(annotation, null, 2)}\n`, 'utf8');
     files.push(file);
@@ -114,7 +130,9 @@ function applyApprovalCandidates(candidateFile, outputDir, options = {}) {
     sourceCandidateFile: path.relative(process.cwd(), fullCandidate),
     digestHash: candidate.digestHash,
     approvedEpisodeCount: files.length,
-    approvedTransitionCount,
+    approvedTransitionCount: reviewedTransitionCount,
+    approvedStrategyStepCount,
+    excludedCaptureNoiseCount,
     blockedEpisodeCount: Array.isArray(candidate?.blocked) ? candidate.blocked.length : 0,
     explicitHumanConfirmationVerified: true,
     policy: {
@@ -122,6 +140,7 @@ function applyApprovalCandidates(candidateFile, outputDir, options = {}) {
       exactDigestHashConfirmedByHuman: true,
       exactConfirmationPhraseRequired: true,
       noBlockedEpisodeApproved: true,
+      excludedNoiseNeverBecomesStrategyStep: true,
       annotationsRemainUnassignedUntilDatasetSplit: true
     },
     annotationFiles: files.map(file => path.relative(process.cwd(), file))
@@ -160,6 +179,8 @@ function main(argv = process.argv.slice(2)) {
       version: applied.receipt.approvalApplicatorVersion,
       approvedEpisodeCount: applied.receipt.approvedEpisodeCount,
       approvedTransitionCount: applied.receipt.approvedTransitionCount,
+      approvedStrategyStepCount: applied.receipt.approvedStrategyStepCount,
+      excludedCaptureNoiseCount: applied.receipt.excludedCaptureNoiseCount,
       blockedEpisodeCount: applied.receipt.blockedEpisodeCount,
       explicitHumanConfirmationVerified: applied.receipt.explicitHumanConfirmationVerified,
       annotations: path.resolve(path.dirname(applied.receiptFile)),
