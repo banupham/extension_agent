@@ -81,6 +81,19 @@ function successfulTrainingEpisode({ instruction, recoveryType, recoveryTargetLa
   };
 }
 
+function assertNoExecutionDetails(value) {
+  const forbidden = new Set(['selector', 'selectors', 'targetRef', 'rect', 'x', 'y', 'cdpPlan', 'cdpMethod', 'tabId']);
+  function walk(node) {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== 'object') return;
+    for (const [key, child] of Object.entries(node)) {
+      assert.equal(forbidden.has(key), false, `forbidden recovery memory key: ${key}`);
+      walk(child);
+    }
+  }
+  walk(value);
+}
+
 async function main() {
   const scrollTask = { instruction: 'Reveal the hidden continue control' };
   const scrollResult = successfulTrainingEpisode({
@@ -94,8 +107,7 @@ async function main() {
   assert.equal(scrollRecords[0].trigger.effectStatus, 'no_effect');
   assert.equal(scrollRecords[0].recovery.type, 'scrollVertical');
   assert.equal(scrollRecords[0].recovery.targetLabel, null);
-  assert.equal(JSON.stringify(scrollRecords[0]).includes('targetRef'), false);
-  assert.equal(JSON.stringify(scrollRecords[0]).includes('selector'), false);
+  assertNoExecutionDetails(scrollRecords[0]);
 
   const dismissTask = { instruction: 'Close the blocking overlay' };
   const dismissResult = successfulTrainingEpisode({
@@ -107,6 +119,7 @@ async function main() {
   assert.equal(dismissRecords.length, 1);
   assert.equal(dismissRecords[0].recovery.type, 'dismiss');
   assert.equal(dismissRecords[0].recovery.targetLabel, 'Dismiss Overlay');
+  assertNoExecutionDetails(dismissRecords[0]);
 
   const failureHistory = [{
     stepIndex: 1,
