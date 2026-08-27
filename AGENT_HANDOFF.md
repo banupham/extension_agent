@@ -55,7 +55,7 @@ Important observations for the next processing stage:
 
 Commit `ffb9752e490a27879c06ec6572270d99dad9053e` updates Strategy review-pack action hints so current collector action kinds `text-key`, `key`, `text-change`, and `change` enter the correct human-review ambiguity path rather than becoming missing-hint records. This does not auto-label typed text and does not auto-approve anything.
 
-GitHub Actions run `33063977132` was started for this change; check its final result before treating the patch as proven.
+GitHub Actions run `33063977132` completed successfully; all semantic mission, Behavior, review, ambiguity, provenance, and approval pipeline gates passed.
 
 ## Immediate next action
 
