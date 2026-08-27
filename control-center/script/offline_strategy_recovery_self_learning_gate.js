@@ -197,8 +197,11 @@ async function runGate(options = {}) {
   } else {
     if (sources[1] !== 'recoveryExploration') errors.push(`relearn_source:${sources[1] || '<missing>'}`);
     const metadata = result?.steps?.[1]?.decision?.metadata || {};
-    if (metadata.historicalAttempts < 1 || metadata.historicalSuccesses < 1 || metadata.historicalFailures !== 0) {
-      errors.push('relearn_positive_history_missing');
+    if (metadata.explorationActionType !== 'scrollVertical') errors.push(`relearn_action:${metadata.explorationActionType || '<missing>'}`);
+    const candidateHistory = Array.isArray(metadata.candidateHistory) ? metadata.candidateHistory : [];
+    const failedWait = candidateHistory.find(candidate => candidate?.type === 'waitAndObserve');
+    if (!failedWait || failedWait.attempts < 1 || failedWait.failures < 1 || !(failedWait.confidence < 0.5)) {
+      errors.push('relearn_negative_wait_history_missing');
     }
   }
 
@@ -225,7 +228,8 @@ async function runGate(options = {}) {
       historicalAttempts: step?.decision?.metadata?.historicalAttempts ?? null,
       historicalSuccesses: step?.decision?.metadata?.historicalSuccesses ?? null,
       historicalFailures: step?.decision?.metadata?.historicalFailures ?? null,
-      historicalConfidence: step?.decision?.metadata?.historicalConfidence ?? null
+      historicalConfidence: step?.decision?.metadata?.historicalConfidence ?? null,
+      candidateHistory: step?.decision?.metadata?.candidateHistory || null
     })),
     finalOutcome: result.finalOutcome,
     finalControl: result.finalControl,
