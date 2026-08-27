@@ -489,6 +489,16 @@ function createOfflineBaselineProvider(options = {}) {
       }
 
       const targetRef = chooseTargetRef(chosen.proto, task, observation, history);
+      if (actionRequiresEditableTarget(chosen.proto) && !targetRef) {
+        return {
+          status: 'blocked',
+          confidence: chosen.score,
+          reasonCode: 'offline_baseline_target_not_found',
+          recovery: { suggested: 'reobserve' },
+          metadata: decisionMetadata(model, chosen)
+        };
+      }
+
       let action;
       try {
         action = validateAgentAction({
