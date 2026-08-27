@@ -102,8 +102,8 @@ assert.throws(() => Planner.buildCdpPlan({
   context: { viewportCenter: { x: 340.5, y: 320 } }
 }), /scroll_into_view_requires_target_rect/);
 
-const typeBehavior = validateExecutionBehavior({ actionType: 'typeText', keyboard: { initialPauseMs: 50, constraints: { interKeyMedianMs: 80, holdMedianMs: 70 } }, metadata: { behaviorFamily: 'keyboard-text' } });
-const typePlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'typeText', args: { text: 'abc' } }), behavior: typeBehavior });
+const typeBehavior = validateExecutionBehavior({ actionType: 'typeText', targetRef: 'e8', keyboard: { initialPauseMs: 50, constraints: { interKeyMedianMs: 80, holdMedianMs: 70 } }, metadata: { behaviorFamily: 'keyboard-text' } });
+const typePlan = Planner.buildCdpPlan({ mappedAction: mapAgentAction({ type: 'typeText', targetRef: 'e8', args: { text: 'abc' } }), behavior: typeBehavior });
 assert.strictEqual(typePlan.steps.length, 3);
 assert.strictEqual(typePlan.steps.map(x => x.params.text).join(''), 'abc');
 assert.strictEqual(typePlan.steps[0].delayMs, 50);
