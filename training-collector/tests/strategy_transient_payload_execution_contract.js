@@ -143,7 +143,11 @@ async function main() {
   assert.equal(result.steps[1].transientPayload.applied, false);
   assert.equal(result.invariant.transientPayloadRedacted, true);
   assert.equal(runtime.rawPlans.length, 2);
-  assert.ok(JSON.stringify(runtime.rawPlans[0]).includes(SECRET), 'raw execution plan must receive transient text');
+  assert.equal(
+    runtime.rawPlans[0].steps.filter(step => step.method === 'Input.insertText').map(step => step.params.text).join(''),
+    SECRET,
+    'raw execution plan must receive transient text'
+  );
   assert.equal(JSON.stringify(result).includes(SECRET), false, 'public bounded result must not persist transient text');
   assert.equal(JSON.stringify(result.history).includes(SECRET), false, 'Strategy history must not persist transient text');
   assert.equal(JSON.stringify(result.steps.map(step => step.decision)).includes(SECRET), false, 'Strategy decisions must not persist transient text');
