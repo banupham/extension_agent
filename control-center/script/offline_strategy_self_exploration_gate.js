@@ -19,7 +19,12 @@ const {
 const { parseArgs, discoverRuntimeAgent, resolveCommandTabId } = require('./agent_one_action.js');
 const { loadJson } = require('./offline_strategy_bounded_episode_loop_gate.js');
 
-const EXPECTED_LEARNED_LABELS = ['Discovery Beta', 'Discovery Alpha', 'Discovery Gamma'];
+const EXPECTED_LEARNED_SEQUENCE = [
+  { type: 'scrollIntoView', targetLabel: 'Discovery Alpha' },
+  { type: 'click', targetLabel: 'Discovery Beta' },
+  { type: 'click', targetLabel: 'Discovery Alpha' },
+  { type: 'click', targetLabel: 'Discovery Gamma' }
+];
 const DEFAULT_MEMORY_FILE = path.join('training-collector', 'strategy-data', 'self-exploration-v01', 'memory.jsonl');
 
 function makeTask(instruction = 'Solve the opaque discovery challenge') {
@@ -47,6 +52,17 @@ function stepTargetLabel(step) {
   return targetLabelForStep(step) || step?.decision?.metadata?.targetLabel || null;
 }
 
+function sequenceOfSteps(steps) {
+  return (Array.isArray(steps) ? steps : []).map(step => ({
+    type: step?.action?.type || null,
+    targetLabel: stepTargetLabel(step)
+  }));
+}
+
+function sameSequence(actual, expected = EXPECTED_LEARNED_SEQUENCE) {
+  return JSON.stringify(actual) === JSON.stringify(expected);
+}
+
 function commonErrors(result) {
   const errors = [];
   if (result?.finalOutcome?.taskSucceeded !== true) errors.push('final_goal_not_satisfied');
@@ -72,8 +88,8 @@ async function runGate(options = {}) {
   if (options.resetMemory === true && fs.existsSync(memoryFile)) fs.rmSync(memoryFile, { force: true });
 
   const explorationProvider = createSelfExplorationProvider({
-    actionType: 'click',
-    targetLabelPrefix: 'Discovery '
+    targetLabelPrefix: 'Discovery ',
+    actionTypes: ['click', 'scrollIntoView']
   });
   let provider = explorationProvider;
   if (mode === 'recall') {
@@ -93,33 +109,37 @@ async function runGate(options = {}) {
     strategy,
     task,
     budgets: {
-      maxSteps: 10,
+      maxSteps: 12,
       maxDurationMs: 120000,
       maxConsecutiveFailures: 2,
-      maxReplans: 9,
-      maxStalledSteps: 8
+      maxReplans: 11,
+      maxStalledSteps: 10
     },
     startedAtMs: Date.now() - 100
   });
 
   const errors = commonErrors(result);
-  const attemptLabels = (result.steps || []).map(stepTargetLabel);
+  const attempts = sequenceOfSteps(result.steps);
   const decisionSources = (result.steps || []).map(step => step?.decision?.metadata?.prototypeSource || null);
-  const semanticActions = (result.steps || []).map(step => step?.action?.type || null);
   let memoryWrite = null;
   let learnedExperience = null;
-  let learnedLabels = [];
+  let learnedSequence = [];
 
   if (mode === 'learn') {
     if (decisionSources.some(source => source !== 'selfExploration')) {
       errors.push(`learn_source:${decisionSources.join(',')}`);
     }
-    if (attemptLabels[0] !== 'Discovery Alpha') errors.push(`first_probe:${attemptLabels[0] || '<missing>'}`);
+    if (attempts[0]?.type !== 'click' || attempts[0]?.targetLabel !== 'Discovery Alpha') {
+      errors.push(`first_probe:${attempts[0]?.type || '<missing>'}:${attempts[0]?.targetLabel || '<missing>'}`);
+    }
+    if (!attempts.some(step => step.type === 'scrollIntoView')) {
+      errors.push('exploration_never_tried_scroll_into_view');
+    }
     const progressive = progressiveExperienceResult(result);
     learnedExperience = buildSuccessfulExperience({ task, result: progressive });
-    learnedLabels = learnedExperience.sequence.map(step => step.targetLabel);
-    if (learnedLabels.join('|') !== EXPECTED_LEARNED_LABELS.join('|')) {
-      errors.push(`learned_sequence:${learnedLabels.join('|') || '<empty>'}`);
+    learnedSequence = learnedExperience.sequence.map(step => ({ type: step.type, targetLabel: step.targetLabel }));
+    if (!sameSequence(learnedSequence)) {
+      errors.push(`learned_sequence:${learnedSequence.map(step => `${step.type}:${step.targetLabel}`).join('|') || '<empty>'}`);
     }
     if (!errors.length) memoryWrite = appendExperience(memoryFile, learnedExperience);
     if (!memoryWrite) errors.push('self_exploration_memory_not_written');
@@ -127,10 +147,10 @@ async function runGate(options = {}) {
     if (decisionSources.some(source => source !== 'selfExperience')) {
       errors.push(`recall_source:${decisionSources.join(',')}`);
     }
-    if (attemptLabels.join('|') !== EXPECTED_LEARNED_LABELS.join('|')) {
-      errors.push(`recalled_sequence:${attemptLabels.join('|') || '<empty>'}`);
+    if (!sameSequence(attempts)) {
+      errors.push(`recalled_sequence:${attempts.map(step => `${step.type}:${step.targetLabel}`).join('|') || '<empty>'}`);
     }
-    if (result.steps.length !== 3) errors.push(`recall_action_count:${result.steps.length}`);
+    if (result.steps.length !== EXPECTED_LEARNED_SEQUENCE.length) errors.push(`recall_action_count:${result.steps.length}`);
   }
 
   return {
@@ -151,8 +171,9 @@ async function runGate(options = {}) {
     proof: {
       modelHasClickSkill: true,
       modelContainsDiscoveryKnowledge: false,
-      taskContainsTargetLabels: EXPECTED_LEARNED_LABELS.some(label => task.instruction.toLowerCase().includes(label.toLowerCase())),
-      explorationPrimitive: 'click'
+      taskContainsTargetLabels: EXPECTED_LEARNED_SEQUENCE.some(step => task.instruction.toLowerCase().includes(step.targetLabel.toLowerCase())),
+      explorationActionSpace: ['click', 'scrollIntoView'],
+      scrollDecisionOwnedByStrategy: true
     },
     attempts: (result.steps || []).map((step, index) => ({
       index,
@@ -163,13 +184,12 @@ async function runGate(options = {}) {
       afterTitle: step?.after?.title || null,
       semanticProgress: step?.outcome?.taskSucceeded === true || (
         step?.before && step?.after &&
-        JSON.stringify(step.before.interactiveElements || []) !== JSON.stringify(step.after.interactiveElements || [])
+        (Number(step.before?.scroll?.y || 0) !== Number(step.after?.scroll?.y || 0) ||
+         JSON.stringify(step.before.interactiveElements || []) !== JSON.stringify(step.after.interactiveElements || []))
       ),
       taskSucceeded: step?.outcome?.taskSucceeded === true
     })),
-    actualActions: semanticActions,
-    attemptLabels,
-    learnedLabels,
+    learnedSequence,
     decisionSources,
     finalOutcome: result.finalOutcome,
     finalControl: result.finalControl,
@@ -235,12 +255,14 @@ if (require.main === module) {
 }
 
 module.exports = {
-  EXPECTED_LEARNED_LABELS,
+  EXPECTED_LEARNED_SEQUENCE,
   DEFAULT_MEMORY_FILE,
   makeTask,
   modelHasClickSkill,
   modelContainsDiscoveryKnowledge,
   stepTargetLabel,
+  sequenceOfSteps,
+  sameSequence,
   commonErrors,
   runGate,
   main
