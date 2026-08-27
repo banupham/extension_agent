@@ -15,7 +15,9 @@ on:
       - 'control-center/script/checks/mission_semantic_goal_execution.js'
       - 'control-center/script/checks/offline_strategy_semantic_mission.js'
       - 'training-collector/tools/curate_random_human_data.js'
+      - 'training-collector/tools/prepare_human_learning_batch.js'
       - 'training-collector/tests/random_human_data_curator_contract.js'
+      - 'training-collector/tests/human_learning_batch_contract.js'
       - '.github/workflows/semantic-mission-and-curation.yml'
   workflow_dispatch:
 
@@ -34,7 +36,9 @@ jobs:
           node --check control-center/script/offline_strategy_semantic_mission_gate.js
           node --check control-center/script/checks/offline_strategy_semantic_mission.js
           node --check training-collector/tools/curate_random_human_data.js
+          node --check training-collector/tools/prepare_human_learning_batch.js
           node --check training-collector/tests/random_human_data_curator_contract.js
+          node --check training-collector/tests/human_learning_batch_contract.js
       - name: Run semantic goal resolver contract
         run: node control-center/script/checks/semantic_goal_resolver.js
       - name: Run semantic mission execution contract
@@ -43,3 +47,5 @@ jobs:
         run: node control-center/script/checks/offline_strategy_semantic_mission.js
       - name: Run random human data curator contract
         run: node training-collector/tests/random_human_data_curator_contract.js
+      - name: Run human learning batch contract
+        run: node training-collector/tests/human_learning_batch_contract.js
