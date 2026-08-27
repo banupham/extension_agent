@@ -86,6 +86,7 @@ async function runGate(options = {}) {
     runtime,
     strategy,
     task,
+    postActionSettle: options.postActionSettle,
     budgets: {
       maxSteps: 6,
       maxDurationMs: 120000,
