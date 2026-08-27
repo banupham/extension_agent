@@ -13,7 +13,7 @@ const {
   recoveryOutcomeStats
 } = require('./recovery_outcome_memory.js');
 
-const RECOVERY_EXPLORATION_VERSION = '0.2.1';
+const RECOVERY_EXPLORATION_VERSION = '0.3.0';
 const DEFAULT_RECOVERY_ACTION_TYPES = Object.freeze([
   'waitAndObserve',
   'scrollVertical',
@@ -67,6 +67,46 @@ function taskExplorationKey(task) {
   return normalizeInstruction(task?.instruction) || '<unknown-task>';
 }
 
+function rootRecoveryTriggerFromHistory(history = []) {
+  const direct = triggerFromHistory(history);
+  if (!direct) return null;
+  const last = Array.isArray(history) && history.length ? history[history.length - 1] : null;
+  const source = String(last?.decisionSource || '').trim();
+  const recoverySource = source === 'recoveryExploration' || source === 'recoveryPolicy';
+  const rootActionType = String(last?.recoveryTriggerActionType || '').trim();
+  if (!recoverySource || !rootActionType) return direct;
+  return {
+    actionType: rootActionType,
+    targetLabel: typeof last?.recoveryTriggerTargetLabel === 'string' && last.recoveryTriggerTargetLabel.trim()
+      ? last.recoveryTriggerTargetLabel.trim()
+      : null,
+    controlStatus: 'failed',
+    reasonCode: String(last?.recoveryTriggerReasonCode || '').trim(),
+    effectStatus: String(last?.recoveryTriggerEffectStatus || '').trim() || null,
+    effectCodes: Array.isArray(last?.recoveryTriggerEffectCodes) ? [...last.recoveryTriggerEffectCodes] : []
+  };
+}
+
+function sameRecoveryTrigger(entry, trigger) {
+  if (!entry || !trigger) return false;
+  if (String(entry.recoveryTriggerActionType || '').trim() !== String(trigger.actionType || '').trim()) return false;
+  if (normalizeInstruction(entry.recoveryTriggerTargetLabel) !== normalizeInstruction(trigger.targetLabel)) return false;
+  return true;
+}
+
+function attemptedRecoveryKeysFromHistory(history = [], trigger = null) {
+  const keys = new Set();
+  for (const entry of Array.isArray(history) ? history : []) {
+    const source = String(entry?.decisionSource || '').trim();
+    if (source !== 'recoveryExploration' && source !== 'recoveryPolicy') continue;
+    if (trigger && !sameRecoveryTrigger(entry, trigger)) continue;
+    const type = String(entry?.actionType || '').trim();
+    if (!type) continue;
+    keys.add(`${type}|${normalizeInstruction(entry?.actionTargetLabel)}`);
+  }
+  return keys;
+}
+
 function rankCandidatesByOutcomeHistory(candidates, records, task, trigger) {
   return (Array.isArray(candidates) ? candidates : [])
     .map(candidate => ({
@@ -115,11 +155,13 @@ function createRecoveryExplorationProvider(options = {}) {
     version: RECOVERY_EXPLORATION_VERSION,
 
     async decide({ task, observation, history = [] }) {
-      const trigger = triggerFromHistory(history);
+      const trigger = rootRecoveryTriggerFromHistory(history);
       if (!trigger) return baseProvider.decide({ task, observation, history });
 
       const key = taskExplorationKey(task);
       const tried = triedByTask.get(key) || new Set();
+      for (const attempted of attemptedRecoveryKeysFromHistory(history, trigger)) tried.add(attempted);
+
       const ranked = rankCandidatesByOutcomeHistory(
         recoveryCandidates(observation, actionTypes),
         currentOutcomeRecords(),
@@ -183,6 +225,9 @@ module.exports = {
   candidateTargets,
   recoveryCandidates,
   taskExplorationKey,
+  rootRecoveryTriggerFromHistory,
+  sameRecoveryTrigger,
+  attemptedRecoveryKeysFromHistory,
   rankCandidatesByOutcomeHistory,
   semanticCandidateHistory,
   createRecoveryExplorationProvider
