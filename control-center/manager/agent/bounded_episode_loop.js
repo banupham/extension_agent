@@ -9,7 +9,7 @@ const { evaluateActionEffect } = require('../goal/semantic_effect_evaluator.js')
 const { reduceOutcomeToControl } = require('../goal/outcome_controller.js');
 const { evaluateEpisodeBudget, DEFAULT_BUDGETS } = require('../goal/episode_budget.js');
 
-const BOUNDED_EPISODE_LOOP_VERSION = '0.4.0';
+const BOUNDED_EPISODE_LOOP_VERSION = '0.5.0';
 
 function validateSemanticDecision(rawDecision) {
   const decision = validateDecision(rawDecision);
@@ -33,6 +33,22 @@ function copyArray(value) {
   return Array.isArray(value) ? [...value] : [];
 }
 
+function copyDecisionFeedback(out, metadata = {}) {
+  const source = String(metadata.prototypeSource || '').trim();
+  if (source) out.decisionSource = source;
+
+  const triggerActionType = String(metadata.triggerActionType || '').trim();
+  if (triggerActionType) {
+    out.recoveryTriggerActionType = triggerActionType;
+    const targetLabel = typeof metadata.triggerTargetLabel === 'string' ? metadata.triggerTargetLabel.trim() : '';
+    out.recoveryTriggerTargetLabel = targetLabel || null;
+    out.recoveryTriggerReasonCode = String(metadata.triggerReasonCode || '').trim() || null;
+    out.recoveryTriggerEffectStatus = String(metadata.triggerEffectStatus || '').trim() || null;
+    out.recoveryTriggerEffectCodes = copyArray(metadata.triggerEffectCodes);
+  }
+  return out;
+}
+
 function mergeSemanticFeedback(historyBefore, budgetHistory, effect, feedback = {}) {
   const previous = new Map((Array.isArray(historyBefore) ? historyBefore : []).map(entry => [Number(entry?.stepIndex), entry]));
   const latestStepIndex = Array.isArray(budgetHistory) && budgetHistory.length
@@ -49,6 +65,14 @@ function mergeSemanticFeedback(historyBefore, budgetHistory, effect, feedback = 
     if (Number.isFinite(Number(prior?.effectConfidence))) out.effectConfidence = Number(prior.effectConfidence);
     if (typeof prior?.observableEffectExpected === 'boolean') out.observableEffectExpected = prior.observableEffectExpected;
     if (typeof prior?.actionTargetLabel === 'string' && prior.actionTargetLabel.trim()) out.actionTargetLabel = prior.actionTargetLabel.trim();
+    if (typeof prior?.decisionSource === 'string' && prior.decisionSource.trim()) out.decisionSource = prior.decisionSource.trim();
+    if (typeof prior?.recoveryTriggerActionType === 'string' && prior.recoveryTriggerActionType.trim()) {
+      out.recoveryTriggerActionType = prior.recoveryTriggerActionType.trim();
+      out.recoveryTriggerTargetLabel = prior.recoveryTriggerTargetLabel || null;
+      out.recoveryTriggerReasonCode = prior.recoveryTriggerReasonCode || null;
+      out.recoveryTriggerEffectStatus = prior.recoveryTriggerEffectStatus || null;
+      out.recoveryTriggerEffectCodes = copyArray(prior.recoveryTriggerEffectCodes);
+    }
     if (Number(entry?.stepIndex) === latestStepIndex && effect) {
       out.effectStatus = effect.status;
       out.effectCodes = copyArray(effect.codes);
@@ -59,6 +83,7 @@ function mergeSemanticFeedback(historyBefore, budgetHistory, effect, feedback = 
       if (typeof feedback.actionTargetLabel === 'string' && feedback.actionTargetLabel.trim()) {
         out.actionTargetLabel = feedback.actionTargetLabel.trim();
       }
+      copyDecisionFeedback(out, feedback.decision?.metadata || {});
     }
     return out;
   });
@@ -142,12 +167,15 @@ async function executeBoundedEpisodeLoop(input = {}) {
       nowMs: Date.now()
     });
     const actionTargetLabel = semanticTargetLabel(step.mappedAction || chosenDecision?.action || null, step.before || null);
-    history = mergeSemanticFeedback(history, budget.history, effect, { actionTargetLabel });
+    history = mergeSemanticFeedback(history, budget.history, effect, {
+      actionTargetLabel,
+      decision: chosenDecision || step.decision || null
+    });
     finalOutcome = outcome;
     finalControl = control;
     finalBudget = budget;
 
-    steps.push({
+    const completedStep = {
       stepIndex: steps.length,
       decision: chosenDecision || step.decision || null,
       action: step.mappedAction || null,
@@ -166,7 +194,19 @@ async function executeBoundedEpisodeLoop(input = {}) {
         reasonCode: budget.reasonCode,
         usage: budget.usage
       }
-    });
+    };
+    steps.push(completedStep);
+
+    if (typeof input.onStep === 'function') {
+      await input.onStep({
+        task,
+        step: completedStep,
+        history,
+        steps: [...steps],
+        control,
+        budget
+      });
+    }
 
     if (budget.terminal === true || budget.shouldReplan !== true) break;
   }
@@ -198,6 +238,7 @@ module.exports = {
   validateSemanticDecision,
   semanticTargetLabel,
   copyArray,
+  copyDecisionFeedback,
   mergeSemanticFeedback,
   executeBoundedEpisodeLoop
 };
