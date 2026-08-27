@@ -15,6 +15,38 @@ const EDITABLE_TARGET_ACTION_TYPES = new Set([
   'clear'
 ]);
 
+const TEXT_ENTRY_ROLES = new Set([
+  'textbox',
+  'searchbox',
+  'combobox'
+]);
+
+const NON_TEXT_ENTRY_ROLES = new Set([
+  'button',
+  'checkbox',
+  'link',
+  'menuitem',
+  'option',
+  'radio',
+  'slider',
+  'spinbutton',
+  'switch',
+  'tab'
+]);
+
+const NON_TEXT_INPUT_TYPES = new Set([
+  'button',
+  'checkbox',
+  'color',
+  'file',
+  'hidden',
+  'image',
+  'radio',
+  'range',
+  'reset',
+  'submit'
+]);
+
 function normalizeText(value) {
   return String(value || '')
     .replace(/([\p{Ll}\p{N}])([\p{Lu}])/gu, '$1 $2')
@@ -151,16 +183,26 @@ function normalizedElementRole(element) {
   return String(element?.role || '').trim().toLowerCase();
 }
 
+function normalizedElementInputType(element) {
+  return String(element?.inputType || element?.type || '').trim().toLowerCase();
+}
+
 function elementAvailable(element) {
   return element?.visible !== false && element?.rendered !== false && element?.enabled !== false;
 }
 
 function elementHasEditableAffordance(element) {
-  if (element?.editable === true) return true;
   const role = normalizedElementRole(element);
-  if (['textbox', 'searchbox', 'combobox'].includes(role)) return true;
   const tag = normalizedElementTag(element);
-  return ['input', 'textarea'].includes(tag);
+  const inputType = normalizedElementInputType(element);
+
+  if (NON_TEXT_ENTRY_ROLES.has(role)) return false;
+  if (tag === 'select') return false;
+  if (tag === 'input' && NON_TEXT_INPUT_TYPES.has(inputType)) return false;
+  if (TEXT_ENTRY_ROLES.has(role)) return true;
+  if (tag === 'textarea') return true;
+  if (tag === 'input') return true;
+  return element?.editable === true;
 }
 
 function actionRequiresEditableTarget(protoOrType) {
@@ -207,9 +249,12 @@ function elementTargetCompatibility(proto, task, element) {
   const taskLabelScore = label ? jaccard(taskTokens, labelTokens) : 0;
   const traitScore = targetTraitScore(proto, element);
   const hasTraits = proto?.targetTraits && typeof proto.targetTraits === 'object';
-  const score = hasTraits
-    ? (0.45 * taskLabelScore) + (0.20 * prototypeLabelScore) + (0.35 * traitScore)
-    : (0.75 * prototypeLabelScore) + (0.25 * taskLabelScore);
+  const textTarget = actionRequiresEditableTarget(proto);
+  const score = textTarget
+    ? (0.80 * taskLabelScore) + (0.10 * traitScore) + (0.10 * prototypeLabelScore)
+    : hasTraits
+      ? (0.45 * taskLabelScore) + (0.20 * prototypeLabelScore) + (0.35 * traitScore)
+      : (0.75 * prototypeLabelScore) + (0.25 * taskLabelScore);
   return { score, prototypeLabelScore, taskLabelScore, traitScore, affordanceEligible: true };
 }
 
@@ -380,8 +425,8 @@ function chooseTargetRef(proto, task, observation, history = []) {
     })
     .sort((a, b) => (
       b.score - a.score ||
-      b.traitScore - a.traitScore ||
       b.taskLabelScore - a.taskLabelScore ||
+      b.traitScore - a.traitScore ||
       b.prototypeLabelScore - a.prototypeLabelScore ||
       a.ref.localeCompare(b.ref)
     ));
@@ -476,6 +521,9 @@ function createOfflineBaselineProvider(options = {}) {
 module.exports = {
   TASK_FEATURE_NAMES,
   EDITABLE_TARGET_ACTION_TYPES,
+  TEXT_ENTRY_ROLES,
+  NON_TEXT_ENTRY_ROLES,
+  NON_TEXT_INPUT_TYPES,
   normalizeText,
   tokenList,
   tokens,
@@ -490,6 +538,7 @@ module.exports = {
   validateModel,
   normalizedElementTag,
   normalizedElementRole,
+  normalizedElementInputType,
   elementAvailable,
   elementHasEditableAffordance,
   actionRequiresEditableTarget,
