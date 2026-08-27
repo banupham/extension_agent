@@ -454,3 +454,30 @@ All three review exports pass structure/privacy checks and are stored in `increm
 - MDN now reaches `/docs/Web/HTML` and then `/docs/Web/HTML/Reference/Elements`, supporting two distinct semantic clicks.
 
 Together with the five ACCEPT episodes retained from reviews-v1, the intended curated batch now covers eight accepted demonstrations. The next technical step is Codex-owned candidate construction and digest generation. Human exact digest approval is still required before applying annotations or training.
+
+## Codex-curated eight-task approval bundle — AWAITING EXACT DIGEST APPROVAL
+
+A generic review-aid tool was added at `training-collector/tools/apply_codex_semantic_curation.js`. It converts a Codex curation plan into semantic resolution aids while marking every non-selected transition as HOW/non-task noise. It does not approve, build a dataset, or train. Its contract verifies explicit digest approval remains required and forbidden selector/coordinate/tabId keys are absent.
+
+The accepted reviews-v1/v2 inputs were combined under `incremental-strategy-01/reviews-curated-v1`, passed through the existing review-only orchestrator, then through Codex semantic curation and the existing approval-candidate generator.
+
+Final proposed capabilities:
+
+- Wikipedia search: `typeText -> submit`
+- MDN CSS: `click`
+- DuckDuckGo Linux search: `typeText -> submit`
+- official Python result: `typeText -> submit -> click`
+- Wikipedia AI to English: `typeText -> click`
+- Wikipedia Tiếng Việt: `click`
+- Wikipedia Việt Nam to Hà Nội: `typeText -> submit -> click`
+- MDN HTML to HTML elements: `click -> click`
+
+Candidate result:
+
+- 8 eligible episodes
+- 0 blocked episodes
+- digest integrity verified
+- digest `291429f882e340d27d05a0bd7b8a32c4ca611882dfcbbd8bc7e856f832c09866`
+- `autoTrainEligible:false`
+
+STOP here. Do not apply annotations, build the incremental dataset, or train until the user sends the exact required confirmation phrase plus this digest.
