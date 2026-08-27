@@ -357,3 +357,41 @@ Historical audit finding:
 - click-only episodes have a small number of unresolved public-site targets with missing semantic labels; text/search episodes contribute most unresolved items because per-key mechanics cannot yet be safely collapsed from the broad task wording
 
 Do not approve the zero-candidate digest. Preserve all eight reviews; diagnose/re-resolve from existing evidence before asking the user to recollect.
+
+## Incremental reviews-v1 ingestion — REVIEW-ONLY PASS / ZERO CANDIDATES
+
+Per explicit user instruction, `extension_agent-local-data/incremental-strategy-01/reviews-v1` was created with exactly these eight review exports:
+
+- `ep-1787851260188`
+- `ep-1787851293595`
+- `ep-1787851361981`
+- `ep-1787851404562`
+- `ep-1787851520829`
+- `ep-1787851685350`
+- `ep-1787851750688`
+- `ep-1787851808921`
+
+`ep-1787850674536` remains excluded (failed, empty task, zero transitions, not Strategy-ready). `ep-1787850381182` remains outside the batch as the weaker duplicate task trace. Neither file was deleted.
+
+The required review-only command was run into `strategy-learning-v01-a` and stopped at digest:
+
+- input/retained/ready: 8 / 8 / 8
+- excluded previously processed: 0
+- duplicate current: 0
+- candidate episodes: 0
+- blocked episodes: 8
+- resolver semantic actions: 0
+- HOW/capture noise: 35
+- unresolved human-review transitions: 226
+- fully resolved episodes: 0
+- digest: `0cc944cdbd619da32abd56591c9f795cfd2ac6809943c84e711ed4129ecaa549`
+
+All eight inputs passed the privacy-safe review queue boundary. No raw session root was supplied. The orchestrator invariants remain:
+
+- `approvalApplied:false`
+- `datasetBuilt:false`
+- `trainingPerformed:false`
+- `autoTrainEligible:false`
+- approval applicator/dataset builder/fitter not imported
+
+The digest has zero eligible semantic candidates and must not be approved or applied. Mark Success is capture outcome evidence only, not semantic approval.
