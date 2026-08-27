@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const Base = require('./resolve_strategy_review_ambiguity.js');
 
-const TEACHING_BATCH_RESOLVER_VERSION = '0.1.0';
+const TEACHING_BATCH_RESOLVER_VERSION = '0.2.0';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -33,18 +33,31 @@ function instructionIsSensitive(instruction) {
   ].some(token => normalized.includes(token));
 }
 
+function stripDeclaredText(value) {
+  const text = cleanText(value, 160);
+  if (!text) return null;
+  const stripped = text
+    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+    .replace(/[,.!?:;]+$/g, '')
+    .trim();
+  return stripped && stripped.length <= 160 ? stripped : null;
+}
+
 function taskDeclaredText(task) {
   const instruction = cleanText(task?.instruction, 500);
   if (!instruction || instructionIsSensitive(instruction)) return null;
   const patterns = [
     /(?:^|[,.!?:;]\s*|\s)(?:nhập|gõ)\s+(.+?)\s+(?:vào|trong)\s+/i,
-    /(?:^|[,.!?:;]\s*|\s)(?:type|enter|fill)\s+(.+?)\s+(?:into|in)\s+/i
+    /(?:^|[,.!?:;]\s*|\s)(?:type|enter|fill|write)\s+(.+?)\s+(?:into|in)\s+/i,
+    /(?:^|[,.!?:;]\s*|\s)(?:nhập|gõ)\s+(.+?)\s+(?:(?:rồi|sau đó|và sau đó|và)\s+)?(?:nhấn|bấm|ấn)\s+enter\b/i,
+    /(?:^|[,.!?:;]\s*|\s)(?:type|fill|write)\s+(.+?)\s+(?:(?:then|and then|and)\s+)?(?:press|hit)\s+enter\b/i,
+    /(?:^|[,.!?:;]\s*|\s)(?:nhập|gõ)\s+(.+?)\s+(?:(?:rồi|sau đó|và sau đó|và)\s+)?(?:gửi|tìm|submit|search|send)\b/i,
+    /(?:^|[,.!?:;]\s*|\s)(?:type|fill|write)\s+(.+?)\s+(?:(?:then|and then|and)\s+)?(?:submit|search|send)\b/i
   ];
   for (const pattern of patterns) {
     const match = instruction.match(pattern);
-    if (!match?.[1]) continue;
-    const text = cleanText(match[1].replace(/^["'“”‘’]+|["'“”‘’]+$/g, ''), 160);
-    if (text && text.length <= 160) return text;
+    const text = stripDeclaredText(match?.[1]);
+    if (text) return text;
   }
   return null;
 }
@@ -153,6 +166,161 @@ function typeCharGroups(transitions) {
   return groups;
 }
 
+function semanticTargetKey(target) {
+  if (!target?.editable) return null;
+  const parts = [target.label, target.role, target.tag]
+    .map(value => Base.words(value).join('-'))
+    .filter(Boolean);
+  return parts.join('|') || null;
+}
+
+function sameEditableTarget(left, right, leftRef = null, rightRef = null) {
+  if (left?.editable !== true || right?.editable !== true) return false;
+  if (leftRef && rightRef && leftRef === rightRef) return true;
+  const leftKey = semanticTargetKey(left);
+  return !!leftKey && leftKey === semanticTargetKey(right);
+}
+
+function keyboardControl(rawAction = {}) {
+  const candidates = [rawAction.key, rawAction.code, rawAction.operation]
+    .filter(value => typeof value === 'string')
+    .map(value => value.toLowerCase());
+  if (candidates.some(value => value.includes('enter'))) return 'Enter';
+  if (candidates.some(value => value.includes('escape') || value.includes('esc'))) return 'Escape';
+  if (candidates.some(value => value.includes('tab'))) return 'Tab';
+  return null;
+}
+
+function taskRequestsSubmit(task) {
+  return Base.taskMentions(task || {}, [
+    'submit', 'search', 'send', 'go', 'enter',
+    'tim', 'gui', 'nop', 'xacnhan', 'confirm'
+  ]);
+}
+
+function successfulFinalOutcome(sourceReview) {
+  return String(sourceReview?.finalOutcome?.status || '').toLowerCase() === 'success';
+}
+
+function semanticElementState(element) {
+  if (!element || typeof element !== 'object') return null;
+  return {
+    label: cleanText(element.label, 120),
+    role: cleanText(element.role, 80),
+    tag: cleanText(element.tag, 40),
+    editable: element.editable === true,
+    enabled: element.enabled !== false,
+    visible: element.visible !== false && element.rendered !== false,
+    checked: typeof element.checked === 'boolean' ? element.checked : null,
+    selected: typeof element.selected === 'boolean' ? element.selected : null
+  };
+}
+
+function semanticObservationFingerprint(observation) {
+  const page = normalizedPage(observation);
+  const direct = Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : [];
+  const nested = Array.isArray(observation?.page?.interactiveElements) ? observation.page.interactiveElements : [];
+  const elements = (direct.length ? direct : nested)
+    .map(semanticElementState)
+    .filter(Boolean)
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return JSON.stringify({ page, elements, pageSignals: observation?.pageSignals || observation?.page?.pageSignals || {} });
+}
+
+function observableSemanticStateChanged(transition) {
+  return semanticObservationFingerprint(transition?.strategyObservationBefore) !==
+    semanticObservationFingerprint(transition?.strategyObservationAfter);
+}
+
+function capturedSuccess(transition) {
+  return transition?.outcome?.actionSucceeded !== false;
+}
+
+function sequenceCompatibleNoise(transition, target, ref) {
+  const raw = transition?.rawAction || {};
+  const kind = String(raw.kind || '').toLowerCase();
+  const operation = String(raw.operation || '').toLowerCase();
+  const found = semanticTargetForTransition(transition);
+  const sameTarget = sameEditableTarget(found.target, target, found.ref, ref);
+  if (kind === 'text-change') return sameTarget;
+  if (['focus', 'dom-focus', 'click', 'dom-click'].includes(kind)) return sameTarget;
+  if (kind === 'text-key' && operation === 'type-char') return sameTarget;
+  return false;
+}
+
+function genericTextFormSequence(transitions, task, sourceReview) {
+  const declaredText = taskDeclaredText(task || {});
+  if (!declaredText || !taskRequestsSubmit(task || {}) || !successfulFinalOutcome(sourceReview)) return null;
+
+  const chars = [];
+  for (let index = 0; index < transitions.length; index += 1) {
+    const transition = transitions[index];
+    const raw = transition?.rawAction || {};
+    if (String(raw.kind || '').toLowerCase() !== 'text-key' || String(raw.operation || '').toLowerCase() !== 'type-char') continue;
+    const found = semanticTargetForTransition(transition);
+    if (!capturedSuccess(transition) || found.target?.editable !== true || !found.ref) return null;
+    chars.push({ index, transition, ...found });
+  }
+  if (!chars.length) return null;
+
+  const anchor = chars[0];
+  if (chars.some(item => !sameEditableTarget(item.target, anchor.target, item.ref, anchor.ref))) return null;
+  const lastChar = chars[chars.length - 1];
+
+  let enter = null;
+  for (let index = lastChar.index + 1; index < transitions.length; index += 1) {
+    const transition = transitions[index];
+    const raw = transition?.rawAction || {};
+    const kind = String(raw.kind || '').toLowerCase();
+    const found = semanticTargetForTransition(transition);
+    if (kind === 'text-key' && keyboardControl(raw) === 'Enter') {
+      if (!capturedSuccess(transition) || !sameEditableTarget(found.target, anchor.target, found.ref, anchor.ref)) return null;
+      enter = { index, transition, ...found };
+      break;
+    }
+    if (!sequenceCompatibleNoise(transition, anchor.target, anchor.ref)) return null;
+  }
+  if (!enter) return null;
+
+  for (let index = anchor.index; index <= enter.index; index += 1) {
+    const transition = transitions[index];
+    if (transition === enter.transition) continue;
+    if (!sequenceCompatibleNoise(transition, anchor.target, anchor.ref)) return null;
+  }
+
+  const pageOrSemanticChange = observableSemanticStateChanged(enter.transition) ||
+    normalizedPage(transitions[anchor.index]?.strategyObservationBefore).url !== normalizedPage(enter.transition?.strategyObservationAfter).url;
+  const outcomeSupported = capturedSuccess(enter.transition) && successfulFinalOutcome(sourceReview);
+  if (!outcomeSupported) return null;
+
+  const charIds = chars.map(item => String(item.transition?.transitionId || ''));
+  const noiseIds = new Set();
+  for (let index = 0; index <= enter.index; index += 1) {
+    const transition = transitions[index];
+    const id = String(transition?.transitionId || '');
+    if (!id || id === charIds[0] || id === String(enter.transition?.transitionId || '')) continue;
+    const found = semanticTargetForTransition(transition);
+    if (sequenceCompatibleNoise(transition, anchor.target, anchor.ref) && sameEditableTarget(found.target, anchor.target, found.ref, anchor.ref)) {
+      noiseIds.add(id);
+    }
+  }
+
+  return {
+    declaredText,
+    targetRef: anchor.ref,
+    target: anchor.target,
+    firstTypeTransitionId: charIds[0],
+    charTransitionIds: new Set(charIds),
+    submitTransitionId: String(enter.transition?.transitionId || ''),
+    noiseTransitionIds: noiseIds,
+    outcomeEvidence: {
+      finalOutcomeSuccess: true,
+      enterActionSucceeded: true,
+      observableSemanticStateChanged: pageOrSemanticChange
+    }
+  };
+}
+
 function scoreMap(triageItem) {
   return new Map((Array.isArray(triageItem?.transitions) ? triageItem.transitions : [])
     .map(item => [String(item?.transitionId || ''), item]));
@@ -168,8 +336,7 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
   const byScore = scoreMap(triageItem);
   const byProposal = proposalMap(packItem);
   const declaredText = taskDeclaredText(packItem?.task || sourceReview?.task || {});
-  const charGroups = typeCharGroups(transitions);
-  const singleCharGroup = charGroups.length === 1 ? charGroups[0] : null;
+  const textSequence = genericTextFormSequence(transitions, packItem?.task || sourceReview?.task || {}, sourceReview);
   const resolutions = [];
 
   for (let index = 0; index < transitions.length; index += 1) {
@@ -182,12 +349,24 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
     const operation = String(raw.operation || '').toLowerCase();
     const hint = proposal?.proposal?.actionTypeHint || score?.actionTypeHint || null;
     const { ref, target } = semanticTargetForTransition(transition);
-    const capturedSuccess = proposal?.evidence?.actionSucceededCaptured !== false && transition?.outcome?.actionSucceeded !== false;
+    const actionCapturedSuccess = proposal?.evidence?.actionSucceededCaptured !== false && capturedSuccess(transition);
 
-    if (!capturedSuccess) {
+    if (!actionCapturedSuccess) {
       if (score?.fastLabelReviewCandidate !== true) {
         resolutions.push(unresolved(transitionId, hint, target, 'captured_action_failure_requires_human_review'));
       }
+      continue;
+    }
+
+    if (textSequence?.noiseTransitionIds.has(transitionId)) {
+      const reason = ['focus', 'dom-focus'].includes(kind)
+        ? 'focus_acquisition_how_not_strategy'
+        : ['click', 'dom-click'].includes(kind)
+          ? 'editable_target_click_focus_acquisition_how_not_strategy'
+          : kind === 'text-change'
+            ? 'text_change_capture_provenance_how_not_strategy'
+            : 'per_character_capture_collapsed_into_single_text_action';
+      resolutions.push(noise(transitionId, hint || (kind === 'text-key' ? 'keyboard-action-review-required' : kind), target, reason));
       continue;
     }
 
@@ -207,15 +386,30 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
     }
 
     if (kind === 'text-key' && operation === 'type-char') {
-      if (!declaredText || !singleCharGroup || !singleCharGroup.transitionIds.includes(transitionId) || target?.editable !== true || !ref) {
-        resolutions.push(unresolved(transitionId, hint || 'keyboard-action-review-required', target, 'text_entry_requires_human_review', 'typeText'));
+      if (!textSequence || !textSequence.charTransitionIds.has(transitionId) || target?.editable !== true || !ref) {
+        resolutions.push(unresolved(transitionId, hint || 'keyboard-action-review-required', target, 'text_entry_sequence_evidence_insufficient', 'typeText'));
         continue;
       }
-      if (singleCharGroup.transitionIds[0] === transitionId) {
-        const action = Base.safeAction('typeText', ref, { text: declaredText }, 'task-declared-semantic-text-entry');
+      if (textSequence.firstTypeTransitionId === transitionId) {
+        const action = Base.safeAction('typeText', ref, { text: textSequence.declaredText }, 'task-declared-semantic-text-entry');
         resolutions.push(resolved(transitionId, hint || 'keyboard-action-review-required', action, target, 'per_character_capture_collapsed_to_task_declared_text_action'));
       } else {
         resolutions.push(noise(transitionId, hint || 'keyboard-action-review-required', target, 'per_character_capture_collapsed_into_single_text_action'));
+      }
+      continue;
+    }
+
+    if (kind === 'text-change' && textSequence && sameEditableTarget(target, textSequence.target, ref, textSequence.targetRef)) {
+      resolutions.push(noise(transitionId, hint || 'text-action-review-required', target, 'text_change_capture_provenance_how_not_strategy'));
+      continue;
+    }
+
+    if (kind === 'text-key' && keyboardControl(raw) === 'Enter' && target?.editable === true && taskRequestsSubmit(packItem?.task || sourceReview?.task || {})) {
+      if (textSequence?.submitTransitionId === transitionId && sameEditableTarget(target, textSequence.target, ref, textSequence.targetRef)) {
+        const action = Base.safeAction('submit', ref, {}, 'semantic-submit-via-enter');
+        resolutions.push(resolved(transitionId, hint || 'keyboard-action-review-required', action, target, 'enter_on_continuous_editable_target_with_successful_task_outcome'));
+      } else {
+        resolutions.push(unresolved(transitionId, hint || 'keyboard-action-review-required', target, 'semantic_text_submit_sequence_evidence_insufficient', 'submit'));
       }
       continue;
     }
@@ -315,8 +509,11 @@ function resolveTeachingBatch(packFile, triageFile, outputDir) {
       sensitiveTaskTextRejected: true,
       rawKeyCharacterValuesNeverStored: true,
       perCharacterCaptureCollapsed: true,
+      semanticEditableTargetContinuityRequired: true,
+      submitRequiresTaskIntentAndSuccessfulOutcomeEvidence: true,
       focusAcquisitionExcludedFromStrategy: true,
       editableFieldClickAcquisitionExcludedFromStrategy: true,
+      textChangeCaptureExcludedFromStrategy: true,
       targetlessNoEffectClickMayBeProposedAsNoiseOnlyWhenLaterTaskAlignedActionExists: true,
       requiresHumanConfirmation: true,
       autoTrainEligible: false
@@ -385,6 +582,13 @@ module.exports = {
   targetMatchesTask,
   laterTaskAlignedAction,
   typeCharGroups,
+  semanticTargetKey,
+  sameEditableTarget,
+  keyboardControl,
+  taskRequestsSubmit,
+  semanticObservationFingerprint,
+  observableSemanticStateChanged,
+  genericTextFormSequence,
   resolveTeachingItem,
   markdownFor,
   resolveTeachingBatch,
