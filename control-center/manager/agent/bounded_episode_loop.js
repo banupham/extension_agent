@@ -9,7 +9,7 @@ const { evaluateActionEffect } = require('../goal/semantic_effect_evaluator.js')
 const { reduceOutcomeToControl } = require('../goal/outcome_controller.js');
 const { evaluateEpisodeBudget, DEFAULT_BUDGETS } = require('../goal/episode_budget.js');
 
-const BOUNDED_EPISODE_LOOP_VERSION = '0.3.0';
+const BOUNDED_EPISODE_LOOP_VERSION = '0.4.0';
 
 function validateSemanticDecision(rawDecision) {
   const decision = validateDecision(rawDecision);
@@ -29,6 +29,10 @@ function semanticTargetLabel(action, observation) {
   return label || null;
 }
 
+function copyArray(value) {
+  return Array.isArray(value) ? [...value] : [];
+}
+
 function mergeSemanticFeedback(historyBefore, budgetHistory, effect, feedback = {}) {
   const previous = new Map((Array.isArray(historyBefore) ? historyBefore : []).map(entry => [Number(entry?.stepIndex), entry]));
   const latestStepIndex = Array.isArray(budgetHistory) && budgetHistory.length
@@ -39,13 +43,17 @@ function mergeSemanticFeedback(historyBefore, budgetHistory, effect, feedback = 
     const prior = previous.get(Number(entry?.stepIndex)) || null;
     const out = { ...entry };
     if (prior?.effectStatus) out.effectStatus = prior.effectStatus;
-    if (Array.isArray(prior?.effectCodes)) out.effectCodes = [...prior.effectCodes];
+    if (Array.isArray(prior?.effectCodes)) out.effectCodes = copyArray(prior.effectCodes);
+    if (Array.isArray(prior?.effectMeaningfulCodes)) out.effectMeaningfulCodes = copyArray(prior.effectMeaningfulCodes);
+    if (Array.isArray(prior?.effectIncidentalCodes)) out.effectIncidentalCodes = copyArray(prior.effectIncidentalCodes);
     if (Number.isFinite(Number(prior?.effectConfidence))) out.effectConfidence = Number(prior.effectConfidence);
     if (typeof prior?.observableEffectExpected === 'boolean') out.observableEffectExpected = prior.observableEffectExpected;
     if (typeof prior?.actionTargetLabel === 'string' && prior.actionTargetLabel.trim()) out.actionTargetLabel = prior.actionTargetLabel.trim();
     if (Number(entry?.stepIndex) === latestStepIndex && effect) {
       out.effectStatus = effect.status;
-      out.effectCodes = [...effect.codes];
+      out.effectCodes = copyArray(effect.codes);
+      out.effectMeaningfulCodes = copyArray(effect.meaningfulCodes);
+      out.effectIncidentalCodes = copyArray(effect.incidentalCodes);
       out.effectConfidence = effect.confidence;
       out.observableEffectExpected = effect.observableEffectExpected === true;
       if (typeof feedback.actionTargetLabel === 'string' && feedback.actionTargetLabel.trim()) {
@@ -113,9 +121,12 @@ async function executeBoundedEpisodeLoop(input = {}) {
         ...(goalOutcome.metadata || {}),
         actionEffectStatus: effect.status,
         actionEffectConfidence: effect.confidence,
-        actionEffectCodes: [...effect.codes],
+        actionEffectCodes: copyArray(effect.codes),
+        actionEffectMeaningfulCodes: copyArray(effect.meaningfulCodes),
+        actionEffectIncidentalCodes: copyArray(effect.incidentalCodes),
         actionEffectExpected: effect.observableEffectExpected === true,
-        semanticChangeCount: effect.semanticChangeCount
+        semanticChangeCount: effect.semanticChangeCount,
+        meaningfulChangeCount: effect.meaningfulChangeCount
       }
     };
     const control = reduceOutcomeToControl({
@@ -186,6 +197,7 @@ module.exports = {
   BOUNDED_EPISODE_LOOP_VERSION,
   validateSemanticDecision,
   semanticTargetLabel,
+  copyArray,
   mergeSemanticFeedback,
   executeBoundedEpisodeLoop
 };
