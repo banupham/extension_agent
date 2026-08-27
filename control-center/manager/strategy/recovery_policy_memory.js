@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
 const {
   validateAgentAction
@@ -14,10 +16,10 @@ const {
   assertNoForbiddenKeys
 } = require('./self_experience_memory.js');
 
-const RECOVERY_POLICY_VERSION = '0.1.0';
+const RECOVERY_POLICY_VERSION = '0.2.0';
 const RECOVERY_POLICY_KIND = 'strategy-recovery-policy';
 
-// Recovery is semantic. v0.1 intentionally learns only actions that do not require
+// Recovery is semantic. v0.2 intentionally learns only actions that do not require
 // storing task payloads such as typed text, URLs, coordinates, selectors, or CDP.
 const RECOVERY_ACTION_TYPES = new Set([
   'click', 'doubleClick', 'hover', 'moveTo', 'scrollVertical', 'scrollHorizontal',
@@ -167,6 +169,76 @@ function buildRecoveryRecords({ task, result, learnedAt = new Date().toISOString
   return records;
 }
 
+function readRecoveryMemory(file) {
+  const resolved = path.resolve(file);
+  if (!fs.existsSync(resolved)) return [];
+  const text = fs.readFileSync(resolved, 'utf8');
+  const records = [];
+  for (const [index, line] of text.split(/\r?\n/).entries()) {
+    if (!line.trim()) continue;
+    try {
+      records.push(validateRecoveryRecord(JSON.parse(line)));
+    } catch (error) {
+      throw new Error(`recovery_policy_memory_invalid_line:${index + 1}:${String(error?.message || error)}`);
+    }
+  }
+  return records;
+}
+
+function appendRecoveryRecord(file, record) {
+  const validated = validateRecoveryRecord(record);
+  const resolved = path.resolve(file);
+  const existing = readRecoveryMemory(resolved);
+  const fingerprint = recoveryFingerprint(validated);
+  const duplicate = existing.find(item => recoveryFingerprint(item) === fingerprint) || null;
+  if (duplicate) {
+    return {
+      appended: false,
+      duplicate: true,
+      recoveryId: duplicate.recoveryId,
+      recordCount: existing.length,
+      file: resolved
+    };
+  }
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  fs.appendFileSync(resolved, `${JSON.stringify(validated)}\n`, 'utf8');
+  return {
+    appended: true,
+    duplicate: false,
+    recoveryId: validated.recoveryId,
+    recordCount: existing.length + 1,
+    file: resolved
+  };
+}
+
+function appendRecoveryRecords(file, records) {
+  const writes = [];
+  for (const record of Array.isArray(records) ? records : []) {
+    writes.push(appendRecoveryRecord(file, record));
+  }
+  const current = readRecoveryMemory(file);
+  return {
+    file: path.resolve(file),
+    attempted: writes.length,
+    appended: writes.filter(item => item.appended).length,
+    duplicates: writes.filter(item => item.duplicate).length,
+    recordCount: current.length,
+    writes
+  };
+}
+
+function learnRecoveryFromSuccessfulEpisode({ file, task, result, learnedAt = new Date().toISOString() } = {}) {
+  if (!file) throw new Error('recovery_policy_memory_file_required');
+  const records = buildRecoveryRecords({ task, result, learnedAt });
+  const write = appendRecoveryRecords(file, records);
+  return {
+    learned: records.length > 0,
+    recordIds: records.map(record => record.recoveryId),
+    records,
+    write
+  };
+}
+
 function triggerFromHistory(history = []) {
   const last = Array.isArray(history) && history.length ? history[history.length - 1] : null;
   if (!last) return null;
@@ -234,17 +306,23 @@ function targetRefForLabel(targetLabel, observation) {
 function createRecoveryPolicyProvider(options = {}) {
   const baseProvider = options.baseProvider;
   if (!baseProvider || typeof baseProvider.decide !== 'function') throw new Error('recovery_policy_base_provider_required');
-  const records = Array.isArray(options.records) ? options.records.map(validateRecoveryRecord) : [];
+  const staticRecords = Array.isArray(options.records) ? options.records.map(validateRecoveryRecord) : null;
+  const memoryFile = options.memoryFile ? path.resolve(options.memoryFile) : null;
   const minimumScore = Number.isFinite(Number(options.minimumScore))
     ? Math.max(0, Math.min(1, Number(options.minimumScore)))
     : 0.55;
+
+  function currentRecords() {
+    if (staticRecords) return staticRecords;
+    return memoryFile ? readRecoveryMemory(memoryFile) : [];
+  }
 
   return {
     name: 'learned-recovery-policy',
     version: RECOVERY_POLICY_VERSION,
 
     async decide({ task, observation, history = [] }) {
-      const recalled = selectRecovery(records, task, history, minimumScore);
+      const recalled = selectRecovery(currentRecords(), task, history, minimumScore);
       if (recalled) {
         const recovery = recalled.record.recovery;
         const targetRef = RECOVERY_TARGET_REQUIRED.has(recovery.type)
@@ -273,7 +351,8 @@ function createRecoveryPolicyProvider(options = {}) {
               recoveryScore: recalled.score,
               triggerActionType: recalled.trigger.actionType,
               triggerEffectStatus: recalled.trigger.effectStatus,
-              triggerEffectCodes: recalled.trigger.effectCodes
+              triggerEffectCodes: recalled.trigger.effectCodes,
+              persistentMemory: !!memoryFile
             }
           };
         }
@@ -296,6 +375,10 @@ module.exports = {
   validateRecoveryRecord,
   recoveryFingerprint,
   buildRecoveryRecords,
+  readRecoveryMemory,
+  appendRecoveryRecord,
+  appendRecoveryRecords,
+  learnRecoveryFromSuccessfulEpisode,
   triggerFromHistory,
   recoveryScore,
   selectRecovery,
