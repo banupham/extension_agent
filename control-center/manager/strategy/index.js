@@ -7,6 +7,8 @@ const {
   validateDecision
 } = require('./contracts');
 const { createBaselineStrategy } = require('./baseline_strategy');
+const { createOfflineBaselineProvider } = require('./offline_baseline_provider');
+const { resolveOfflineStrategyModel } = require('./offline_model_loader');
 
 function resolveProvider(provider) {
   if (!provider || provider === 'baseline') return createBaselineStrategy();
@@ -14,8 +16,32 @@ function resolveProvider(provider) {
   throw new Error('strategy provider must be "baseline" or an object implementing decide()');
 }
 
+function resolveStrategyProvider(options = {}) {
+  const hasModelSource = !!options.model || !!options.modelFile;
+  if (hasModelSource && options.provider) throw new Error('strategy_provider_and_model_source_ambiguous');
+  if (!hasModelSource) {
+    return {
+      provider: resolveProvider(options.provider),
+      modelMetadata: resolveOfflineStrategyModel({}).metadata
+    };
+  }
+
+  const resolved = resolveOfflineStrategyModel({
+    model: options.model || null,
+    modelFile: options.modelFile || null
+  });
+  return {
+    provider: createOfflineBaselineProvider({
+      model: resolved.model,
+      minimumConfidence: options.minimumConfidence
+    }),
+    modelMetadata: resolved.metadata
+  };
+}
+
 function createStrategy(options = {}) {
-  const provider = resolveProvider(options.provider);
+  const resolved = resolveStrategyProvider(options);
+  const provider = resolved.provider;
 
   return {
     contractVersion: STRATEGY_CONTRACT_VERSION,
@@ -23,6 +49,7 @@ function createStrategy(options = {}) {
       name: provider.name || 'custom',
       version: provider.version || 'unknown'
     },
+    model: resolved.modelMetadata,
 
     async decide({ task, observation, history = [] }) {
       const normalizedTask = validateTask(task);
@@ -42,11 +69,14 @@ function createStrategy(options = {}) {
 
 module.exports = {
   createStrategy,
+  resolveProvider,
+  resolveStrategyProvider,
   ...require('./contracts'),
   ...require('./agent_action_contract'),
   ...require('./execution_surface_contract'),
   ...require('./execution_behavior_contract'),
   ...require('./offline_baseline_provider'),
+  ...require('./offline_model_loader'),
   ...require('./self_experience_memory'),
   ...require('./self_exploration_provider'),
   ...require('./recovery_policy_memory'),
