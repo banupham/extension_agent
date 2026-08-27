@@ -69,80 +69,99 @@ Episodes:
 5. `ep-1787831377719` — Message Composer -> type Orion -> Enter
 6. `ep-1787828809498` — Teaching Confirm click
 
-Latest pre-fix pipeline results:
+## Generic semantic text/form resolver milestone
 
-- reviewFileCount: 6
-- readyForHumanReviewCount: 6
-- transitionCount: 51
-- fastLabelReviewCount: 15
-- ambiguousLabelReviewCount: 36
-- resolver resolvedSemanticActionCount: 5
-- resolver captureNoiseCount: 22
-- resolver unresolvedHumanReviewCount: 19
-- resolver fullyResolvedEpisodeCount: 4
-- approval candidateEpisodeCount: 4
-- approval blockedEpisodeCount: 2
-- previous digestHash: `004521d14db9c11d78a41f9f1e043d8c7e5a30302e6063aa2a5e70e3cb4dff9b`
+Important commits:
+
+- `74cb9a2c721a0fe9b201b8ecac0a02837ba6c558` — generic semantic text/submit sequence resolver
+- `d89e1ac3e3cf9978f6372d0bf8ee8c8e1dfffb7b` — generic resolver contract
+- `d4cf192ca27e6e8ba83f19c777a56e961f0803d5` — CI gate
+
+Resolver version: `0.2.0`.
+
+Synthetic contract proves generic search/composer-like `typeText -> submit`, HOW/capture-noise collapse, negative ambiguity blocking, privacy rules, semantic progress `0.5 -> 1`, and no hard-coded teaching-site names.
+
+GitHub Actions run `33070246090` passed.
+
+## Real six-group validation on resolver 0.2.0 — NOT YET PASS
+
+User pulled HEAD `beb15f3` and ran the requested local validation.
+
+Confirmed PASS:
+
+- `training-collector/tests/strategy_text_form_sequence_resolver_contract.js` => PASS
+- resolver CLI completed successfully
+- approval-candidate CLI completed successfully
+- no recollection needed
+
+But the real six-group target was **not** met:
+
+Resolver output:
+
+- episodeCount: 6
+- ambiguousTransitionCount: 36
+- resolvedSemanticActionCount: 4
+- captureNoiseCount: 22
+- unresolvedHumanReviewCount: 20
+- fullyResolvedEpisodeCount: 4
 - autoTrainEligible: false
 
-Do **not** approve the previous digest.
+Approval candidates:
 
-The two previously blocked episodes were:
+- candidateEpisodeCount: 4
+- blockedEpisodeCount: 2
+- ambiguityAidCandidateEpisodeCount: 3
+- digestHash: `7926cdedd75156338847b25707214b68f98ad2ef2c9bfbca7b29bf3753eabef2`
+- autoTrainEligible: false
+
+Still blocked:
 
 - `ep-1787828642619`: `unresolved_ambiguous_transition, suggested_action_missing`
 - `ep-1787831377719`: `unresolved_ambiguous_transition, suggested_action_missing`
 
-## Generic semantic text/form resolver milestone — implemented and CI PASS
+**Do not approve digest `7926cd...`.** It still excludes the two new text+submit teaching examples.
 
-The Strategy teaching resolver bottleneck has now been addressed generically.
+This means the synthetic contract shape is still narrower than the real capture shape. The next step is diagnosis of the real semantic transition shape, not collection and not approval.
 
-Important commits on `feat/agent-tab-context`:
+## Privacy-safe real-data diagnostic added
 
-- `74cb9a2c721a0fe9b201b8ecac0a02837ba6c558` — `feat(strategy): resolve generic semantic text submit sequences`
-- `d89e1ac3e3cf9978f6372d0bf8ee8c8e1dfffb7b` — `test(strategy): add generic text form sequence resolver contract`
-- `d4cf192ca27e6e8ba83f19c777a56e961f0803d5` — `ci(strategy): gate generic text form resolver contract`
+New commits:
 
-Resolver version is now `0.2.0`.
+- `e715630c9f5dd7400d06fcf50be1fa293de9713f` — `diag(strategy): add privacy-safe text form sequence diagnostic`
+- `bf1319e94c7983ed7b1489ae534605cff1f5695a` — diagnostic privacy contract
+- `1ac35e65894f84d245e8d128e588d146cbd1dcdd` — CI gate for diagnostic
 
-Implemented semantics:
+Tool:
 
-- task-declared non-sensitive text is the only text allowed into proposed `typeText`
-- focus/click used to acquire an editable field are HOW/capture noise
-- per-character `text-key/type-char` transitions on one continuous semantic editable target collapse into one Strategy `typeText`
-- intermediate `text-change` capture is provenance/HOW noise
-- Enter on the same semantic editable target becomes Strategy `submit` only when task wording requests submit/search/send/Enter and successful task outcome evidence is present
-- target continuity can use semantic editable target identity, not site-specific names
-- insufficient target/task/outcome evidence remains `needs-human-review`
-- human confirmation is still required; `autoTrainEligible:false`
-- no literal trajectory replay was added
+`training-collector/tools/diagnose_strategy_text_form_sequences.js`
 
-New contract:
+The diagnostic intentionally does **not** print:
 
-`training-collector/tests/strategy_text_form_sequence_resolver_contract.js`
+- typed values
+- raw key characters
+- selectors
+- coordinates
+- tab IDs
+- raw CDP
+- targetRef values
 
-It proves:
+It prints only evidence needed to identify the resolver mismatch:
 
-1. search-like text + Enter -> `typeText -> submit`
-2. composer-like text + Enter -> `typeText -> submit`
-3. semantic progress is `0.5` then `1`
-4. focus/click/text-change/extra per-character capture is excluded as HOW/capture noise
-5. Enter on a different editable target remains blocked
-6. failed final outcome does not resolve the sequence
-7. resolver source does not hard-code Atlas, Orion, Topic Search, Message Composer, or localhost:8092
-8. sensitive task text is not extracted
+- raw action kind/operation class
+- Enter control classification
+- semantic target label/role/tag/editable state
+- semantic target continuity key
+- action success
+- observable semantic state-change boolean
+- coarse rejection reason codes
 
-CI integration:
+CI job for GitHub Actions run `33070658960` completed successfully, including diagnostic syntax and privacy contract.
 
-- workflow: `.github/workflows/strategy-teaching-batch-resolver.yml`
-- GitHub Actions run: `33070246090`
-- head SHA: `d4cf192ca27e6e8ba83f19c777a56e961f0803d5`
-- conclusion: `success`
+## Immediate next step
 
-## Immediate next step — local six-group validation only
+Do not rerun collection, resolver, or approval candidates yet. Pull the diagnostic commit and run only the privacy-safe diagnostic on the two blocked episodes.
 
-Do not recollect anything. User should pull and rerun only from resolver onward using the existing six-group folder.
-
-Run in Windows CMD exactly:
+Windows CMD:
 
 ```bat
 cd /d C:\Users\duong\Downloads\extension_agent
@@ -151,31 +170,22 @@ git rev-parse --short HEAD
 
 set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
 
-node training-collector\tests\strategy_text_form_sequence_resolver_contract.js
-
-node training-collector\tools\resolve_strategy_teaching_batch.js --pack "%SIX%\review-pack-v01\review-pack.json" --triage "%SIX%\review-pack-v01\triage.v01.json" --out "%SIX%\teaching-resolution-v02"
-
-node training-collector\tools\prepare_strategy_approval_candidates.js --digest "%SIX%\review-drafts-v01\approval-digest.json" --resolution "%SIX%\teaching-resolution-v02\ambiguity-resolution.json" --out "%SIX%\approval-candidates-v02"
-
-type "%SIX%\approval-candidates-v02\approval-candidates.md"
+node training-collector\tools\diagnose_strategy_text_form_sequences.js --pack "%SIX%\review-pack-v01\review-pack.json" --triage "%SIX%\review-pack-v01\triage.v01.json" --episode ep-1787828642619,ep-1787831377719
 ```
 
-Expected target before any approval:
+When the user sends that diagnostic output, read it directly and implement the resolver fix. Do not ask the user to repeat already-PASS steps.
 
-- contract PASS
-- `candidateEpisodeCount = 6`
-- `blockedEpisodeCount = 0`
+After the fix, add/update contract, CI, and handoff, then ask user to rerun only resolver -> approval candidates. Target remains:
+
+- candidateEpisodeCount = 6
+- blockedEpisodeCount = 0
 - six genuinely distinct semantic split groups
-- Topic Search represented as `typeText -> submit`
-- Message Composer represented as `typeText -> submit`
-- first semantic progress `0.5`, terminal submit progress `1`
-- `autoTrainEligible:false`
+- Topic Search = `typeText -> submit`
+- Message Composer = `typeText -> submit`
+- progress `0.5 -> 1`
+- autoTrainEligible = false until explicit human digest confirmation
 
-When the user sends the output, read it and continue immediately. Do not repeat already-passed collection steps.
-
-If the target is met, show the new digest hash and wait for the user's explicit human confirmation. **Do not auto-approve.**
-
-Only after explicit human confirmation:
+Only after explicit digest confirmation:
 
 1. apply approvals
 2. build Strategy dataset
@@ -187,9 +197,9 @@ Only after explicit human confirmation:
 
 Only when `baselineReady=true`:
 
-- fit Strategy model from TRAIN only
+- fit Strategy from TRAIN only
 - heldout evaluation
-- load learned Strategy with learned Behavior at runtime
+- runtime-load learned Strategy alongside learned Behavior
 - native long-mission test
 - multi-subgoal
 - replan
