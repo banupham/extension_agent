@@ -16,49 +16,72 @@ function uniqueCriteria(criteria) {
   return out;
 }
 
-function semanticFact(key, operator, value) {
-  return { type: 'semanticFact', key, operator, value };
+function destinationNeedle(value) {
+  return normalizeMissionText(value).toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/.\s]/)[0];
+}
+
+function semanticGoalStateFor(semantic = {}) {
+  const kinds = new Set(Array.isArray(semantic.goalKinds) ? semantic.goalKinds : []);
+  return {
+    destinationReached: kinds.has('navigate') ? normalizeMissionText(semantic.destination) || null : null,
+    relevantContentObserved: kinds.has('consume_content') ? normalizeMissionText(semantic.topic) || null : null,
+    searchResultsObserved: kinds.has('search'),
+    requestedInformationCaptured: kinds.has('retrieve_information'),
+    requestedLocationObserved: kinds.has('retrieve_information') ? normalizeMissionText(semantic.location) || null : null,
+    contextualInteractionCompleted: kinds.has('interact_contextually'),
+    featureExplorationCompleted: kinds.has('explore_interface')
+  };
+}
+
+function compileGoalState(goalState = {}) {
+  const criteria = [];
+  const unresolved = [];
+
+  if (goalState.destinationReached) {
+    const needle = destinationNeedle(goalState.destinationReached);
+    if (needle) criteria.push({ type: 'page', field: 'url', operator: 'includes', value: needle });
+    else unresolved.push('navigate_destination_unresolvable');
+  }
+
+  if (goalState.relevantContentObserved) {
+    criteria.push({
+      type: 'element',
+      match: { labelIncludes: goalState.relevantContentObserved },
+      expect: { exists: true, visible: true }
+    });
+  }
+
+  if (goalState.searchResultsObserved) {
+    criteria.push({ type: 'pageSignal', key: 'searchResultsObserved', operator: 'equals', value: true });
+  }
+
+  if (goalState.requestedLocationObserved) {
+    criteria.push({
+      type: 'element',
+      match: { labelIncludes: goalState.requestedLocationObserved },
+      expect: { exists: true, visible: true }
+    });
+  }
+
+  if (goalState.requestedInformationCaptured) {
+    criteria.push({ type: 'pageSignal', key: 'requestedInformationCaptured', operator: 'equals', value: true });
+  }
+
+  if (goalState.contextualInteractionCompleted) {
+    criteria.push({ type: 'pageSignal', key: 'contextualInteractionCompleted', operator: 'equals', value: true });
+  }
+
+  if (goalState.featureExplorationCompleted) {
+    criteria.push({ type: 'pageSignal', key: 'featureExplorationCompleted', operator: 'equals', value: true });
+  }
+
+  return { criteria: uniqueCriteria(criteria), unresolved };
 }
 
 function semanticCriteriaFor(semantic = {}) {
-  const kinds = new Set(Array.isArray(semantic.goalKinds) ? semantic.goalKinds : []);
-  const criteria = [];
-  const unresolved = [];
-  const destination = normalizeMissionText(semantic.destination);
-  const topic = normalizeMissionText(semantic.topic);
-  const location = normalizeMissionText(semantic.location);
-
-  if (kinds.has('navigate')) {
-    if (destination) criteria.push(semanticFact('site.identity', 'includes', destination));
-    else unresolved.push('navigate_destination_missing');
-  }
-
-  if (kinds.has('consume_content')) {
-    if (topic) criteria.push(semanticFact('content.semanticText', 'includes', topic));
-    else unresolved.push('content_topic_missing');
-  }
-
-  if (kinds.has('search')) {
-    criteria.push(semanticFact('signal.searchResultsObserved', 'equals', true));
-  }
-
-  if (kinds.has('retrieve_information')) {
-    if (location) criteria.push(semanticFact('content.semanticText', 'includes', location));
-    criteria.push(semanticFact('signal.requestedInformationCaptured', 'equals', true));
-  }
-
-  if (kinds.has('interact_contextually')) {
-    criteria.push(semanticFact('signal.contextualInteractionCompleted', 'equals', true));
-  }
-
-  if (kinds.has('explore_interface')) {
-    criteria.push(semanticFact('signal.featureExplorationCompleted', 'equals', true));
-  }
-
-  return {
-    criteria: uniqueCriteria(criteria),
-    unresolved
-  };
+  const goalState = semanticGoalStateFor(semantic);
+  const compiled = compileGoalState(goalState);
+  return { ...compiled, goalState };
 }
 
 function heuristicResolveSubgoalTask({ subgoal, semantic } = {}) {
@@ -75,6 +98,7 @@ function heuristicResolveSubgoalTask({ subgoal, semantic } = {}) {
     metadata: {
       semanticGoalResolverVersion: SEMANTIC_GOAL_RESOLVER_VERSION,
       semanticGoalResolutionSource: 'heuristic-semantic-goal',
+      semanticGoalState: resolution.goalState,
       unresolved: resolution.unresolved,
       titlePassCriterionRequired: false
     }
@@ -114,7 +138,9 @@ function createSemanticGoalResolver(options = {}) {
 module.exports = {
   SEMANTIC_GOAL_RESOLVER_VERSION,
   uniqueCriteria,
-  semanticFact,
+  destinationNeedle,
+  semanticGoalStateFor,
+  compileGoalState,
   semanticCriteriaFor,
   heuristicResolveSubgoalTask,
   createHeuristicSemanticGoalProvider,
