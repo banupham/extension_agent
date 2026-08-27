@@ -219,7 +219,7 @@ function main() {
     fs.writeFileSync(packFile, `${JSON.stringify({ reviewPackVersion: '0.1.0', items: packItems }, null, 2)}\n`, 'utf8');
 
     const prepared = prepareApprovalCandidates(draftDigestFile, path.join(temp, 'candidates'));
-    assert.equal(prepared.result.approvalCandidateVersion, '0.2.0');
+    assert.equal(prepared.result.approvalCandidateVersion, '0.3.0');
     assert.equal(prepared.result.candidateEpisodeCount, 3);
     assert.equal(prepared.result.blockedEpisodeCount, 1);
     assert.equal(prepared.result.policy.autoTrainEligible, false);
@@ -266,8 +266,6 @@ function main() {
     assert.equal(evaluation.fitPolicy.validationUsedForFit, false);
     assert.equal(evaluation.fitPolicy.testUsedForFit, false);
 
-    // Critical WHAT/HOW boundary: human focus acquisition is capture noise for this task,
-    // and clicks on semantic media controls become play/mute/unmute Strategy actions.
     const mediaInstructions = [
       'Start media playback, mute it, then unmute it',
       'Play the media, mute it, and then unmute it',
