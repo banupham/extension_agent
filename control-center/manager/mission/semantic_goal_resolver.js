@@ -2,7 +2,7 @@
 
 const { normalizeMissionText } = require('./mission_plan.js');
 
-const SEMANTIC_GOAL_RESOLVER_VERSION = '0.1.0';
+const SEMANTIC_GOAL_RESOLVER_VERSION = '0.2.0';
 
 function uniqueCriteria(criteria) {
   const seen = new Set();
@@ -20,6 +20,17 @@ function destinationNeedle(value) {
   return normalizeMissionText(value).toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/.\s]/)[0];
 }
 
+function temporalEvidencePhrase(window) {
+  if (!window || typeof window !== 'object') return null;
+  const amount = Number(window.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const unit = String(window.unit || '').toLowerCase();
+  if (unit === 'day') return `${amount} ngày`;
+  if (unit === 'week') return `${amount} tuần`;
+  if (unit === 'month') return `${amount} tháng`;
+  return String(window.phrase || '').trim() || null;
+}
+
 function semanticGoalStateFor(semantic = {}) {
   const kinds = new Set(Array.isArray(semantic.goalKinds) ? semantic.goalKinds : []);
   return {
@@ -28,6 +39,7 @@ function semanticGoalStateFor(semantic = {}) {
     searchResultsObserved: kinds.has('search'),
     requestedInformationCaptured: kinds.has('retrieve_information'),
     requestedLocationObserved: kinds.has('retrieve_information') ? normalizeMissionText(semantic.location) || null : null,
+    requestedTemporalWindowObserved: kinds.has('retrieve_information') ? temporalEvidencePhrase(semantic.temporalWindow) : null,
     contextualInteractionCompleted: kinds.has('interact_contextually'),
     featureExplorationCompleted: kinds.has('explore_interface')
   };
@@ -55,16 +67,28 @@ function compileGoalState(goalState = {}) {
     criteria.push({ type: 'pageSignal', key: 'searchResultsObserved', operator: 'equals', value: true });
   }
 
-  if (goalState.requestedLocationObserved) {
-    criteria.push({
-      type: 'element',
-      match: { labelIncludes: goalState.requestedLocationObserved },
-      expect: { exists: true, visible: true }
-    });
-  }
-
   if (goalState.requestedInformationCaptured) {
-    criteria.push({ type: 'pageSignal', key: 'requestedInformationCaptured', operator: 'equals', value: true });
+    let semanticEvidenceCount = 0;
+    if (goalState.requestedLocationObserved) {
+      semanticEvidenceCount += 1;
+      criteria.push({
+        type: 'element',
+        match: { labelIncludes: goalState.requestedLocationObserved },
+        expect: { exists: true, visible: true }
+      });
+    }
+    if (goalState.requestedTemporalWindowObserved) {
+      semanticEvidenceCount += 1;
+      criteria.push({
+        type: 'element',
+        match: { labelIncludes: goalState.requestedTemporalWindowObserved },
+        expect: { exists: true, visible: true }
+      });
+    }
+    if (!semanticEvidenceCount) {
+      criteria.push({ type: 'pageSignal', key: 'requestedInformationCaptured', operator: 'equals', value: true });
+      unresolved.push('retrieval_semantic_evidence_missing');
+    }
   }
 
   if (goalState.contextualInteractionCompleted) {
@@ -139,6 +163,7 @@ module.exports = {
   SEMANTIC_GOAL_RESOLVER_VERSION,
   uniqueCriteria,
   destinationNeedle,
+  temporalEvidencePhrase,
   semanticGoalStateFor,
   compileGoalState,
   semanticCriteriaFor,
