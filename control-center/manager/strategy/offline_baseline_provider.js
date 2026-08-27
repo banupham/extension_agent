@@ -2,8 +2,12 @@
 
 const { validateAgentAction } = require('./agent_action_contract.js');
 
+function tokenList(value) {
+  return (String(value || '').toLowerCase().match(/[a-z0-9]+/g) || []).filter(Boolean);
+}
+
 function tokens(value) {
-  return new Set((String(value || '').toLowerCase().match(/[a-z0-9]+/g) || []).filter(Boolean));
+  return new Set(tokenList(value));
 }
 
 function jaccard(a, b) {
@@ -30,6 +34,11 @@ function historyActionTypes(history) {
 function sameActionHistory(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
   return a.every((value, index) => value === b[index]);
+}
+
+function isSequencePrefix(prefix, sequence) {
+  if (!Array.isArray(prefix) || !Array.isArray(sequence) || prefix.length > sequence.length) return false;
+  return prefix.every((value, index) => value === sequence[index]);
 }
 
 function validatePrototype(proto, name) {
@@ -74,7 +83,72 @@ function scorePrototypes(prototypes, task) {
   ));
 }
 
+function tokenRelated(taskToken, anchorToken) {
+  if (taskToken === anchorToken) return true;
+  if (taskToken.length < 4 || anchorToken.length < 4) return false;
+  return taskToken.startsWith(anchorToken) || anchorToken.startsWith(taskToken);
+}
+
+function prototypeAnchorTokens(model) {
+  const prototypes = Array.isArray(model?.actionPrototypes) ? model.actionPrototypes : [];
+  const tokenSets = prototypes.map(proto => {
+    const set = new Set(tokenList(proto.type));
+    for (const label of proto.targetLabels || []) {
+      for (const token of tokenList(label)) set.add(token);
+    }
+    return { proto, set };
+  });
+  const frequency = new Map();
+  for (const item of tokenSets) {
+    for (const token of item.set) frequency.set(token, Number(frequency.get(token) || 0) + 1);
+  }
+  return tokenSets.map(item => {
+    const typeTokens = new Set(tokenList(item.proto.type));
+    const anchors = [...item.set].filter(token =>
+      token.length >= 3 && (typeTokens.has(token) || frequency.get(token) === 1)
+    );
+    return { type: item.proto.type, anchors };
+  });
+}
+
+function inferCompositionalSequence(model, task) {
+  const taskTokens = tokenList(task?.instruction);
+  if (!taskTokens.length) return [];
+  const mentions = [];
+  for (const item of prototypeAnchorTokens(model)) {
+    let firstIndex = -1;
+    for (let i = 0; i < taskTokens.length && firstIndex < 0; i += 1) {
+      if (item.anchors.some(anchor => tokenRelated(taskTokens[i], anchor))) firstIndex = i;
+    }
+    if (firstIndex >= 0) mentions.push({ type: item.type, index: firstIndex });
+  }
+  return mentions
+    .sort((a, b) => a.index - b.index || a.type.localeCompare(b.type))
+    .map(item => item.type);
+}
+
+function compositionalChoice(model, task, history = []) {
+  const sequence = inferCompositionalSequence(model, task);
+  const priorActionTypes = historyActionTypes(history);
+  if (sequence.length < 2 || !isSequencePrefix(priorActionTypes, sequence) || priorActionTypes.length >= sequence.length) return null;
+  const nextType = sequence[priorActionTypes.length];
+  const proto = (model.actionPrototypes || []).find(item => item.type === nextType) || null;
+  if (!proto) return null;
+  const scored = scorePrototypes([proto], task)[0];
+  return scored ? {
+    ...scored,
+    historyMatched: false,
+    compositionMatched: true,
+    compositionSequence: sequence,
+    priorActionTypes,
+    prototypeSource: 'taskComposition'
+  } : null;
+}
+
 function choosePrototype(model, task, history = []) {
+  const composition = compositionalChoice(model, task, history);
+  if (composition) return composition;
+
   const priorActionTypes = historyActionTypes(history);
   const historyMatches = (model.historyPrototypes || []).filter(proto =>
     sameActionHistory(proto.priorActionTypes, priorActionTypes)
@@ -86,6 +160,8 @@ function choosePrototype(model, task, history = []) {
   return chosen ? {
     ...chosen,
     historyMatched: useHistory,
+    compositionMatched: false,
+    compositionSequence: [],
     priorActionTypes,
     prototypeSource: useHistory ? 'historyPrototypes' : 'actionPrototypes'
   } : null;
@@ -117,6 +193,20 @@ function chooseTargetRef(proto, task, observation) {
   return candidates[0]?.ref || null;
 }
 
+function decisionMetadata(model, chosen) {
+  return {
+    modelVersion: model.modelVersion || null,
+    prototypeType: chosen.proto.type,
+    instructionScore: chosen.instructionScore,
+    targetLabelScore: chosen.targetLabelScore,
+    historyMatched: chosen.historyMatched,
+    compositionMatched: chosen.compositionMatched === true,
+    compositionSequence: chosen.compositionSequence || [],
+    priorActionTypes: chosen.priorActionTypes,
+    prototypeSource: chosen.prototypeSource
+  };
+}
+
 function createOfflineBaselineProvider(options = {}) {
   const model = validateModel(options.model);
   const minimumConfidence = Number.isFinite(Number(options.minimumConfidence))
@@ -144,15 +234,7 @@ function createOfflineBaselineProvider(options = {}) {
           confidence: chosen.score,
           reasonCode: 'offline_baseline_confidence_below_threshold',
           recovery: { suggested: 'reobserve_or_human_review' },
-          metadata: {
-            modelVersion: model.modelVersion || null,
-            prototypeType: chosen.proto.type,
-            instructionScore: chosen.instructionScore,
-            targetLabelScore: chosen.targetLabelScore,
-            historyMatched: chosen.historyMatched,
-            priorActionTypes: chosen.priorActionTypes,
-            prototypeSource: chosen.prototypeSource
-          }
+          metadata: decisionMetadata(model, chosen)
         };
       }
 
@@ -174,11 +256,7 @@ function createOfflineBaselineProvider(options = {}) {
           reasonCode: 'offline_baseline_target_not_found',
           recovery: { suggested: 'reobserve' },
           metadata: {
-            modelVersion: model.modelVersion || null,
-            prototypeType: chosen.proto.type,
-            historyMatched: chosen.historyMatched,
-            priorActionTypes: chosen.priorActionTypes,
-            prototypeSource: chosen.prototypeSource,
+            ...decisionMetadata(model, chosen),
             error: String(error?.message || error)
           }
         };
@@ -189,30 +267,29 @@ function createOfflineBaselineProvider(options = {}) {
         action,
         targetRef: action.targetRef,
         confidence: chosen.score,
-        reasonCode: 'offline_baseline_prototype_match',
+        reasonCode: chosen.compositionMatched ? 'offline_baseline_task_composition' : 'offline_baseline_prototype_match',
         expectedOutcome: action.expectedOutcome || {},
         recovery: {},
-        metadata: {
-          modelVersion: model.modelVersion || null,
-          instructionScore: chosen.instructionScore,
-          targetLabelScore: chosen.targetLabelScore,
-          historyMatched: chosen.historyMatched,
-          priorActionTypes: chosen.priorActionTypes,
-          prototypeSource: chosen.prototypeSource
-        }
+        metadata: decisionMetadata(model, chosen)
       };
     }
   };
 }
 
 module.exports = {
+  tokenList,
   tokens,
   jaccard,
   bestSimilarity,
   historyActionTypes,
   sameActionHistory,
+  isSequencePrefix,
   validateModel,
   scorePrototypes,
+  tokenRelated,
+  prototypeAnchorTokens,
+  inferCompositionalSequence,
+  compositionalChoice,
   choosePrototype,
   chooseTargetRef,
   createOfflineBaselineProvider
