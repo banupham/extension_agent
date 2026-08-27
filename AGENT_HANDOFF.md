@@ -37,33 +37,53 @@ Verified local outputs:
   - digestHash: `f0b4aaa723de2f67220e2e70b3f231036524f34eaccfbd3bfbd555df23a01749`
   - autoTrainEligible: false
 
-CI at `f3d464b` is fully green, including semantic mission/goal contracts, behavior baseline contracts, ambiguity profiler, target-backfill contract, and explicit Strategy approval pipeline contract.
+CI at `f3d464b` was fully green, including semantic mission/goal contracts, behavior baseline contracts, ambiguity profiler, target-backfill contract, and explicit Strategy approval pipeline contract.
+
+## New diagnostic work committed
+
+After the zero-recovery real-data result, the feature branch added a privacy-safe aggregate diagnostic path:
+
+- `5106368d5b819087180d1c714aa7f77231213458` — durable handoff file.
+- `9c0fd631f0a0e063d0ab5b2d8e49049415edeedb` — `training-collector/tools/diagnose_strategy_target_backfill.js`.
+- `7f6499727abb666d6f215fcac96180023ed78fc6` — diagnostic contract.
+- `1b99bea6d99bd6f386f571e80df39a7ba9d0dd27` — CI gate for the diagnostic.
+
+The diagnostic reports aggregate linkage coverage only. It does not emit raw page IDs, element refs, selectors, coordinates, tab IDs, or raw text values.
 
 ## Interpretation
 
-The new target-backfill mechanism is contract-correct but recovered **zero** semantic targets from the user's 68 real raw telemetry files. Therefore the remaining 25 ambiguous click transitions must not be guessed or auto-approved. The blocker is evidence linkage/availability in the real telemetry, not the approval machinery.
+The target-backfill mechanism is contract-correct but recovered **zero** semantic targets from the user's 68 real raw telemetry files. Therefore the remaining 25 ambiguous click transitions must not be guessed or auto-approved. The blocker is evidence linkage/availability in the real telemetry, not the approval machinery.
 
 ## Immediate next action
 
-Diagnose why real raw telemetry cannot be linked to the 25 review transitions. Compare the identifiers available in:
+Run the aggregate diagnostic on the user's real batch and use `likelyBlocker` plus the aggregate counts to decide the next patch.
 
-1. review-pack transition IDs / rawAction target refs,
-2. task-episode review exports,
-3. raw telemetry event `pageInstanceId`, `targetRef`, `resolvedTargetRef`, `targetDescriptor`, and sequence/timestamps.
+```bat
+cd /d C:\Users\duong\Downloads\extension_agent
+git pull
+git rev-parse --short HEAD
+node training-collector\tests\strategy_target_backfill_diagnostic_contract.js
+node training-collector\tools\diagnose_strategy_target_backfill.js --pack training-collector\strategy-data\random-human-v01\batch-v03\strategy-review-pack-v01\review-pack.json --raw training-collector\socket-data --out training-collector\strategy-data\random-human-v01\batch-v03\strategy-target-evidence-v01\diagnostic.json
+```
 
-Then make the smallest privacy-safe linkage improvement. Preferred evidence order:
+Expected contract output: `Strategy target backfill diagnostic contract: PASS`.
+
+Then inspect only the aggregate fields:
+
+- `rawCoverage.targetDescriptorEventCount`
+- `rawCoverage.resolvedTargetDescriptorEventCount`
+- `rawCoverage.semanticSnapshotElementCount`
+- `rawCoverage.descriptorIndexKeyCount`
+- `requestedCoverage.exactDescriptorKeyMatchCount`
+- `requestedCoverage.pagePresentButExactKeyMissingCount`
+- `requestedCoverage.targetRefSeenOnOtherPageCount`
+- `requestedCoverage.descriptorPageMissingCount`
+- `likelyBlocker`
+
+Preferred evidence order for any future recovery patch:
 
 1. exact page-instance + element-ref correlation,
 2. exact transition/page provenance if available,
 3. bounded timestamp/sequence correlation only when unambiguous.
 
 Do not infer target semantics from task wording alone. If evidence remains insufficient, leave the 25 transitions unresolved and improve future capture instead.
-
-## Useful local commands
-
-```bat
-cd /d C:\Users\duong\Downloads\extension_agent
-git pull
-git rev-parse --short HEAD
-node training-collector\tests\strategy_target_backfill_contract.js
-```
