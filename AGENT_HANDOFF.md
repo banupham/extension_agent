@@ -438,3 +438,19 @@ Local verification PASS:
 - `episode_cross_document_settlement_contract.js`
 
 The separately observed popup `Loading socket status/raw session...` state is not declared fixed by this label correction and still requires a real Chrome retest/diagnosis.
+
+## Incremental reviews-v2 redo curation — THREE ACCEPT
+
+The user completed the three requested redo demonstrations:
+
+- `ep-1787854827031` — Bấm Tiếng Việt để mở Wikipedia tiếng Việt
+- `ep-1787855724927` — nhập Việt Nam, submit, then open Hà Nội
+- `ep-1787855844011` — open HTML on MDN, then HTML elements
+
+All three review exports pass structure/privacy checks and are stored in `incremental-strategy-01/reviews-v2`. Codex curation decision: ACCEPT all three.
+
+- Wikipedia language redo remains affected by Wikipedia's empty captured link labels, but the repeated constrained demonstration is consistent enough for Codex-owned semantic curation; do not ask the user to redo it again solely for that collector limitation.
+- Việt Nam/Hà Nội now contains recoverable text-entry and submit semantics plus the final click evidence.
+- MDN now reaches `/docs/Web/HTML` and then `/docs/Web/HTML/Reference/Elements`, supporting two distinct semantic clicks.
+
+Together with the five ACCEPT episodes retained from reviews-v1, the intended curated batch now covers eight accepted demonstrations. The next technical step is Codex-owned candidate construction and digest generation. Human exact digest approval is still required before applying annotations or training.
