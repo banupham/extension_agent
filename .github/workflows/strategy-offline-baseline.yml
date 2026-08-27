@@ -24,9 +24,11 @@ on:
       - 'control-center/script/offline_strategy_bounded_episode_loop_gate.js'
       - 'control-center/script/offline_strategy_history_multistep_gate.js'
       - 'control-center/script/offline_strategy_history_three_step_gate.js'
+      - 'control-center/script/offline_strategy_compositional_unseen_gate.js'
       - 'control-center/script/checks/one_action_semantic_settle.js'
       - 'control-center/script/checks/offline_strategy_provider.js'
       - 'control-center/script/checks/offline_strategy_history_provider.js'
+      - 'control-center/script/checks/offline_strategy_compositional_unseen.js'
       - 'control-center/script/checks/offline_strategy_native_one_action.js'
       - 'control-center/script/checks/offline_strategy_replan.js'
       - 'control-center/script/checks/offline_strategy_bounded_two_step.js'
@@ -60,6 +62,7 @@ jobs:
           node --check control-center/script/checks/one_action_semantic_settle.js
           node --check control-center/script/checks/offline_strategy_provider.js
           node --check control-center/script/checks/offline_strategy_history_provider.js
+          node --check control-center/script/checks/offline_strategy_compositional_unseen.js
           node --check control-center/script/offline_strategy_native_one_action_gate.js
           node --check control-center/script/checks/offline_strategy_native_one_action.js
           node --check control-center/script/offline_strategy_replan_gate.js
@@ -72,6 +75,7 @@ jobs:
           node --check control-center/script/checks/offline_strategy_history_multistep.js
           node --check control-center/script/offline_strategy_history_three_step_gate.js
           node --check control-center/script/checks/offline_strategy_history_three_step.js
+          node --check control-center/script/offline_strategy_compositional_unseen_gate.js
       - name: Run semantic post-action settle contract
         run: node control-center/script/checks/one_action_semantic_settle.js
       - name: Run offline Strategy baseline contract
@@ -86,6 +90,8 @@ jobs:
         run: node control-center/script/checks/offline_strategy_provider.js
       - name: Run offline Strategy history provider contract
         run: node control-center/script/checks/offline_strategy_history_provider.js
+      - name: Run unseen compositional Strategy contract
+        run: node control-center/script/checks/offline_strategy_compositional_unseen.js
       - name: Run native offline Strategy one-action contract
         run: node control-center/script/checks/offline_strategy_native_one_action.js
       - name: Run offline Strategy one-step replan contract
