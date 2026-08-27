@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const Base = require('./resolve_strategy_review_ambiguity.js');
 
-const TEACHING_BATCH_RESOLVER_VERSION = '0.2.0';
+const TEACHING_BATCH_RESOLVER_VERSION = '0.3.0';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -198,6 +198,10 @@ function taskRequestsSubmit(task) {
   ]);
 }
 
+function taskExplicitlyRequestsEnter(task) {
+  return Base.taskMentions(task || {}, ['enter']);
+}
+
 function successfulFinalOutcome(sourceReview) {
   return String(sourceReview?.finalOutcome?.status || '').toLowerCase() === 'success';
 }
@@ -236,16 +240,42 @@ function capturedSuccess(transition) {
   return transition?.outcome?.actionSucceeded !== false;
 }
 
+function textEntryMechanicalKey(rawAction = {}) {
+  const kind = String(rawAction.kind || '').toLowerCase();
+  if (kind !== 'text-key' || keyboardControl(rawAction)) return false;
+  const operation = String(rawAction.operation || '').toLowerCase();
+  return ['type-char', 'backspace', 'delete', 'other-key'].includes(operation);
+}
+
 function sequenceCompatibleNoise(transition, target, ref) {
   const raw = transition?.rawAction || {};
   const kind = String(raw.kind || '').toLowerCase();
-  const operation = String(raw.operation || '').toLowerCase();
   const found = semanticTargetForTransition(transition);
   const sameTarget = sameEditableTarget(found.target, target, found.ref, ref);
   if (kind === 'text-change') return sameTarget;
   if (['focus', 'dom-focus', 'click', 'dom-click'].includes(kind)) return sameTarget;
-  if (kind === 'text-key' && operation === 'type-char') return sameTarget;
+  if (textEntryMechanicalKey(raw)) return sameTarget;
   return false;
+}
+
+function semanticSubmissionControl(target) {
+  const tokens = new Set(Base.words(target?.label || target?.role || target?.tag));
+  return ['submit', 'send', 'search', 'go', 'confirm', 'gui', 'tim', 'nop', 'xacnhan']
+    .some(token => tokens.has(token));
+}
+
+function competingSubmitActionAfter(transitions, enterIndex, task) {
+  const matches = [];
+  for (let index = enterIndex + 1; index < transitions.length; index += 1) {
+    const transition = transitions[index];
+    if (!capturedSuccess(transition)) continue;
+    const kind = String(transition?.rawAction?.kind || '').toLowerCase();
+    if (!['click', 'dom-click', 'submit', 'dom-submit'].includes(kind)) continue;
+    const { target } = semanticTargetForTransition(transition);
+    const submitLike = ['submit', 'dom-submit'].includes(kind) || semanticSubmissionControl(target) || targetMatchesTask(target, task);
+    if (submitLike) matches.push({ index, transition, target });
+  }
+  return matches;
 }
 
 function genericTextFormSequence(transitions, task, sourceReview) {
@@ -265,8 +295,14 @@ function genericTextFormSequence(transitions, task, sourceReview) {
 
   const anchor = chars[0];
   if (chars.some(item => !sameEditableTarget(item.target, anchor.target, item.ref, anchor.ref))) return null;
-  const lastChar = chars[chars.length - 1];
 
+  let startIndex = anchor.index;
+  for (let index = anchor.index - 1; index >= 0; index -= 1) {
+    if (!sequenceCompatibleNoise(transitions[index], anchor.target, anchor.ref)) break;
+    startIndex = index;
+  }
+
+  const lastChar = chars[chars.length - 1];
   let enter = null;
   for (let index = lastChar.index + 1; index < transitions.length; index += 1) {
     const transition = transitions[index];
@@ -282,20 +318,24 @@ function genericTextFormSequence(transitions, task, sourceReview) {
   }
   if (!enter) return null;
 
-  for (let index = anchor.index; index <= enter.index; index += 1) {
+  for (let index = startIndex; index <= enter.index; index += 1) {
     const transition = transitions[index];
     if (transition === enter.transition) continue;
     if (!sequenceCompatibleNoise(transition, anchor.target, anchor.ref)) return null;
   }
 
   const pageOrSemanticChange = observableSemanticStateChanged(enter.transition) ||
-    normalizedPage(transitions[anchor.index]?.strategyObservationBefore).url !== normalizedPage(enter.transition?.strategyObservationAfter).url;
-  const outcomeSupported = capturedSuccess(enter.transition) && successfulFinalOutcome(sourceReview);
+    normalizedPage(transitions[startIndex]?.strategyObservationBefore).url !== normalizedPage(enter.transition?.strategyObservationAfter).url;
+  const competing = competingSubmitActionAfter(transitions, enter.index, task || {});
+  const enterExplicit = taskExplicitlyRequestsEnter(task || {});
+  const enterOutcomeSupported = pageOrSemanticChange || enterExplicit || competing.length === 0;
+  const outcomeSupported = capturedSuccess(enter.transition) && successfulFinalOutcome(sourceReview) && enterOutcomeSupported;
   if (!outcomeSupported) return null;
 
   const charIds = chars.map(item => String(item.transition?.transitionId || ''));
   const noiseIds = new Set();
-  for (let index = 0; index <= enter.index; index += 1) {
+  const postSubmitNoiseTransitionIds = new Set();
+  for (let index = startIndex; index <= enter.index; index += 1) {
     const transition = transitions[index];
     const id = String(transition?.transitionId || '');
     if (!id || id === charIds[0] || id === String(enter.transition?.transitionId || '')) continue;
@@ -305,18 +345,35 @@ function genericTextFormSequence(transitions, task, sourceReview) {
     }
   }
 
+  if (enterExplicit) {
+    for (const item of competing) {
+      const kind = String(item.transition?.rawAction?.kind || '').toLowerCase();
+      if (!['click', 'dom-click'].includes(kind)) continue;
+      if (!semanticSubmissionControl(item.target)) continue;
+      if (observableSemanticStateChanged(item.transition)) continue;
+      const id = String(item.transition?.transitionId || '');
+      if (!id) continue;
+      noiseIds.add(id);
+      postSubmitNoiseTransitionIds.add(id);
+    }
+  }
+
   return {
     declaredText,
     targetRef: anchor.ref,
     target: anchor.target,
+    startTransitionId: String(transitions[startIndex]?.transitionId || ''),
     firstTypeTransitionId: charIds[0],
     charTransitionIds: new Set(charIds),
     submitTransitionId: String(enter.transition?.transitionId || ''),
     noiseTransitionIds: noiseIds,
+    postSubmitNoiseTransitionIds,
     outcomeEvidence: {
       finalOutcomeSuccess: true,
       enterActionSucceeded: true,
-      observableSemanticStateChanged: pageOrSemanticChange
+      observableSemanticStateChanged: pageOrSemanticChange,
+      taskExplicitlyRequestsEnter: enterExplicit,
+      competingPostEnterSubmitActionCount: competing.length
     }
   };
 }
@@ -359,13 +416,17 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
     }
 
     if (textSequence?.noiseTransitionIds.has(transitionId)) {
-      const reason = ['focus', 'dom-focus'].includes(kind)
-        ? 'focus_acquisition_how_not_strategy'
-        : ['click', 'dom-click'].includes(kind)
-          ? 'editable_target_click_focus_acquisition_how_not_strategy'
-          : kind === 'text-change'
-            ? 'text_change_capture_provenance_how_not_strategy'
-            : 'per_character_capture_collapsed_into_single_text_action';
+      const reason = textSequence.postSubmitNoiseTransitionIds.has(transitionId)
+        ? 'redundant_post_enter_submit_surface_click_how_not_strategy'
+        : ['focus', 'dom-focus'].includes(kind)
+          ? 'focus_acquisition_how_not_strategy'
+          : ['click', 'dom-click'].includes(kind)
+            ? 'editable_target_click_focus_acquisition_how_not_strategy'
+            : kind === 'text-change'
+              ? 'text_change_capture_provenance_how_not_strategy'
+              : kind === 'text-key' && ['backspace', 'delete', 'other-key'].includes(operation)
+                ? 'text_entry_editing_mechanic_how_not_strategy'
+                : 'per_character_capture_collapsed_into_single_text_action';
       resolutions.push(noise(transitionId, hint || (kind === 'text-key' ? 'keyboard-action-review-required' : kind), target, reason));
       continue;
     }
@@ -509,8 +570,11 @@ function resolveTeachingBatch(packFile, triageFile, outputDir) {
       sensitiveTaskTextRejected: true,
       rawKeyCharacterValuesNeverStored: true,
       perCharacterCaptureCollapsed: true,
+      textEditingMechanicsCollapsedIntoHowNoise: true,
       semanticEditableTargetContinuityRequired: true,
       submitRequiresTaskIntentAndSuccessfulOutcomeEvidence: true,
+      competingPostEnterSubmitRequiresExplicitEnterOrObservableEnterOutcome: true,
+      redundantPostEnterSubmitSurfaceClickMayBeExcludedOnlyWhenEnterExplicitlyRequested: true,
       focusAcquisitionExcludedFromStrategy: true,
       editableFieldClickAcquisitionExcludedFromStrategy: true,
       textChangeCaptureExcludedFromStrategy: true,
@@ -586,6 +650,10 @@ module.exports = {
   sameEditableTarget,
   keyboardControl,
   taskRequestsSubmit,
+  taskExplicitlyRequestsEnter,
+  textEntryMechanicalKey,
+  semanticSubmissionControl,
+  competingSubmitActionAfter,
   semanticObservationFingerprint,
   observableSemanticStateChanged,
   genericTextFormSequence,
