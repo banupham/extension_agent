@@ -1,8 +1,10 @@
 'use strict';
 
-const SEMANTIC_EFFECT_VERSION = '0.1.1';
+const SEMANTIC_EFFECT_VERSION = '0.2.0';
 const EFFECT_STATUSES = new Set(['execution_failed', 'no_effect', 'effect_observed']);
 const OBSERVABLE_EFFECT_OPTIONAL_TYPES = new Set(['moveTo', 'hover', 'hoverAndObserve', 'waitAndObserve']);
+const FOCUS_MEANINGFUL_ACTION_TYPES = new Set(['focus']);
+const SCROLL_MEANINGFUL_ACTION_TYPES = new Set(['scrollVertical', 'scrollHorizontal', 'scrollIntoView']);
 
 function normalizeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -114,6 +116,24 @@ function browserContextChanged(beforeBrowserContext, afterBrowserContext) {
   return JSON.stringify(a) !== JSON.stringify(b);
 }
 
+function classifyMeaningfulCodes(action, codes) {
+  const type = String(action?.type || '').trim();
+  const meaningful = [];
+  const incidental = [];
+  for (const code of codes) {
+    if (code === 'focus_changed' && !FOCUS_MEANINGFUL_ACTION_TYPES.has(type)) {
+      incidental.push(code);
+      continue;
+    }
+    if (code === 'scroll_changed' && !SCROLL_MEANINGFUL_ACTION_TYPES.has(type)) {
+      incidental.push(code);
+      continue;
+    }
+    meaningful.push(code);
+  }
+  return { meaningful, incidental };
+}
+
 function evaluateActionEffect(input = {}) {
   const execution = input.execution || null;
   const action = input.action || null;
@@ -126,8 +146,11 @@ function evaluateActionEffect(input = {}) {
       observableEffectExpected: effectExpected,
       confidence: 1,
       codes: ['execution_failed'],
+      meaningfulCodes: ['execution_failed'],
+      incidentalCodes: [],
       targetIdentityAvailable: false,
-      semanticChangeCount: 0
+      semanticChangeCount: 0,
+      meaningfulChangeCount: 0
     };
   }
 
@@ -180,8 +203,9 @@ function evaluateActionEffect(input = {}) {
   }
 
   const uniqueCodes = [...new Set(codes)];
-  const status = uniqueCodes.length ? 'effect_observed' : 'no_effect';
-  const confidence = status === 'no_effect' ? 0.9 : (strongEvidence > 0 ? 0.95 : 0.65);
+  const classified = classifyMeaningfulCodes(action, uniqueCodes);
+  const status = classified.meaningful.length ? 'effect_observed' : 'no_effect';
+  const confidence = status === 'no_effect' ? 0.9 : (strongEvidence > 0 ? 0.95 : 0.75);
 
   return {
     semanticEffectVersion: SEMANTIC_EFFECT_VERSION,
@@ -189,8 +213,11 @@ function evaluateActionEffect(input = {}) {
     observableEffectExpected: effectExpected,
     confidence,
     codes: uniqueCodes,
+    meaningfulCodes: classified.meaningful,
+    incidentalCodes: classified.incidental,
     targetIdentityAvailable: !!findTargetBefore(action, before),
-    semanticChangeCount: uniqueCodes.length
+    semanticChangeCount: uniqueCodes.length,
+    meaningfulChangeCount: classified.meaningful.length
   };
 }
 
@@ -198,6 +225,8 @@ module.exports = {
   SEMANTIC_EFFECT_VERSION,
   EFFECT_STATUSES,
   OBSERVABLE_EFFECT_OPTIONAL_TYPES,
+  FOCUS_MEANINGFUL_ACTION_TYPES,
+  SCROLL_MEANINGFUL_ACTION_TYPES,
   normalizeText,
   observableEffectExpectedFor,
   elementIdentity,
@@ -205,5 +234,6 @@ module.exports = {
   elementStateChangeCodes,
   semanticElementDelta,
   browserContextChanged,
+  classifyMeaningfulCodes,
   evaluateActionEffect
 };
