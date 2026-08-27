@@ -6,6 +6,10 @@ on:
       - feat/agent-tab-context
     paths:
       - 'control-center/script/page_strategy_teaching_lab.js'
+      - 'training-collector/core/episode_stop_settlement.js'
+      - 'training-collector/popup.html'
+      - 'training-collector/popup.js'
+      - 'training-collector/tests/episode_stop_settlement_contract.js'
       - 'training-collector/tests/strategy_teaching_coverage_contract.js'
       - 'control-center/manager/training/episode_dataset_export.js'
       - 'training-collector/tools/check_strategy_baseline_readiness.js'
@@ -23,6 +27,11 @@ jobs:
       - name: Check syntax
         run: |
           node --check control-center/script/page_strategy_teaching_lab.js
+          node --check training-collector/core/episode_stop_settlement.js
+          node --check training-collector/popup.js
+          node --check training-collector/tests/episode_stop_settlement_contract.js
           node --check training-collector/tests/strategy_teaching_coverage_contract.js
+      - name: Run episode stop settlement contract
+        run: node training-collector/tests/episode_stop_settlement_contract.js
       - name: Run Strategy teaching coverage contract
         run: node training-collector/tests/strategy_teaching_coverage_contract.js
