@@ -2,11 +2,12 @@
 
 const { validateTask } = require('../strategy/contracts.js');
 const { executeBoundedEpisodeLoop } = require('../agent/bounded_episode_loop.js');
+const { resolveBehaviorBaseline } = require('../behavior/baseline_loader.js');
 const { executeMission } = require('./mission_executor.js');
 const { createSemanticMissionInterpreter } = require('./semantic_mission_interpreter.js');
 const { createSemanticGoalResolver } = require('./semantic_goal_resolver.js');
 
-const MISSION_STRATEGY_EXECUTOR_VERSION = '0.2.0';
+const MISSION_STRATEGY_EXECUTOR_VERSION = '0.3.0';
 
 function semanticBySubgoal(semanticMission) {
   return new Map((Array.isArray(semanticMission?.subgoals) ? semanticMission.subgoals : [])
@@ -29,6 +30,10 @@ async function executeMissionWithStrategy(input = {}) {
   if (!input.runtime) throw new Error('mission_strategy_runtime_required');
   if (!input.strategy && typeof input.createStrategy !== 'function') throw new Error('mission_strategy_provider_required');
 
+  const behaviorBaseline = resolveBehaviorBaseline({
+    baseline: input.baseline || null,
+    baselineFile: input.baselineFile || null
+  });
   const interpreter = input.interpreter || createSemanticMissionInterpreter();
   const goalResolver = input.goalResolver || createSemanticGoalResolver();
   const resolveSubgoalTask = typeof input.resolveSubgoalTask === 'function'
@@ -53,6 +58,7 @@ async function executeMissionWithStrategy(input = {}) {
         runtime: input.runtime,
         strategy,
         task,
+        baseline: behaviorBaseline.artifact,
         budgets: input.episodeBudgets,
         postActionSettle: input.postActionSettle
       });
@@ -72,6 +78,7 @@ async function executeMissionWithStrategy(input = {}) {
   return {
     missionStrategyExecutorVersion: MISSION_STRATEGY_EXECUTOR_VERSION,
     semanticMission,
+    behaviorBaseline: behaviorBaseline.metadata,
     ...missionResult,
     invariant: {
       ...(missionResult.invariant || {}),
@@ -81,7 +88,8 @@ async function executeMissionWithStrategy(input = {}) {
         .every(item => item?.result?.finalBudget?.reasonCode === 'goal_satisfied'),
       noPassTitleCriterionRequired: missionResult.subgoalResults
         .filter(item => item.status === 'done')
-        .every(item => item?.result?.task?.metadata?.titlePassCriterionRequired !== true)
+        .every(item => item?.result?.task?.metadata?.titlePassCriterionRequired !== true),
+      behaviorBaselineNeverReplaysLiteralTrajectory: behaviorBaseline.metadata.literalTrajectoryReplay === false
     }
   };
 }
