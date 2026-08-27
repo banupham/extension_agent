@@ -8,7 +8,7 @@ const {
   loadFeatureSet
 } = require('./build_behavior_batch_baseline.js');
 
-const EVALUATOR_VERSION = '0.1.0';
+const EVALUATOR_VERSION = '0.2.0';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -27,7 +27,7 @@ function actionFamily(actionType) {
   if (actionType === 'typeText') return 'keyboard-text';
   if (actionType === 'pressKey') return 'keyboard-key';
   if (actionType === 'drag') return 'pointer-drag';
-  if (actionType === 'focus') return 'pointer-click';
+  if (['focus', 'selectOption', 'submit'].includes(actionType)) return 'form-control';
   return null;
 }
 
@@ -86,6 +86,14 @@ const METRICS = {
     displacementPx: row => row.features?.displacementPx,
     straightness: row => row.features?.path?.straightness,
     meanSpeedPxS: row => row.features?.path?.meanSpeedPxS
+  },
+  'form-control': {
+    leadInDurationMs: row => row.features?.leadInTiming?.durationMs,
+    leadInGapMedianMs: row => row.features?.leadInTiming?.gapMedianMs,
+    pointerApproachDurationMs: row => row.features?.pointerLeadIn?.durationMs,
+    pointerStraightness: row => row.features?.pointerLeadIn?.straightness,
+    pointerMeanSpeedPxS: row => row.features?.pointerLeadIn?.meanSpeedPxS,
+    pointerMeanAbsTurnDeg: row => row.features?.pointerLeadIn?.meanAbsTurnDeg
   }
 };
 
@@ -191,6 +199,12 @@ function evaluateBehaviorBatchBaseline(manifestFile, baselineFile) {
     sourceManifest: path.relative(process.cwd(), fullManifest),
     sourceBaseline: path.relative(process.cwd(), fullBaseline),
     trainOnlyUsedForFit: baseline?.splitPolicy?.trainOnlyUsedForFit !== false,
+    modelCoverage: model?.design ? {
+      sourceRowCount: Number(model.design.sourceRowCount || 0),
+      modeledRowCount: Number(model.design.modeledRowCount || 0),
+      unmodeledRowCount: Number(model.design.unmodeledRowCount || 0),
+      unmodeledActionCounts: model.design.unmodeledActionCounts || {}
+    } : null,
     validation,
     test,
     warnings,
@@ -229,6 +243,7 @@ function main(argv = process.argv.slice(2)) {
       ok: true,
       result: 'PASS',
       evaluatorVersion: report.evaluatorVersion,
+      modelCoverage: report.modelCoverage,
       validation: {
         rowCount: report.validation.rowCount,
         rowSupportCoverage: report.validation.rowSupportCoverage,
