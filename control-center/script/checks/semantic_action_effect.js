@@ -3,6 +3,7 @@
 const assert = require('assert');
 const {
   SEMANTIC_EFFECT_VERSION,
+  observableEffectExpectedFor,
   evaluateActionEffect
 } = require('../../manager/goal/semantic_effect_evaluator.js');
 
@@ -41,13 +42,17 @@ function effect({ before, after, action = { type: 'click', targetRef: 'e0' }, ex
 }
 
 (function main() {
-  assert.equal(SEMANTIC_EFFECT_VERSION, '0.1.0');
+  assert.equal(SEMANTIC_EFFECT_VERSION, '0.1.1');
+  assert.equal(observableEffectExpectedFor({ type: 'click' }), true);
+  assert.equal(observableEffectExpectedFor({ type: 'moveTo' }), false);
+  assert.equal(observableEffectExpectedFor({ type: 'waitAndObserve' }), false);
 
   const disappeared = effect({
     before: page({ interactiveElements: [button('e0', 'Dismiss')] }),
     after: page({ observationId: 'obs2', interactiveElements: [] })
   });
   assert.equal(disappeared.status, 'effect_observed');
+  assert.equal(disappeared.observableEffectExpected, true);
   assert.ok(disappeared.codes.includes('target_disappeared'));
   assert.ok(disappeared.codes.includes('elements_removed'));
 
@@ -88,6 +93,7 @@ function effect({ before, after, action = { type: 'click', targetRef: 'e0' }, ex
     after: page({ observationId: 'obs2', scroll: { x: 0, y: 500 } })
   });
   assert.equal(scrolled.status, 'effect_observed');
+  assert.equal(scrolled.observableEffectExpected, true);
   assert.deepEqual(scrolled.codes, ['scroll_changed']);
 
   const noEffect = effect({
@@ -95,7 +101,17 @@ function effect({ before, after, action = { type: 'click', targetRef: 'e0' }, ex
     after: page({ observationId: 'obs2', interactiveElements: [button('e9', 'No Op')] })
   });
   assert.equal(noEffect.status, 'no_effect');
+  assert.equal(noEffect.observableEffectExpected, true);
   assert.deepEqual(noEffect.codes, []);
+
+  const optionalNoEffect = evaluateActionEffect({
+    execution: { ok: true },
+    action: { type: 'moveTo', targetRef: 'e0' },
+    before: page({ interactiveElements: [button('e0', 'Hover')]}),
+    after: page({ observationId: 'obs2', interactiveElements: [button('e9', 'Hover')] })
+  });
+  assert.equal(optionalNoEffect.status, 'no_effect');
+  assert.equal(optionalNoEffect.observableEffectExpected, false);
 
   const failed = evaluateActionEffect({
     execution: { ok: false, error: 'target_stale' },
@@ -104,6 +120,7 @@ function effect({ before, after, action = { type: 'click', targetRef: 'e0' }, ex
     after: page({ observationId: 'obs2' })
   });
   assert.equal(failed.status, 'execution_failed');
+  assert.equal(failed.observableEffectExpected, true);
   assert.deepEqual(failed.codes, ['execution_failed']);
 
   const tabs = evaluateActionEffect({
