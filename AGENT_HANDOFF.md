@@ -40,36 +40,31 @@ The controlled lab is `http://127.0.0.1:8092/` and adds three new semantic group
 
 The user has already exported task 1 (`Atlas` / Topic Search) and task 3 (`Teaching Confirm`). Those do not need to be repeated.
 
-Task 2 (`Orion` / Message Composer / Enter) repeatedly produced `episode_success_has_pending_transition`.
+Task 2 (`Orion` / Message Composer / Enter) repeatedly produces `episode_success_has_pending_transition` even after the bounded-settlement and START-before-END ordering fixes were installed and the extension was reloaded.
 
-The first bounded wait fix was insufficient. The deeper race was that `TRANSITION_END` could be delivered before `TRANSITION_START` had been acknowledged/persisted, leaving a permanent pending transition. The content capture now explicitly orders each end message after the corresponding start acknowledgement.
+Important evidence:
 
-Root-fix commits:
+- Task 1 also used Enter, and its Enter transition was exported as `status: complete`. Therefore Enter itself is not generally broken.
+- Task 3 is a simple click and succeeds.
+- Task 2 uniquely reproduces a persistent pending transition in the current teaching round.
+- Therefore do not blame the user and do not keep asking for blind retries. The remaining bug is specific to the capture sequence around the Message Composer task or another transition created during that sequence.
 
-- `dad2d40416f628b7622a81aeea7f0a45c5a4037b` — add transition ordering helper.
-- `566e60825450da1d848c708cdf69d75934e54e98` — load the helper before `content.js`.
-- `7241acfb8075be1fdea07f55aaf9072b9d290c77` — enforce START acknowledgement before END send.
-- `9470d70c811cdc89573afa4c48146275ef62c56e` — add transition ordering contract.
-- `352fe10ddf5f23c16c788deb3674a412a0646ad9` — CI gate.
+Previous mitigation commits:
 
-GitHub Actions run `33067305408` completed successfully. The stop-settlement contract, transition-order contract, and Strategy teaching coverage contract all passed.
+- `4d44a8ede30574e02dd28a73751d51fa518302fa` — bounded stop settlement helper.
+- `9017873b258bc537abb5550c5bb4c77eead8899b` — popup waits before Mark Success.
+- `dad2d40416f628b7622a81aeea7f0a45c5a4037b` — transition ordering helper.
+- `566e60825450da1d848c708cdf69d75934e54e98` — load transition ordering helper.
+- `7241acfb8075be1fdea07f55aaf9072b9d290c77` — START acknowledgement before END send.
+- `9470d70c811cdc89573afa4c48146275ef62c56e` — transition ordering contract.
+- `352fe10ddf5f23c16c788deb3674a412a0646ad9` — CI gate; contracts passed but native task 2 still reproduced the bug.
 
 ## Immediate next action
 
-On the user's machine:
+Do not ask the user to retry task 2 again yet.
 
-```bat
-cd /d C:\Users\duong\Downloads\extension_agent
-git pull
-git rev-parse --short HEAD
-node training-collector\tests\episode_transition_order_contract.js
-start chrome://extensions/
-```
+Next development step is to add a native pending-transition diagnostic that reports only safe aggregate/semantic fields for the currently pending transition(s): transition id suffix, raw action kind/operation, semantic target label/role/tag, and age. No selector, coordinates, tab id, secrets, or private reasoning.
 
-Reload Training Collector, refresh `http://127.0.0.1:8092/`, then record only:
-
-`Trên http://127.0.0.1:8092/, nhập Orion vào ô Message Composer rồi gửi bằng Enter.`
-
-After Enter, Mark Success, then export the task episode. If this succeeds, combine original task 1 + replacement task 2 + original task 3 and continue the six-group Strategy teaching pipeline.
+Then reproduce task 2 once and use that diagnostic to identify exactly which transition remains pending. After the exact pending transition is known, fix the collector at the source and add a contract for that specific failure mode.
 
 Target before Strategy fit remains `datasetBuilt:true` and `baselineReady:true`; fit TRAIN only and keep validation/test held out. Do not promote `main`.
