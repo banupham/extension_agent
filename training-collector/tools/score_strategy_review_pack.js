@@ -143,6 +143,8 @@ if (require.main === module) main();
 
 module.exports = {
   TRIAGE_VERSION,
+  DIRECT_ACTION_HINTS,
+  TARGET_REQUIRED,
   scoreProposal,
   scoreItem,
   scoreReviewPack,
