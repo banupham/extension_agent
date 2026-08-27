@@ -13,7 +13,7 @@ const {
   recoveryOutcomeStats
 } = require('./recovery_outcome_memory.js');
 
-const RECOVERY_EXPLORATION_VERSION = '0.2.0';
+const RECOVERY_EXPLORATION_VERSION = '0.2.1';
 const DEFAULT_RECOVERY_ACTION_TYPES = Object.freeze([
   'waitAndObserve',
   'scrollVertical',
@@ -83,6 +83,18 @@ function rankCandidatesByOutcomeHistory(candidates, records, task, trigger) {
       a.historical.failures - b.historical.failures ||
       a.ordinal - b.ordinal
     );
+}
+
+function semanticCandidateHistory(ranked) {
+  return (Array.isArray(ranked) ? ranked : []).map(candidate => ({
+    type: candidate.type,
+    targetLabel: candidate.targetLabel,
+    attempts: candidate.historical.attempts,
+    successes: candidate.historical.successes,
+    failures: candidate.historical.failures,
+    successRate: candidate.historical.successRate,
+    confidence: candidate.historical.confidence
+  }));
 }
 
 function createRecoveryExplorationProvider(options = {}) {
@@ -156,6 +168,7 @@ function createRecoveryExplorationProvider(options = {}) {
           historicalFailures: candidate.historical.failures,
           historicalSuccessRate: candidate.historical.successRate,
           historicalConfidence: candidate.historical.confidence,
+          candidateHistory: semanticCandidateHistory(ranked),
           outcomeMemory: !!outcomeMemoryFile
         }
       };
@@ -171,5 +184,6 @@ module.exports = {
   recoveryCandidates,
   taskExplorationKey,
   rankCandidatesByOutcomeHistory,
+  semanticCandidateHistory,
   createRecoveryExplorationProvider
 };
