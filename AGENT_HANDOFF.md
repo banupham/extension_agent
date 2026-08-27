@@ -32,38 +32,34 @@ Historical real-data result remains:
 
 The feature branch records future episode-linked semantic action anchors so new demonstrations can be connected back to the correct episode even when old page identity linkage is unreliable.
 
-Commits:
+GitHub Actions run `33061242955` completed successfully. The `Strategy episode provenance contract` passed together with the existing semantic mission, behavior, ambiguity, target-backfill, and approval pipeline gates.
 
-- `17b05e2da5ab39b4c2e5eb80966299a6371d1899` — add `training-collector/capture/episode_provenance_capture.js`.
-- `da1044933e7bd12dcfe7a447e230a77faac538d4` — load the provenance capture module in the Training Collector manifest.
-- `38dc0db38444df032a211a389a04c5a9511c358e` — add `backfill_strategy_episode_provenance.js` for episode-scoped semantic target recovery.
-- `f252d8769065b2dfef6c97239484ebbbc2a73dc1` — add Strategy episode provenance contract.
-- `af721095ae21bfcd7cd1d42834567ae11e13b60f` — CI gate for the new learning path.
+## Replacement three-task teaching batch accepted for processing
 
-GitHub Actions run `33061242955` completed successfully. The new `Strategy episode provenance contract` passed together with all existing semantic mission, behavior, ambiguity, target-backfill, and approval pipeline gates.
+The user supplied three new review exports with three distinct episode IDs and successful final outcomes:
 
-## Review of first new teaching attempt
+1. `ep-1787826569158` — `Trên Google, mở liên kết Gmail ở góc trên bên phải.` — 5 captured transitions — final status `success`.
+2. `ep-1787826618214` — `Trên Google, nhập OpenAI vào ô Tìm kiếm rồi bấm Tìm trên Google.` — 10 captured transitions — final status `success`.
+3. `ep-1787826766003` — `Trên http://127.0.0.1:8091/mission, bấm mission Atlas và mission orion.` — 2 captured transitions — final status `success`.
 
-User uploaded three review-export files after completing the requested three teaching tasks.
+All three exports report `strategyReady: true` but remain human-review required and are not training eligible yet.
 
-Observed result:
+Important observations for the next processing stage:
 
-- only **2 unique episode IDs** are present;
-- two uploaded files are duplicate exports of `ep-1787825498018`;
-- the other unique episode is `ep-1787825857553`;
-- both unique episodes carry the same task instruction: `Một nhiệm vụ khác hẳn hai bài trên`;
-- therefore these exports are not suitable as three distinct Strategy teaching families because the intended task semantics are not explicitly recorded.
-
-Do not infer the missing task intent from browsing actions alone and do not promote these episodes to Strategy training.
+- Episode 1 contains the intended Gmail click plus incidental focus/click noise around it.
+- Episode 2 contains editable search interaction followed by printable `text-key` transitions and an Enter transition; the semantic typing value remains intentionally redacted and must not be reconstructed from raw printable characters.
+- Episode 3 cleanly records two semantically labeled actions: `Mission Atlas` followed by `Mission Orion`, with page transitions to `/mission/atlas` then `/mission/orion`.
+- Raw review exports are local teaching evidence and must not be committed to GitHub; only safe aggregate checkpoint metadata belongs in this handoff.
 
 ## Immediate next action
 
-Collect a replacement small teaching batch using concrete task instructions exactly as written:
+On the user's machine, place only these three new review exports into a fresh local review folder, then run:
 
-1. `Trên Google, mở liên kết Gmail ở góc trên bên phải.`
-2. `Trên Google, nhập OpenAI vào ô Tìm kiếm rồi bấm Tìm trên Google.`
-3. `Trên http://127.0.0.1:8091/, bấm Play rồi Mute.`
+1. `prepare_human_learning_batch.js` with that review folder and current `training-collector/socket-data`;
+2. `prepare_strategy_review_pack.js` from the resulting manifest;
+3. `score_strategy_review_pack.js`;
+4. `backfill_strategy_episode_provenance.js` against the new review pack and current raw socket data.
 
-Export each episode separately immediately after completion. Before accepting the batch, verify that the three exported files contain three different `episodeId` values and that each `task.instruction` matches its concrete task.
+The immediate success signal is `provenanceAnchorCount > 0`. If ambiguous click evidence exists in the new pack, check whether at least some of it now yields `recoveredSemanticTargetCount > 0`.
 
-After a valid three-episode batch is available, create a new review pack, triage it, then run the episode-provenance backfill against `training-collector/socket-data`. Success criterion: `provenanceAnchorCount > 0` and at least some ambiguous clicks recover semantic targets. Then continue through ambiguity resolution -> explicit human approval -> Strategy dataset build. Fit Strategy only after at least 3 distinct semantic split groups exist; TRAIN only for fitting, validation/test held out.
+After that, continue through ambiguity resolution -> approval candidates -> explicit human confirmation -> Strategy dataset build. Do not fit Strategy until there are at least 3 distinct semantic split groups; fit TRAIN only and keep validation/test held out.
