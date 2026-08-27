@@ -7,10 +7,13 @@ const path = require('path');
 const {
   prepareApprovalCandidates,
   HUMAN_CONFIRMATION_PHRASE,
-  verifyDigest
+  verifyDigest,
+  candidateBlockReasons,
+  candidateForItem
 } = require('../tools/prepare_strategy_approval_candidates.js');
 const {
-  applyApprovalCandidates
+  applyApprovalCandidates,
+  annotationForCandidate
 } = require('../tools/apply_strategy_approval_candidates.js');
 const {
   buildApprovedStrategyDataset
@@ -104,6 +107,61 @@ function draft(episodeId, label, fast = true) {
   };
 }
 
+function mediaStep(episodeId, index, type, label) {
+  return {
+    transitionId: `${episodeId}:t${index + 1}`,
+    include: null,
+    action: null,
+    outcome: null,
+    reviewerAid: {
+      reviewClass: 'fast-label-review',
+      labelConfidence: type === 'focus' ? 0.85 : 0.95,
+      reasons: [],
+      semanticTarget: { label, role: 'button', tag: 'button', editable: false, enabled: true, visible: true },
+      capturedActionSucceeded: true,
+      suggestedAction: {
+        contractVersion: '0.1.0', type, targetRef: `e${index + 1}`, args: {}, intent: null, expectedOutcome: {}
+      },
+      suggestedActionReadyForCopy: true
+    }
+  };
+}
+
+function mediaDraft(episodeId, instruction) {
+  const sequence = [
+    ['focus', 'Media Play'], ['click', 'Media Play'],
+    ['focus', 'Media Mute'], ['click', 'Media Mute'],
+    ['focus', 'Media Unmute'], ['click', 'Media Unmute']
+  ];
+  return {
+    reviewDraftVersion: '0.1.0',
+    contractVersion: '0.1.1',
+    episodeId,
+    task: { instruction, type: 'generic' },
+    finalOutcomeStatus: 'success',
+    steps: sequence.map(([type, label], index) => mediaStep(episodeId, index, type, label)),
+    policy: { autoTrainEligible: false }
+  };
+}
+
+function mediaItem(episodeId, instruction) {
+  const draftValue = mediaDraft(episodeId, instruction);
+  return {
+    episodeId,
+    task: { instruction, type: 'generic' },
+    finalOutcomeStatus: 'success',
+    transitionCount: draftValue.steps.length,
+    fastLabelReviewCount: draftValue.steps.length,
+    ambiguousLabelReviewCount: 0,
+    draftFile: `${episodeId}.draft.json`,
+    transitions: draftValue.steps.map(step => ({
+      transitionId: step.transitionId,
+      reviewClass: 'fast-label-review',
+      capturedActionSucceeded: true
+    }))
+  };
+}
+
 function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'strategy-approval-pipeline-'));
   const oldCwd = process.cwd();
@@ -161,6 +219,7 @@ function main() {
     fs.writeFileSync(packFile, `${JSON.stringify({ reviewPackVersion: '0.1.0', items: packItems }, null, 2)}\n`, 'utf8');
 
     const prepared = prepareApprovalCandidates(draftDigestFile, path.join(temp, 'candidates'));
+    assert.equal(prepared.result.approvalCandidateVersion, '0.2.0');
     assert.equal(prepared.result.candidateEpisodeCount, 3);
     assert.equal(prepared.result.blockedEpisodeCount, 1);
     assert.equal(prepared.result.policy.autoTrainEligible, false);
@@ -178,6 +237,8 @@ function main() {
     });
     assert.equal(applied.receipt.approvedEpisodeCount, 3);
     assert.equal(applied.receipt.approvedTransitionCount, 3);
+    assert.equal(applied.receipt.approvedStrategyStepCount, 3);
+    assert.equal(applied.receipt.excludedCaptureNoiseCount, 0);
     assert.equal(applied.receipt.blockedEpisodeCount, 1);
     assert.equal(applied.receipt.explicitHumanConfirmationVerified, true);
 
@@ -205,6 +266,33 @@ function main() {
     assert.equal(evaluation.fitPolicy.validationUsedForFit, false);
     assert.equal(evaluation.fitPolicy.testUsedForFit, false);
 
+    // Critical WHAT/HOW boundary: human focus acquisition is capture noise for this task,
+    // and clicks on semantic media controls become play/mute/unmute Strategy actions.
+    const mediaInstructions = [
+      'Start media playback, mute it, then unmute it',
+      'Play the media, mute it, and then unmute it',
+      'Begin playback, mute the media, then restore sound'
+    ];
+    const mediaCandidates = mediaInstructions.map((instruction, index) => {
+      const episodeId = `media-${index + 1}`;
+      const item = mediaItem(episodeId, instruction);
+      const draftValue = mediaDraft(episodeId, instruction);
+      assert.deepEqual(candidateBlockReasons(item, draftValue), []);
+      return candidateForItem(item, draftValue);
+    });
+    for (const candidate of mediaCandidates) {
+      assert.deepEqual(candidate.proposedSteps.map(step => step.proposedInclude), [false, true, false, true, false, true]);
+      assert.deepEqual(candidate.proposedSteps.filter(step => step.proposedInclude).map(step => step.proposedAction.type), ['play', 'mute', 'unmute']);
+      assert.deepEqual(candidate.proposedSteps.filter(step => step.proposedInclude).map(step => step.proposedOutcome.progress), [1 / 3, 2 / 3, 1]);
+      assert.equal(candidate.includedStrategyStepCount, 3);
+      assert.equal(candidate.excludedCaptureNoiseCount, 3);
+      const annotation = annotationForCandidate(candidate, { digestHash: 'test-digest' });
+      assert.deepEqual(annotation.steps.map(step => step.include), [false, true, false, true, false, true]);
+      assert.deepEqual(annotation.steps.filter(step => step.include).map(step => step.action.type), ['play', 'mute', 'unmute']);
+    }
+    assert.equal(new Set(mediaCandidates.map(candidate => candidate.splitGroup)).size, 1);
+    assert.equal(mediaCandidates[0].splitGroup, 'semantic-sequence:play:media-play>mute:media-mute>unmute:media-unmute');
+
     console.log('Strategy approval pipeline contract: PASS');
   } finally {
     process.chdir(oldCwd);
@@ -220,4 +308,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { observation, reviewExport, draft, main };
+module.exports = { observation, reviewExport, draft, mediaDraft, mediaItem, main };
