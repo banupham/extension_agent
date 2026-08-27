@@ -37,8 +37,6 @@ Verified local outputs:
   - digestHash: `f0b4aaa723de2f67220e2e70b3f231036524f34eaccfbd3bfbd555df23a01749`
   - autoTrainEligible: false
 
-CI at `f3d464b` was fully green, including semantic mission/goal contracts, behavior baseline contracts, ambiguity profiler, target-backfill contract, and explicit Strategy approval pipeline contract.
-
 ## New diagnostic work committed
 
 After the zero-recovery real-data result, the feature branch added a privacy-safe aggregate diagnostic path:
@@ -47,6 +45,9 @@ After the zero-recovery real-data result, the feature branch added a privacy-saf
 - `9c0fd631f0a0e063d0ab5b2d8e49049415edeedb` — `training-collector/tools/diagnose_strategy_target_backfill.js`.
 - `7f6499727abb666d6f215fcac96180023ed78fc6` — diagnostic contract.
 - `1b99bea6d99bd6f386f571e80df39a7ba9d0dd27` — CI gate for the diagnostic.
+- `c8b55d775c09ddc283f88f0c2b5bd8f93b4d428f` — handoff updated with the local diagnostic command.
+
+GitHub Actions run `33059955915` for commit `1b99bea6d99bd6f386f571e80df39a7ba9d0dd27` completed with conclusion `success`; the new target-backfill diagnostic contract passed together with the existing semantic mission, behavior baseline, ambiguity, target-backfill, and approval pipeline gates.
 
 The diagnostic reports aggregate linkage coverage only. It does not emit raw page IDs, element refs, selectors, coordinates, tab IDs, or raw text values.
 
