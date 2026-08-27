@@ -10,12 +10,18 @@ on:
       - 'control-center/manager/mission/mission_strategy_executor.js'
       - 'control-center/manager/world/semantic_world_model.js'
       - 'control-center/manager/behavior/empirical_policy.js'
+      - 'control-center/manager/behavior/baseline_loader.js'
+      - 'control-center/manager/strategy/agent_action_contract.js'
+      - 'control-center/manager/strategy/execution_behavior_contract.js'
       - 'control-center/script/page_semantic_mission_lab.js'
       - 'control-center/script/offline_strategy_semantic_mission_gate.js'
       - 'control-center/script/checks/semantic_goal_resolver.js'
       - 'control-center/script/checks/mission_semantic_goal_execution.js'
       - 'control-center/script/checks/offline_strategy_semantic_mission.js'
       - 'control-center/script/checks/empirical_behavior_policy.js'
+      - 'control-center/script/checks/agent_action_contract.js'
+      - 'control-center/script/checks/behavior_baseline_runtime_loading.js'
+      - 'training-collector/tools/build_behavior_baseline.js'
       - 'training-collector/tools/curate_random_human_data.js'
       - 'training-collector/tools/prepare_human_learning_batch.js'
       - 'training-collector/tools/build_behavior_batch_baseline.js'
@@ -42,11 +48,18 @@ jobs:
       - name: Check syntax
         run: |
           node --check control-center/manager/mission/semantic_goal_resolver.js
+          node --check control-center/manager/mission/mission_strategy_executor.js
           node --check control-center/manager/behavior/empirical_policy.js
+          node --check control-center/manager/behavior/baseline_loader.js
+          node --check control-center/manager/strategy/agent_action_contract.js
+          node --check control-center/manager/strategy/execution_behavior_contract.js
           node --check control-center/script/page_semantic_mission_lab.js
           node --check control-center/script/offline_strategy_semantic_mission_gate.js
           node --check control-center/script/checks/offline_strategy_semantic_mission.js
           node --check control-center/script/checks/empirical_behavior_policy.js
+          node --check control-center/script/checks/agent_action_contract.js
+          node --check control-center/script/checks/behavior_baseline_runtime_loading.js
+          node --check training-collector/tools/build_behavior_baseline.js
           node --check training-collector/tools/curate_random_human_data.js
           node --check training-collector/tools/prepare_human_learning_batch.js
           node --check training-collector/tools/build_behavior_batch_baseline.js
@@ -65,8 +78,12 @@ jobs:
         run: node control-center/script/checks/mission_semantic_goal_execution.js
       - name: Run semantic mission native gate contract
         run: node control-center/script/checks/offline_strategy_semantic_mission.js
+      - name: Run agent action contract
+        run: node control-center/script/checks/agent_action_contract.js
       - name: Run empirical behavior policy contract
         run: node control-center/script/checks/empirical_behavior_policy.js
+      - name: Run behavior baseline runtime loading contract
+        run: node control-center/script/checks/behavior_baseline_runtime_loading.js
       - name: Run random human data curator contract
         run: node training-collector/tests/random_human_data_curator_contract.js
       - name: Run human learning batch contract
