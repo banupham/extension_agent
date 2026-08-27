@@ -180,13 +180,12 @@ assert.strictEqual(privacyDiagnostic.isExpectedTarget, true);
 assert.strictEqual(privacyDiagnostic.isPredictedTarget, true);
 assert.strictEqual(privacyDiagnostic.isFocusedTarget, true);
 assert.strictEqual(privacyDiagnostic.affordanceEligible, true);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(privacyDiagnostic, 'label'), false);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(privacyDiagnostic, 'selector'), false);
+assert.strictEqual(Object.prototype.hasOwnProperty.call(privacyDiagnostic, 'rect'), false);
 const serializedDiagnostic = JSON.stringify(privacyDiagnostic);
 assert.ok(!serializedDiagnostic.includes('SUPER SECRET TYPED VALUE'));
 assert.ok(!serializedDiagnostic.includes('input#private-secret'));
-assert.ok(!serializedDiagnostic.includes('999'));
-assert.ok(!serializedDiagnostic.includes('888'));
-assert.ok(!serializedDiagnostic.includes('777'));
-assert.ok(!serializedDiagnostic.includes('666'));
 
 const validationForm = formRecord(
   'validation-form',
