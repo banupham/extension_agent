@@ -32,6 +32,7 @@ on:
       - 'training-collector/tools/resolve_strategy_review_ambiguity.js'
       - 'training-collector/tools/profile_strategy_ambiguity_evidence.js'
       - 'training-collector/tools/backfill_strategy_target_evidence.js'
+      - 'training-collector/tools/diagnose_strategy_target_backfill.js'
       - 'training-collector/tools/resolve_strategy_review_ambiguity_with_targets.js'
       - 'training-collector/tools/prepare_strategy_approval_candidates.js'
       - 'training-collector/tools/apply_strategy_approval_candidates.js'
@@ -46,6 +47,7 @@ on:
       - 'training-collector/tests/strategy_ambiguity_resolver_contract.js'
       - 'training-collector/tests/strategy_ambiguity_profiler_contract.js'
       - 'training-collector/tests/strategy_target_backfill_contract.js'
+      - 'training-collector/tests/strategy_target_backfill_diagnostic_contract.js'
       - 'training-collector/tests/strategy_approval_pipeline_contract.js'
       - '.github/workflows/semantic-mission-and-curation.yml'
   workflow_dispatch:
@@ -83,6 +85,7 @@ jobs:
           node --check training-collector/tools/resolve_strategy_review_ambiguity.js
           node --check training-collector/tools/profile_strategy_ambiguity_evidence.js
           node --check training-collector/tools/backfill_strategy_target_evidence.js
+          node --check training-collector/tools/diagnose_strategy_target_backfill.js
           node --check training-collector/tools/resolve_strategy_review_ambiguity_with_targets.js
           node --check training-collector/tools/prepare_strategy_approval_candidates.js
           node --check training-collector/tools/apply_strategy_approval_candidates.js
@@ -97,6 +100,7 @@ jobs:
           node --check training-collector/tests/strategy_ambiguity_resolver_contract.js
           node --check training-collector/tests/strategy_ambiguity_profiler_contract.js
           node --check training-collector/tests/strategy_target_backfill_contract.js
+          node --check training-collector/tests/strategy_target_backfill_diagnostic_contract.js
           node --check training-collector/tests/strategy_approval_pipeline_contract.js
       - name: Run semantic goal resolver contract
         run: node control-center/script/checks/semantic_goal_resolver.js
@@ -130,5 +134,7 @@ jobs:
         run: node training-collector/tests/strategy_ambiguity_profiler_contract.js
       - name: Run strategy target backfill contract
         run: node training-collector/tests/strategy_target_backfill_contract.js
+      - name: Run strategy target backfill diagnostic contract
+        run: node training-collector/tests/strategy_target_backfill_diagnostic_contract.js
       - name: Run explicit strategy approval pipeline contract
         run: node training-collector/tests/strategy_approval_pipeline_contract.js
