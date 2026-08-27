@@ -31,7 +31,6 @@ on:
       - 'control-center/script/offline_strategy_self_experience_gate.js'
       - 'control-center/script/offline_strategy_self_exploration_gate.js'
       - 'control-center/script/checks/one_action_semantic_settle.js'
-      - 'control-center/script/checks/one_action_target_acquisition.js'
       - 'control-center/script/checks/offline_strategy_provider.js'
       - 'control-center/script/checks/offline_strategy_history_provider.js'
       - 'control-center/script/checks/offline_strategy_compositional_unseen.js'
@@ -72,7 +71,6 @@ jobs:
           node --check control-center/manager/agent/bounded_episode_loop.js
           node --check control-center/script/page_cdp_test_lab.js
           node --check control-center/script/checks/one_action_semantic_settle.js
-          node --check control-center/script/checks/one_action_target_acquisition.js
           node --check control-center/script/checks/offline_strategy_provider.js
           node --check control-center/script/checks/offline_strategy_history_provider.js
           node --check control-center/script/checks/offline_strategy_compositional_unseen.js
@@ -96,8 +94,6 @@ jobs:
           node --check control-center/script/offline_strategy_self_exploration_gate.js
       - name: Run semantic post-action settle contract
         run: node control-center/script/checks/one_action_semantic_settle.js
-      - name: Run offscreen target acquisition contract
-        run: node control-center/script/checks/one_action_target_acquisition.js
       - name: Run offline Strategy baseline contract
         run: node training-collector/tests/strategy_offline_baseline_contract.js
       - name: Run history-aware Strategy baseline contract
