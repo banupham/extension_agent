@@ -13,9 +13,11 @@ on:
       - 'training-collector/tests/strategy_history_baseline_contract.js'
       - 'training-collector/tests/strategy_multistep_play_mute_contract.js'
       - 'training-collector/tests/strategy_multistep_play_mute_unmute_contract.js'
+      - 'control-center/manager/world/semantic_world_model.js'
       - 'control-center/manager/mission/mission_plan.js'
       - 'control-center/manager/mission/mission_executor.js'
       - 'control-center/manager/mission/semantic_mission_interpreter.js'
+      - 'control-center/manager/mission/semantic_goal_resolver.js'
       - 'control-center/manager/mission/mission_strategy_executor.js'
       - 'control-center/manager/strategy/offline_baseline_provider.js'
       - 'control-center/manager/strategy/self_experience_memory.js'
@@ -50,7 +52,10 @@ on:
       - 'control-center/script/checks/mission_hierarchical_plan.js'
       - 'control-center/script/checks/mission_hierarchical_execution.js'
       - 'control-center/script/checks/semantic_mission_interpreter.js'
+      - 'control-center/script/checks/semantic_world_model.js'
+      - 'control-center/script/checks/semantic_goal_resolver.js'
       - 'control-center/script/checks/mission_strategy_execution.js'
+      - 'control-center/script/checks/mission_semantic_goal_execution.js'
       - 'control-center/script/checks/one_action_semantic_settle.js'
       - 'control-center/script/checks/semantic_action_effect.js'
       - 'control-center/script/checks/adaptive_outcome_feedback.js'
@@ -94,9 +99,11 @@ jobs:
           node --check training-collector/tests/strategy_history_baseline_contract.js
           node --check training-collector/tests/strategy_multistep_play_mute_contract.js
           node --check training-collector/tests/strategy_multistep_play_mute_unmute_contract.js
+          node --check control-center/manager/world/semantic_world_model.js
           node --check control-center/manager/mission/mission_plan.js
           node --check control-center/manager/mission/mission_executor.js
           node --check control-center/manager/mission/semantic_mission_interpreter.js
+          node --check control-center/manager/mission/semantic_goal_resolver.js
           node --check control-center/manager/mission/mission_strategy_executor.js
           node --check control-center/manager/strategy/offline_baseline_provider.js
           node --check control-center/manager/strategy/self_experience_memory.js
@@ -119,7 +126,10 @@ jobs:
           node --check control-center/script/checks/mission_hierarchical_plan.js
           node --check control-center/script/checks/mission_hierarchical_execution.js
           node --check control-center/script/checks/semantic_mission_interpreter.js
+          node --check control-center/script/checks/semantic_world_model.js
+          node --check control-center/script/checks/semantic_goal_resolver.js
           node --check control-center/script/checks/mission_strategy_execution.js
+          node --check control-center/script/checks/mission_semantic_goal_execution.js
           node --check control-center/script/checks/one_action_semantic_settle.js
           node --check control-center/script/checks/semantic_action_effect.js
           node --check control-center/script/checks/adaptive_outcome_feedback.js
@@ -160,8 +170,14 @@ jobs:
         run: node control-center/script/checks/mission_hierarchical_execution.js
       - name: Run semantic mission interpreter contract
         run: node control-center/script/checks/semantic_mission_interpreter.js
+      - name: Run semantic world model contract
+        run: node control-center/script/checks/semantic_world_model.js
+      - name: Run semantic goal resolver contract
+        run: node control-center/script/checks/semantic_goal_resolver.js
       - name: Run mission Strategy execution bridge contract
         run: node control-center/script/checks/mission_strategy_execution.js
+      - name: Run mission semantic goal execution contract
+        run: node control-center/script/checks/mission_semantic_goal_execution.js
       - name: Run semantic post-action settle contract
         run: node control-center/script/checks/one_action_semantic_settle.js
       - name: Run semantic action effect contract
