@@ -61,17 +61,22 @@ function nestedFrameLevel2Html() {
 </body></html>`;
 }
 
-function recoveryHtml() {
+function recoveryHtml(url) {
+  const horizontalVariant = String(url?.searchParams?.get('variant') || '').trim().toLowerCase() === 'horizontal';
+  const initialTitle = horizontalVariant ? 'RECOVERY DRIFT READY' : 'RECOVERY LEARNING READY';
+  const spacerStyle = horizontalVariant
+    ? 'height:80px;width:1900px;border-top:3px dashed #bbb;margin-top:20px;padding-top:12px'
+    : 'height:1100px;border-left:3px dashed #bbb;margin-left:20px;padding-left:12px';
   return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>RECOVERY LEARNING READY</title>
+  <title>${initialTitle}</title>
   <style>
-    body{font-family:Arial,sans-serif;margin:20px;line-height:1.35}
-    #state{position:sticky;top:0;background:#fffbe6;border:1px solid #cc9;padding:8px;z-index:3}
+    body{font-family:Arial,sans-serif;margin:20px;line-height:1.35;${horizontalVariant ? 'overflow-y:hidden;' : ''}}
+    #state{position:sticky;top:0;left:0;background:#fffbe6;border:1px solid #cc9;padding:8px;z-index:3;width:max-content;min-width:320px}
     #probe{padding:10px 16px;margin:16px 0}
-    #spacer{height:1100px;border-left:3px dashed #bbb;margin-left:20px;padding-left:12px}
+    #spacer{${spacerStyle}}
     #continue{display:none;position:fixed;right:24px;top:84px;padding:12px 18px;z-index:4}
   </style>
 </head>
@@ -80,17 +85,19 @@ function recoveryHtml() {
   <div id="state">READY</div>
   <p>The probe intentionally has no task effect. A later environmental action can reveal the next control.</p>
   <button id="probe" aria-label="Recovery Probe">Recovery Probe</button>
-  <div id="spacer">Recovery environment</div>
+  <div id="spacer">Recovery environment ${horizontalVariant ? 'HORIZONTAL DRIFT' : 'VERTICAL'}</div>
   <button id="continue" aria-label="Recovery Continue">Recovery Continue</button>
   <script>
     const state = document.getElementById('state');
     const probe = document.getElementById('probe');
     const next = document.getElementById('continue');
+    const horizontalVariant = ${horizontalVariant ? 'true' : 'false'};
     probe.addEventListener('click', () => {
       // Intentionally no semantic task effect. Native click focus is incidental evidence only.
     });
     function revealAfterEnvironmentChange() {
-      if (window.scrollY < 160 || next.style.display === 'block') return;
+      const progressed = horizontalVariant ? window.scrollX >= 160 : window.scrollY >= 160;
+      if (!progressed || next.style.display === 'block') return;
       next.style.display = 'block';
       next.dataset.revealed = 'true';
       state.textContent = 'RECOVERY CONTROL REVEALED';
@@ -284,7 +291,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/frame') return sendHtml(res, frameHtml());
   if (url.pathname === '/frame-level1') return sendHtml(res, nestedFrameLevel1Html());
   if (url.pathname === '/frame-level2') return sendHtml(res, nestedFrameLevel2Html());
-  if (url.pathname === '/recovery') return sendHtml(res, recoveryHtml());
+  if (url.pathname === '/recovery') return sendHtml(res, recoveryHtml(url));
   if (url.pathname === '/' || url.pathname === '/lab') return sendHtml(res, mainHtml(url));
   res.statusCode = 404;
   res.end('not found');
@@ -294,6 +301,7 @@ server.listen(PORT, HOST, () => {
   console.log(`PAGE_CDP batch lab: http://${HOST}:${PORT}/`);
   console.log(`waitAndObserve case: http://${HOST}:${PORT}/?case=wait`);
   console.log(`Recovery self-learning case: http://${HOST}:${PORT}/recovery`);
+  console.log(`Recovery drift case: http://${HOST}:${PORT}/recovery?variant=horizontal`);
   console.log(`Browser UI tabs: http://${HOST}:${PORT}/?tab=alpha | ?tab=beta | ?tab=disposable`);
   console.log('Opaque discovery challenge: Discovery Alpha/Beta/Gamma → DISCOVERY PASS');
   console.log('Nested frame gate: TOP → /frame-level1 → /frame-level2 → Nested Frame Action Target');
