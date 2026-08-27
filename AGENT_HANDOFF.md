@@ -10,69 +10,56 @@ This file is the durable continuation point for future ChatGPT sessions. Read th
 - Preserve architecture boundaries: Strategy chooses WHAT, Behavior chooses HOW, executor does not choose strategy, Goal Checker does not choose the next action.
 - Do not persist selectors, coordinates, tab IDs, raw CDP methods, credentials, secrets, or private reasoning in Strategy/recovery/training memory.
 - Human demonstration data is never auto-promoted to Strategy training. Human review/verification remains required.
+- User prefers concise progress framing: describe whether the agent is maturing / being taught and give the next action, without lengthy implementation explanations.
 
 ## Current checkpoint
 
-User local repo pulled feature branch head `f3d464b` and ran the target-backfill pipeline.
+Historical real-data result remains:
 
-Verified local outputs:
-
-- `training-collector/tests/strategy_target_backfill_contract.js` -> PASS.
-- `backfill_strategy_target_evidence.js` over the real batch:
-  - sourceRawFileCount: 68
-  - requestedTransitionCount: 25
-  - recoveredSemanticTargetCount: 0
-  - unresolvedTargetCount: 25
-  - conflictTargetCount: 0
-- `resolve_strategy_review_ambiguity_with_targets.js`:
-  - episodeCount: 28
-  - ambiguousTransitionCount: 25
-  - resolvedSemanticActionCount: 0
-  - targetBackfillResolvedCount: 0
-  - unresolvedHumanReviewCount: 25
-- `prepare_strategy_approval_candidates.js`:
-  - candidateEpisodeCount: 3
-  - blockedEpisodeCount: 25
-  - ambiguityAidCandidateEpisodeCount: 0
-  - digestHash: `f0b4aaa723de2f67220e2e70b3f231036524f34eaccfbd3bfbd555df23a01749`
-  - autoTrainEligible: false
-
-## Diagnostic result from real batch
-
-The user ran `diagnose_strategy_target_backfill.js` against the 68 real raw files. Result: PASS.
-
-Key aggregate results:
-
-- rawEventCount: 171040
-- targetDescriptorEventCount: 14732
-- resolvedTargetDescriptorEventCount: 205
-- semanticSnapshotElementCount: 25712
-- descriptorIndexKeyCount: 21569
-- descriptorPageCount: 294
-- descriptorRefTokenCount: 4607
-- requestedTransitionCount: 25
-- exactDescriptorKeyMatchCount: 0
-- pagePresentButExactKeyMissingCount: 0
-- targetRefSeenOnOtherPageCount: 25
-- descriptorPageMissingCount: 0
-- likelyBlocker: `element_refs_exist_but_page_identity_does_not_link`
-
-Interpretation: useful semantic evidence exists in the raw telemetry, but the 25 historical review transitions cannot currently be linked to the correct raw page identity. Do not guess or auto-approve these 25 transitions.
+- 68 raw files
+- 25 ambiguous click transitions
+- 0/25 historical semantic targets recovered
+- likely blocker: `element_refs_exist_but_page_identity_does_not_link`
+- therefore the historical 25 remain blocked and must not be guessed or auto-approved.
 
 ## Agent maturity status
 
-- Behavior/HOW: already learned from the user's real demonstrations and is runtime-loadable.
-- Strategy/WHAT: early supervised-learning stage. It has some verified semantic experience, but is still being taught and does not yet have enough diverse, trustworthy human Strategy data for a new general Strategy fit.
-- Overall: the agent is maturing, but it is still in the teaching phase rather than autonomous self-development.
+- Behavior/HOW: already learned from real human demonstrations and is runtime-loadable.
+- Strategy/WHAT: still in supervised teaching stage. Some verified semantic experience exists, but there is not yet enough diverse trusted Strategy data for a new general Strategy fit.
+- Overall: agent is maturing, but it is still being taught.
+
+## New provenance-learning milestone
+
+The feature branch now records future episode-linked semantic action anchors so new demonstrations can be connected back to the correct episode even when old page identity linkage is unreliable.
+
+Commits:
+
+- `17b05e2da5ab39b4c2e5eb80966299a6371d1899` — add `training-collector/capture/episode_provenance_capture.js`.
+- `da1044933e7bd12dcfe7a447e230a77faac538d4` — load the provenance capture module in the Training Collector manifest.
+- `38dc0db38444df032a211a389a04c5a9511c358e` — add `backfill_strategy_episode_provenance.js` for episode-scoped semantic target recovery.
+- `f252d8769065b2dfef6c97239484ebbbc2a73dc1` — add Strategy episode provenance contract.
+- `af721095ae21bfcd7cd1d42834567ae11e13b60f` — CI gate for the new learning path.
+
+GitHub Actions run `33061242955` completed successfully. The new `Strategy episode provenance contract` passed together with all existing semantic mission, behavior, ambiguity, target-backfill, and approval pipeline gates.
 
 ## Immediate next action
 
-Make the smallest privacy-safe provenance/linkage improvement so future and, where provably possible, historical review transitions can be connected to their semantic evidence. Do not infer targets from task wording alone.
+The code path is ready. The next step is to collect a **small new teaching batch** after reloading the updated Training Collector extension.
 
-Preferred order:
+Goal of the batch: create at least 3 genuinely different semantic task families, not three paraphrases of the same task.
 
-1. add durable capture provenance that directly connects episode transition to page instance + semantic target evidence at collection time;
-2. attempt historical recovery only where correlation is deterministic and unambiguous;
-3. leave unresolved historical transitions for human review if deterministic linkage is impossible.
+Recommended first batch:
 
-After the capture/provenance patch, add a contract test, run CI, update this handoff, then run a new small human demonstration batch to verify that ambiguous clicks become semantically reviewable.
+1. media control task;
+2. navigation / open-choice task;
+3. form / interface-control task.
+
+After the user records and exports the new episodes, run the normal review-pack/triage path, then run:
+
+```bat
+node training-collector\tools\backfill_strategy_episode_provenance.js --pack <new-review-pack.json> --raw training-collector\socket-data --out <new-target-evidence.json>
+```
+
+Success criterion for the new capture path: `provenanceAnchorCount > 0` and at least some previously ambiguous clicks produce `recoveredSemanticTargetCount > 0`.
+
+If the new batch proves this, continue through ambiguity resolution -> human approval -> Strategy dataset build. Once there are at least 3 distinct semantic split groups, fit the Strategy model using TRAIN only and keep validation/test held out.
