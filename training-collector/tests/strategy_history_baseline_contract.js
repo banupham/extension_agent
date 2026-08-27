@@ -43,7 +43,7 @@ function record(id, instruction) {
 
 const train = [record('train-sequence', 'Start media playback, then mute it')];
 const model = fitBaseline(train);
-assert.strictEqual(model.modelVersion, '0.3.1');
+assert.strictEqual(model.modelVersion, '0.3.2');
 assert.strictEqual(model.historyAware, true);
 assert.strictEqual(model.actionPrototypes.length, 2);
 assert.strictEqual(model.historyPrototypes.length, 2);
