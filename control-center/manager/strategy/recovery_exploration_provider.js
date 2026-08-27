@@ -18,7 +18,7 @@ const {
   combinedRecoveryOutcomeStats
 } = require('./recovery_memory_consolidation.js');
 
-const RECOVERY_EXPLORATION_VERSION = '0.4.0';
+const RECOVERY_EXPLORATION_VERSION = '0.5.0';
 const DEFAULT_RECOVERY_ACTION_TYPES = Object.freeze([
   'waitAndObserve',
   'scrollVertical',
@@ -90,6 +90,27 @@ function rootRecoveryTriggerFromHistory(history = []) {
     effectStatus: String(last?.recoveryTriggerEffectStatus || '').trim() || null,
     effectCodes: Array.isArray(last?.recoveryTriggerEffectCodes) ? [...last.recoveryTriggerEffectCodes] : []
   };
+}
+
+function decisionTargetLabel(decision, observation) {
+  const ref = String(decision?.action?.targetRef || decision?.targetRef || '').trim();
+  if (!ref) return null;
+  const elements = Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : [];
+  const target = elements.find(element => String(element?.ref || '').trim() === ref) || null;
+  const label = typeof target?.label === 'string' ? target.label.trim() : '';
+  return label || null;
+}
+
+function baseDecisionProgressesPastTrigger(trigger, decision, observation) {
+  if (!trigger || decision?.status !== 'act') return false;
+  const nextType = String(decision?.action?.type || '').trim();
+  const triggerType = String(trigger?.actionType || '').trim();
+  if (!nextType || !triggerType) return false;
+  if (nextType !== triggerType) return true;
+
+  const triggerLabel = normalizeInstruction(trigger?.targetLabel);
+  const nextLabel = normalizeInstruction(decisionTargetLabel(decision, observation));
+  return !!triggerLabel && !!nextLabel && triggerLabel !== nextLabel;
 }
 
 function sameRecoveryTrigger(entry, trigger) {
@@ -190,7 +211,22 @@ function createRecoveryExplorationProvider(options = {}) {
 
     async decide({ task, observation, history = [] }) {
       const trigger = rootRecoveryTriggerFromHistory(history);
-      if (!trigger) return baseProvider.decide({ task, observation, history });
+      const baseDecision = await baseProvider.decide({ task, observation, history });
+      if (!trigger) return baseDecision;
+
+      if (baseDecisionProgressesPastTrigger(trigger, baseDecision, observation)) {
+        return {
+          ...baseDecision,
+          metadata: {
+            ...(baseDecision.metadata || {}),
+            recoveryDeferredForBaseProgression: true,
+            recoveryTriggerActionType: trigger.actionType,
+            recoveryTriggerTargetLabel: trigger.targetLabel,
+            recoveryTriggerReasonCode: trigger.reasonCode,
+            recoveryTriggerEffectStatus: trigger.effectStatus
+          }
+        };
+      }
 
       const key = taskExplorationKey(task);
       const tried = triedByTask.get(key) || new Set();
@@ -209,9 +245,7 @@ function createRecoveryExplorationProvider(options = {}) {
       );
       const candidate = ranked.find(item => !tried.has(item.key)) || null;
 
-      if (!candidate) {
-        return baseProvider.decide({ task, observation, history });
-      }
+      if (!candidate) return baseDecision;
 
       tried.add(candidate.key);
       triedByTask.set(key, tried);
@@ -268,6 +302,8 @@ module.exports = {
   recoveryCandidates,
   taskExplorationKey,
   rootRecoveryTriggerFromHistory,
+  decisionTargetLabel,
+  baseDecisionProgressesPastTrigger,
   sameRecoveryTrigger,
   attemptedRecoveryKeysFromHistory,
   historicalStatsForCandidate,
