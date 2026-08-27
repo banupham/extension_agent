@@ -118,6 +118,7 @@ function findSequence(review) {
     .map((transition, index) => ({ transition, index }))
     .filter(item =>
       item.transition?.status === 'complete' &&
+      item.transition?.rawAction?.kind === 'click' &&
       typeof item.transition?.rawAction?.targetRef === 'string' &&
       item.transition.rawAction.targetRef.trim() &&
       transitionTargetLabel(item.transition) === spec.label
