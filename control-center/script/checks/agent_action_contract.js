@@ -53,6 +53,13 @@ const clickBehavior = defaultBehaviorFor(mapAgentAction({ type: 'click', targetR
 assert.strictEqual(clickBehavior.pointer.targetAcquisition, 'adaptive');
 assert.strictEqual(clickBehavior.profile, 'empirical-v0');
 
+const submit = mapAgentAction({ type: 'submit', targetRef: 'form-1' });
+assert.strictEqual(submit.behaviorFamily, 'form-control');
+assert.strictEqual(defaultBehaviorFor(submit).pointer.targetAcquisition, 'adaptive');
+const select = mapAgentAction({ type: 'selectOption', targetRef: 'select-1', args: { value: 'x' } });
+assert.strictEqual(select.behaviorFamily, 'form-control');
+assert.strictEqual(defaultBehaviorFor(select).pointer.targetAcquisition, 'adaptive');
+
 const explicit = validateExecutionBehavior({
   actionType: 'click',
   targetRef: 'e1',
