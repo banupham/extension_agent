@@ -6,6 +6,7 @@ const rawStatusEl = document.getElementById('rawStatus');
 const previewEl = document.getElementById('preview');
 const sessionsEl = document.getElementById('sessions');
 const socketStatusEl = document.getElementById('socketStatus');
+const EpisodeStopSettlement = globalThis.TrainingCollectorV10?.EpisodeStopSettlement || null;
 
 function send(type, extra = {}) {
   return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...extra });
@@ -168,7 +169,20 @@ async function exportRaw() {
   showRaw(session);
 }
 
+async function loadEpisodeStateOnly() {
+  const res = await send('GET_STATE');
+  if (!res?.ok) throw new Error(res?.error || 'episode_state_load_failed');
+  return res.state;
+}
+
 async function stopWithOutcome(status) {
+  if (status === 'success' && EpisodeStopSettlement) {
+    const settled = await EpisodeStopSettlement.waitForSettlement(loadEpisodeStateOnly, {
+      timeoutMs: 1800,
+      pollMs: 60
+    });
+    if (settled?.state) showEpisode(settled.state);
+  }
   const res = await send('STOP_EPISODE', { outcome: { status } });
   showEpisode(res?.state, res?.error);
   return res;
