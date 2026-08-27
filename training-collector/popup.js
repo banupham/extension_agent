@@ -41,6 +41,20 @@ function showEpisode(state, error) {
   ].join('\n');
 }
 
+function showPendingDiagnostic(error, diagnostic) {
+  const pending = Array.isArray(diagnostic?.pending) ? diagnostic.pending : [];
+  const rows = pending.map((item, index) => {
+    const action = [item?.actionKind, item?.operation].filter(Boolean).join('/') || 'unknown-action';
+    return `${index + 1}. ${action} -> ${item?.targetLabel || '<target unavailable>'}`;
+  });
+  statusEl.textContent = [
+    `Error: ${error}`,
+    `Pending transitions: ${Number(diagnostic?.pendingTransitionCount || 0)}`,
+    ...rows,
+    `Queue waiting: ${Number(diagnostic?.queue?.queued || 0)}`
+  ].join('\n');
+}
+
 function showRaw(session, error) {
   if (error) { rawStatusEl.textContent = `Raw session error: ${error}`; return; }
   if (!session) { rawStatusEl.textContent = 'Raw session unavailable'; return; }
@@ -184,6 +198,11 @@ async function stopWithOutcome(status) {
     if (settled?.state) showEpisode(settled.state);
   }
   const res = await send('STOP_EPISODE', { outcome: { status } });
+  if (!res?.ok && String(res?.error || '').includes('pending_transition')) {
+    const diagnostic = await send('GET_EPISODE_DIAGNOSTIC').catch(() => null);
+    showPendingDiagnostic(res.error, diagnostic?.diagnostic || null);
+    return res;
+  }
   showEpisode(res?.state, res?.error);
   return res;
 }
