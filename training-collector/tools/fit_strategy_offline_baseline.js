@@ -115,7 +115,7 @@ function serializeBucket(item) {
   };
 }
 
-function fitBaseline(trainRecords) {
+function fitBaseline(trainRecords, options = {}) {
   if (!Array.isArray(trainRecords) || !trainRecords.length) die('non-empty train records required');
   const byType = new Map();
   const byHistory = new Map();
@@ -150,7 +150,7 @@ function fitBaseline(trainRecords) {
   if (!byType.size) die('train records contain no semantic actions');
 
   return {
-    modelVersion: MODEL_VERSION,
+    modelVersion: String(options.modelVersion || MODEL_VERSION),
     kind: 'offline-semantic-prototype-baseline',
     fitSource: 'train-only',
     heldOutUsedForFit: false,
@@ -288,15 +288,16 @@ function evaluateHeldOut(model, validation, test) {
 }
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const out = { datasetDir: null, outputDir: null };
+  const out = { datasetDir: null, outputDir: null, modelVersion: MODEL_VERSION };
   for (let i = 0; i < argv.length; i += 1) {
     const value = argv[i];
     if (value === '--output') out.outputDir = argv[++i];
+    else if (value === '--model-version') out.modelVersion = argv[++i];
     else if (!out.datasetDir) out.datasetDir = value;
     else die(`unexpected argument: ${value}`);
   }
   if (!out.datasetDir) {
-    die('Usage: node training-collector/tools/fit_strategy_offline_baseline.js <dataset-dir> [--output dir]');
+    die('Usage: node training-collector/tools/fit_strategy_offline_baseline.js <dataset-dir> [--output dir] [--model-version version]');
   }
   return out;
 }
@@ -309,7 +310,7 @@ function main(argv = process.argv.slice(2)) {
     const readiness = evaluateBaselineReadiness(splits);
     if (!readiness.ready) die(`baseline_readiness_failed: ${readiness.errors.join(', ')}`);
 
-    const model = fitBaseline(splits.train);
+    const model = fitBaseline(splits.train, { modelVersion: args.modelVersion });
     const evaluation = evaluateHeldOut(model, splits.validation, splits.test);
     const outputDir = path.resolve(args.outputDir || path.join(datasetDir, 'baseline-v033'));
     fs.mkdirSync(outputDir, { recursive: true });

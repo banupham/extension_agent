@@ -115,6 +115,8 @@ const train = [
 ];
 
 const model = fitBaseline(train);
+const versionedModel = fitBaseline(train, { modelVersion: '0.3.4-test' });
+assert.strictEqual(versionedModel.modelVersion, '0.3.4-test');
 assert.strictEqual(model.modelVersion, '0.3.3');
 assert.strictEqual(model.fitSource, 'train-only');
 assert.strictEqual(model.heldOutUsedForFit, false);

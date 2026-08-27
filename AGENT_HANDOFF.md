@@ -481,3 +481,23 @@ Candidate result:
 - `autoTrainEligible:false`
 
 STOP here. Do not apply annotations, build the incremental dataset, or train until the user sends the exact required confirmation phrase plus this digest.
+
+## Strategy 0.3.4 candidate — TRAIN-ONLY FIT COMPLETED / HELDOUT FAIL / REJECTED
+
+The user supplied the exact required phrase and digest for `291429f882e340d27d05a0bd7b8a32c4ca611882dfcbbd8bc7e856f832c09866`.
+
+Post-approval pipeline:
+
+- explicit approval applied to 8 episodes / 16 Strategy steps
+- 253 HOW/noise transitions excluded
+- incremental dataset built with 14 records
+- original six split assignments preserved
+- combined split counts: train 10 / validation 2 / test 2
+- baseline readiness PASS
+- v0.3.3 model hash remains unchanged: `75A21FD12E2DB304769B38B3F7B137105ED1930BAC6F5554142200F8AB6B0F30`
+
+The fitter was minimally extended with optional `--model-version` so a new artifact can be labeled without mutating the frozen baseline. Candidate `0.3.4` was written separately under `strategy-learning-curated-v1/12-model-v034` and fit from TRAIN only.
+
+Heldout result: FAIL. Action types were correct, but both MDN HTML heldout click targets were grounded incorrectly because the captured Strategy observations contain empty labels for the expected link refs. Old validation and old/new text-submit test records remained exact. This is a target-grounding/collector-evidence failure, not a reason to move the MDN heldout episode into TRAIN or tune against it.
+
+Candidate `0.3.4` is rejected and must not be promoted or used as the active model. Keep v0.3.3 frozen/active. Next technical phase: repair generic accessible semantic labeling in the collector, then evaluate with appropriate new evidence without leaking heldout into fit.
