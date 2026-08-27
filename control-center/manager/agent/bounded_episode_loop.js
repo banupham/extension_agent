@@ -5,10 +5,11 @@ const { validateAgentAction } = require('../strategy/agent_action_contract.js');
 const { runOneAction } = require('./one_action_bridge.js');
 const { goalInputFor, actionTypeFor } = require('./one_step_replan.js');
 const { evaluateGoal } = require('../goal/goal_checker.js');
+const { evaluateActionEffect } = require('../goal/semantic_effect_evaluator.js');
 const { reduceOutcomeToControl } = require('../goal/outcome_controller.js');
 const { evaluateEpisodeBudget, DEFAULT_BUDGETS } = require('../goal/episode_budget.js');
 
-const BOUNDED_EPISODE_LOOP_VERSION = '0.1.0';
+const BOUNDED_EPISODE_LOOP_VERSION = '0.2.0';
 
 function validateSemanticDecision(rawDecision) {
   const decision = validateDecision(rawDecision);
@@ -17,6 +18,26 @@ function validateSemanticDecision(rawDecision) {
     ...decision,
     action: validateAgentAction(decision.action)
   };
+}
+
+function mergeSemanticFeedback(historyBefore, budgetHistory, effect) {
+  const previous = new Map((Array.isArray(historyBefore) ? historyBefore : []).map(entry => [Number(entry?.stepIndex), entry]));
+  const latestStepIndex = Array.isArray(budgetHistory) && budgetHistory.length
+    ? Number(budgetHistory[budgetHistory.length - 1]?.stepIndex)
+    : null;
+
+  return (Array.isArray(budgetHistory) ? budgetHistory : []).map(entry => {
+    const prior = previous.get(Number(entry?.stepIndex)) || null;
+    const out = { ...entry };
+    if (prior?.effectStatus) out.effectStatus = prior.effectStatus;
+    if (Array.isArray(prior?.effectCodes)) out.effectCodes = [...prior.effectCodes];
+    if (Number(entry?.stepIndex) === latestStepIndex && effect) {
+      out.effectStatus = effect.status;
+      out.effectCodes = [...effect.codes];
+      out.effectConfidence = effect.confidence;
+    }
+    return out;
+  });
 }
 
 async function executeBoundedEpisodeLoop(input = {}) {
@@ -61,7 +82,25 @@ async function executeBoundedEpisodeLoop(input = {}) {
 
     if (step?.invariant?.actionExecuted === true) actionExecutionCount += 1;
 
-    const outcome = evaluateGoal(goalInputFor(task, step));
+    const goalOutcome = evaluateGoal(goalInputFor(task, step));
+    const effect = evaluateActionEffect({
+      execution: step.execution,
+      action: step.mappedAction || chosenDecision?.action || null,
+      before: step.before || null,
+      after: step.after || null,
+      beforeBrowserContext: step.beforeBrowserContext || null,
+      afterBrowserContext: step.afterBrowserContext || null
+    });
+    const outcome = {
+      ...goalOutcome,
+      metadata: {
+        ...(goalOutcome.metadata || {}),
+        actionEffectStatus: effect.status,
+        actionEffectConfidence: effect.confidence,
+        actionEffectCodes: [...effect.codes],
+        semanticChangeCount: effect.semanticChangeCount
+      }
+    };
     const control = reduceOutcomeToControl({
       outcome,
       blocker: input.blocker || null
@@ -74,7 +113,7 @@ async function executeBoundedEpisodeLoop(input = {}) {
       startedAtMs,
       nowMs: Date.now()
     });
-    history = budget.history;
+    history = mergeSemanticFeedback(history, budget.history, effect);
     finalOutcome = outcome;
     finalControl = control;
     finalBudget = budget;
@@ -88,6 +127,7 @@ async function executeBoundedEpisodeLoop(input = {}) {
       after: step.after || null,
       beforeBrowserContext: step.beforeBrowserContext || null,
       afterBrowserContext: step.afterBrowserContext || null,
+      effect,
       outcome,
       control,
       budget: {
@@ -127,5 +167,6 @@ async function executeBoundedEpisodeLoop(input = {}) {
 module.exports = {
   BOUNDED_EPISODE_LOOP_VERSION,
   validateSemanticDecision,
+  mergeSemanticFeedback,
   executeBoundedEpisodeLoop
 };
