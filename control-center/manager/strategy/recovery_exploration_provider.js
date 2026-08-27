@@ -12,8 +12,13 @@ const {
   readRecoveryOutcomeMemory,
   recoveryOutcomeStats
 } = require('./recovery_outcome_memory.js');
+const {
+  DEFAULT_RECOVERY_HALF_LIFE_MS,
+  readRecoverySummaryMemory,
+  combinedRecoveryOutcomeStats
+} = require('./recovery_memory_consolidation.js');
 
-const RECOVERY_EXPLORATION_VERSION = '0.3.0';
+const RECOVERY_EXPLORATION_VERSION = '0.4.0';
 const DEFAULT_RECOVERY_ACTION_TYPES = Object.freeze([
   'waitAndObserve',
   'scrollVertical',
@@ -107,15 +112,31 @@ function attemptedRecoveryKeysFromHistory(history = [], trigger = null) {
   return keys;
 }
 
-function rankCandidatesByOutcomeHistory(candidates, records, task, trigger) {
+function historicalStatsForCandidate(candidate, records, task, trigger, options = {}) {
+  const summaryRecords = Array.isArray(options.summaryRecords) ? options.summaryRecords : [];
+  if (!summaryRecords.length) {
+    return recoveryOutcomeStats(records, {
+      task,
+      trigger,
+      recovery: { type: candidate.type, targetLabel: candidate.targetLabel }
+    });
+  }
+  return combinedRecoveryOutcomeStats({
+    summaryRecords,
+    rawRecords: records,
+    task,
+    trigger,
+    recovery: { type: candidate.type, targetLabel: candidate.targetLabel },
+    nowMs: options.nowMs,
+    halfLifeMs: options.halfLifeMs
+  });
+}
+
+function rankCandidatesByOutcomeHistory(candidates, records, task, trigger, options = {}) {
   return (Array.isArray(candidates) ? candidates : [])
     .map(candidate => ({
       ...candidate,
-      historical: recoveryOutcomeStats(records, {
-        task,
-        trigger,
-        recovery: { type: candidate.type, targetLabel: candidate.targetLabel }
-      })
+      historical: historicalStatsForCandidate(candidate, records, task, trigger, options)
     }))
     .sort((a, b) =>
       b.historical.confidence - a.historical.confidence ||
@@ -133,7 +154,10 @@ function semanticCandidateHistory(ranked) {
     successes: candidate.historical.successes,
     failures: candidate.historical.failures,
     successRate: candidate.historical.successRate,
-    confidence: candidate.historical.confidence
+    weightedSuccessRate: candidate.historical.weightedSuccessRate ?? null,
+    confidence: candidate.historical.confidence,
+    effectiveEvidence: candidate.historical.effectiveEvidence ?? null,
+    summaryBacked: candidate.historical.summaryBacked === true
   }));
 }
 
@@ -144,10 +168,20 @@ function createRecoveryExplorationProvider(options = {}) {
   const triedByTask = new Map();
   const staticOutcomeRecords = Array.isArray(options.outcomeRecords) ? options.outcomeRecords : null;
   const outcomeMemoryFile = options.outcomeMemoryFile ? path.resolve(options.outcomeMemoryFile) : null;
+  const staticSummaryRecords = Array.isArray(options.outcomeSummaryRecords) ? options.outcomeSummaryRecords : null;
+  const outcomeSummaryFile = options.outcomeSummaryFile ? path.resolve(options.outcomeSummaryFile) : null;
+  const outcomeHalfLifeMs = Number.isFinite(Number(options.outcomeHalfLifeMs)) && Number(options.outcomeHalfLifeMs) > 0
+    ? Number(options.outcomeHalfLifeMs)
+    : DEFAULT_RECOVERY_HALF_LIFE_MS;
 
   function currentOutcomeRecords() {
     if (staticOutcomeRecords) return staticOutcomeRecords;
     return outcomeMemoryFile ? readRecoveryOutcomeMemory(outcomeMemoryFile) : [];
+  }
+
+  function currentSummaryRecords() {
+    if (staticSummaryRecords) return staticSummaryRecords;
+    return outcomeSummaryFile ? readRecoverySummaryMemory(outcomeSummaryFile) : [];
   }
 
   return {
@@ -166,7 +200,12 @@ function createRecoveryExplorationProvider(options = {}) {
         recoveryCandidates(observation, actionTypes),
         currentOutcomeRecords(),
         task,
-        trigger
+        trigger,
+        {
+          summaryRecords: currentSummaryRecords(),
+          nowMs: Date.now(),
+          halfLifeMs: outcomeHalfLifeMs
+        }
       );
       const candidate = ranked.find(item => !tried.has(item.key)) || null;
 
@@ -209,9 +248,12 @@ function createRecoveryExplorationProvider(options = {}) {
           historicalSuccesses: candidate.historical.successes,
           historicalFailures: candidate.historical.failures,
           historicalSuccessRate: candidate.historical.successRate,
+          historicalWeightedSuccessRate: candidate.historical.weightedSuccessRate ?? null,
           historicalConfidence: candidate.historical.confidence,
+          historicalEffectiveEvidence: candidate.historical.effectiveEvidence ?? null,
           candidateHistory: semanticCandidateHistory(ranked),
-          outcomeMemory: !!outcomeMemoryFile
+          outcomeMemory: !!outcomeMemoryFile,
+          outcomeSummaryMemory: !!outcomeSummaryFile
         }
       };
     }
@@ -228,6 +270,7 @@ module.exports = {
   rootRecoveryTriggerFromHistory,
   sameRecoveryTrigger,
   attemptedRecoveryKeysFromHistory,
+  historicalStatsForCandidate,
   rankCandidatesByOutcomeHistory,
   semanticCandidateHistory,
   createRecoveryExplorationProvider
