@@ -6,7 +6,7 @@ const Semantics = require('./build_action_semantics.js');
 const Windows = require('./build_action_windows.js');
 const Features = require('./extract_behavior_features.js');
 
-const BASELINE_VERSION = '0.1.0';
+const BASELINE_VERSION = '0.2.0';
 
 function finite(value) {
   const n = Number(value);
@@ -99,6 +99,24 @@ function fitDrag(rows) {
   };
 }
 
+function fitFormControl(rows) {
+  return {
+    sampleCount: rows.length,
+    leadInDurationMs: metric(rows, r => r.features?.leadInTiming?.durationMs),
+    leadInGapMedianMs: metric(rows, r => r.features?.leadInTiming?.gapMedianMs),
+    pointerApproachDurationMs: metric(rows, r => r.features?.pointerLeadIn?.durationMs),
+    pointerStraightness: metric(rows, r => r.features?.pointerLeadIn?.straightness),
+    pointerMeanSpeedPxS: metric(rows, r => r.features?.pointerLeadIn?.meanSpeedPxS),
+    pointerMeanAbsTurnDeg: metric(rows, r => r.features?.pointerLeadIn?.meanAbsTurnDeg)
+  };
+}
+
+function countActions(rows) {
+  const counts = {};
+  for (const row of rows) counts[row.actionType] = (counts[row.actionType] || 0) + 1;
+  return Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
+}
+
 function fitBehaviorBaseline(featureSets, options = {}) {
   const sets = Array.isArray(featureSets) ? featureSets : [featureSets];
   const rows = sets.flatMap(set => Array.isArray(set?.rows) ? set.rows : []);
@@ -112,6 +130,9 @@ function fitBehaviorBaseline(featureSets, options = {}) {
   const textRows = rows.filter(r => r.actionType === 'typeText');
   const keyRows = rows.filter(r => r.actionType === 'pressKey');
   const dragRows = rows.filter(r => r.actionType === 'drag');
+  const formRows = rows.filter(r => ['focus', 'selectOption', 'submit'].includes(r.actionType));
+  const modeledRows = new Set([...clickRows, ...hoverRows, ...verticalRows, ...horizontalRows, ...textRows, ...keyRows, ...dragRows, ...formRows]);
+  const unmodeledRows = rows.filter(row => !modeledRows.has(row));
 
   families['pointer-click'] = { global: fitPointerClick(clickRows), contexts: {} };
   for (const bucket of ['small', 'medium', 'large', 'unknown']) {
@@ -130,6 +151,12 @@ function fitBehaviorBaseline(featureSets, options = {}) {
   families['keyboard-text'] = { global: fitKeyboard(textRows), contexts: {} };
   families['keyboard-key'] = { global: fitKeyboard(keyRows), contexts: {} };
   families['pointer-drag'] = { global: fitDrag(dragRows), contexts: {}, sparse: dragRows.length < 20 };
+  families['form-control'] = { global: fitFormControl(formRows), contexts: {}, sparse: formRows.length > 0 && formRows.length < 20 };
+
+  const warnings = [];
+  if (dragRows.length < 20) warnings.push({ code: 'drag_sparse', sampleCount: dragRows.length });
+  if (formRows.length > 0 && formRows.length < 20) warnings.push({ code: 'form_control_sparse', sampleCount: formRows.length });
+  if (unmodeledRows.length) warnings.push({ code: 'unmodeled_behavior_rows', sampleCount: unmodeledRows.length, actionCounts: countActions(unmodeledRows) });
 
   return {
     behaviorBaselineVersion: BASELINE_VERSION,
@@ -139,10 +166,14 @@ function fitBehaviorBaseline(featureSets, options = {}) {
       representation: 'aggregated_quantiles_only',
       literalTrajectoryReplay: false,
       quantiles: ['p10', 'p25', 'p50', 'p75', 'p90'],
-      contextRule: `context bucket emitted only when sampleCount >= ${minContextSamples}`
+      contextRule: `context bucket emitted only when sampleCount >= ${minContextSamples}`,
+      sourceRowCount: rows.length,
+      modeledRowCount: modeledRows.size,
+      unmodeledRowCount: unmodeledRows.length,
+      unmodeledActionCounts: countActions(unmodeledRows)
     },
     families,
-    warnings: dragRows.length < 20 ? [{ code: 'drag_sparse', sampleCount: dragRows.length }] : []
+    warnings
   };
 }
 
@@ -169,4 +200,4 @@ function main(argv = process.argv.slice(2)) {
 
 if (require.main === module) main();
 
-module.exports = { BASELINE_VERSION, quantiles, targetSizeBucket, fitBehaviorBaseline };
+module.exports = { BASELINE_VERSION, quantiles, targetSizeBucket, fitFormControl, countActions, fitBehaviorBaseline };
