@@ -10,8 +10,13 @@ const {
   readRecoveryOutcomeMemory,
   recoveryOutcomeStats
 } = require('./recovery_outcome_memory.js');
+const {
+  DEFAULT_RECOVERY_HALF_LIFE_MS,
+  readRecoverySummaryMemory,
+  combinedRecoveryOutcomeStats
+} = require('./recovery_memory_consolidation.js');
 
-const ADAPTIVE_RECOVERY_VERSION = '0.2.1';
+const ADAPTIVE_RECOVERY_VERSION = '0.3.0';
 
 function clamp01(value, fallback) {
   const n = Number(value);
@@ -51,6 +56,11 @@ function createAdaptiveRecoveryProvider(options = {}) {
   const policyMemoryFile = options.policyMemoryFile ? path.resolve(options.policyMemoryFile) : null;
   const staticOutcomeRecords = Array.isArray(options.outcomeRecords) ? options.outcomeRecords : null;
   const outcomeMemoryFile = options.outcomeMemoryFile ? path.resolve(options.outcomeMemoryFile) : null;
+  const staticSummaryRecords = Array.isArray(options.outcomeSummaryRecords) ? options.outcomeSummaryRecords : null;
+  const outcomeSummaryFile = options.outcomeSummaryFile ? path.resolve(options.outcomeSummaryFile) : null;
+  const outcomeHalfLifeMs = Number.isFinite(Number(options.outcomeHalfLifeMs)) && Number(options.outcomeHalfLifeMs) > 0
+    ? Number(options.outcomeHalfLifeMs)
+    : DEFAULT_RECOVERY_HALF_LIFE_MS;
   const minimumPolicyScore = clamp01(options.minimumPolicyScore, 0.55);
   const minimumOutcomeConfidence = clamp01(options.minimumOutcomeConfidence, 0.55);
 
@@ -62,6 +72,26 @@ function createAdaptiveRecoveryProvider(options = {}) {
   function currentOutcomeRecords() {
     if (staticOutcomeRecords) return staticOutcomeRecords;
     return outcomeMemoryFile ? readRecoveryOutcomeMemory(outcomeMemoryFile) : [];
+  }
+
+  function currentSummaryRecords() {
+    if (staticSummaryRecords) return staticSummaryRecords;
+    return outcomeSummaryFile ? readRecoverySummaryMemory(outcomeSummaryFile) : [];
+  }
+
+  function historicalStats(task, trigger, recovery) {
+    const rawRecords = currentOutcomeRecords();
+    const summaryRecords = currentSummaryRecords();
+    if (!summaryRecords.length) return recoveryOutcomeStats(rawRecords, { task, trigger, recovery });
+    return combinedRecoveryOutcomeStats({
+      summaryRecords,
+      rawRecords,
+      task,
+      trigger,
+      recovery,
+      nowMs: Date.now(),
+      halfLifeMs: outcomeHalfLifeMs
+    });
   }
 
   const policyProvider = createRecoveryPolicyProvider({
@@ -80,11 +110,7 @@ function createAdaptiveRecoveryProvider(options = {}) {
       const recalled = selectRecovery(currentPolicyRecords(), task, selectionHistory, minimumPolicyScore);
       if (!recalled) return explorationProvider.decide({ task, observation, history });
 
-      const historical = recoveryOutcomeStats(currentOutcomeRecords(), {
-        task,
-        trigger: recalled.trigger,
-        recovery: recalled.record.recovery
-      });
+      const historical = historicalStats(task, recalled.trigger, recalled.record.recovery);
       const policyHealthy = historical.attempts === 0 || historical.confidence >= minimumOutcomeConfidence;
 
       if (policyHealthy) {
@@ -106,7 +132,10 @@ function createAdaptiveRecoveryProvider(options = {}) {
             policyOutcomeSuccesses: historical.successes,
             policyOutcomeFailures: historical.failures,
             policyOutcomeSuccessRate: historical.successRate,
+            policyOutcomeWeightedSuccessRate: historical.weightedSuccessRate ?? null,
             policyOutcomeConfidence: historical.confidence,
+            policyOutcomeEffectiveEvidence: historical.effectiveEvidence ?? null,
+            policyOutcomeSummaryBacked: historical.summaryBacked === true,
             minimumOutcomeConfidence,
             policyRejectedByOutcomeHistory: false
           }
@@ -125,7 +154,10 @@ function createAdaptiveRecoveryProvider(options = {}) {
           policyOutcomeSuccesses: historical.successes,
           policyOutcomeFailures: historical.failures,
           policyOutcomeSuccessRate: historical.successRate,
+          policyOutcomeWeightedSuccessRate: historical.weightedSuccessRate ?? null,
           policyOutcomeConfidence: historical.confidence,
+          policyOutcomeEffectiveEvidence: historical.effectiveEvidence ?? null,
+          policyOutcomeSummaryBacked: historical.summaryBacked === true,
           minimumOutcomeConfidence,
           policyRejectedByOutcomeHistory: true
         }
