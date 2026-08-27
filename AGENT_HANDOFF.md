@@ -28,9 +28,10 @@ Read this file before changing the repository.
 - Frozen v0.3.3 passed a real fresh browser-native Cargo end-to-end family.
 - Mission/replan/recovery/world-model infrastructure is integrated with the learned Strategy.
 - Signal Relay long browser-native regression passes all 3 subgoals with real recovery, progression guard, goal checks, privacy redaction, and frozen model invariants.
-- **Frozen v0.3.3 now also passes a pristine fresh-unseen long browser-native Harbor Dispatch mission on the first real user run.**
-- Current primary phase is now **continuous learning from approved new user interactions**, not more controlled lab tuning.
-- Incremental Strategy ingestion is now wired through a review-only orchestrator that stops before approval/dataset/fit and is CI-gated.
+- **Frozen v0.3.3 also passes a pristine fresh-unseen long browser-native Harbor Dispatch mission on the first real user run.**
+- Current primary phase is **continuous learning from approved new user interactions**, not more controlled lab tuning.
+- Incremental Strategy ingestion is wired through a review-only orchestrator that stops before approval/dataset/fit and is CI-gated.
+- Incremental post-approval dataset merge now preserves every existing base split assignment across future appends.
 - Agent is maturing but is not broadly autonomous.
 
 ## Historical teaching data — CLOSED
@@ -124,31 +125,25 @@ Mission:
 
 `Click Open Relay Console, then type the provided value into Relay Note and press Enter, then click Finalize Relay`
 
-After fixing only the controlled page's native form semantics, real browser regression returned:
+Real browser regression after fixing only the controlled page's form semantics:
 
 - `ok:true`, `result:PASS`
-- `gateVersion:0.1.1`
 - `evidenceClass:regression-after-diagnosis`
-- `missionReasonCode:mission_satisfied`
 - progress `3/3`
 - exact actions `[["click","waitAndObserve"],["typeText","submit"],["click"]]`
 - exact targets `[["Open Relay Console",null],["Relay Note","Relay Note"],["Finalize Relay"]]`
-- recovery on subgoal 1 came from `recoveryExploration`
-- subgoal 2 preserved planned `typeText -> submit` with `recoveryDeferredForBaseProgression:true`
+- real recovery on subgoal 1
+- planned `typeText -> submit` preserved on subgoal 2
 - model frozen/unchanged
-- transient payload redacted and absent from public result
-- ordered execution / semantic goal checks / no literal replay all true
-- errors empty, created tab closed
+- privacy/no-literal-replay invariants true
 
-Signal Relay is closed regression evidence. Do not optimize it further.
+Signal Relay is closed regression evidence.
 
 ## Harbor Dispatch — PRISTINE FRESH LONG NATIVE PASS / CLOSED
 
 Gate:
 
 `control-center/script/offline_strategy_fresh_long_harbor_gate.js`
-
-Family was created only after Signal Relay regression PASS and was not used for diagnosis/tuning before the user's first real run.
 
 Mission:
 
@@ -158,65 +153,35 @@ First real user run at HEAD `8d7351c` returned PASS immediately:
 
 - `ok:true`
 - `result:PASS`
-- `gate:offline-strategy-fresh-long-harbor`
-- `gateVersion:0.1.0`
 - `evidenceClass:fresh-unseen-controlled-native`
 - `modelVersion:0.3.3`
 - `missionReasonCode:mission_satisfied`
-- progress `3/3`, `missionDone:true`, `missionTerminal:true`
+- progress `3/3`
 - exact actions `[["typeText","submit"],["click","waitAndObserve"],["click"]]`
 - exact targets `[["Dispatch Token","Dispatch Token"],["Open Berth Schedule",null],["Confirm Berth"]]`
+- subgoal 1: privacy-safe `typeText` no-effect observation, then planned submit preserved and succeeded
+- subgoal 2: real click no-effect, `recoveryExploration -> waitAndObserve`, delayed transition observed
+- subgoal 3: click succeeded
+- model frozen/unchanged
+- transient text redacted and absent from public result
+- ordered execution / semantic goal checks / no literal replay all true
+- errors empty, created tab closed
 
-Subgoal 1:
+This is the first pristine fresh-unseen **long** browser-native mission proof for learned Strategy v0.3.3 with real recovery/replan. It is still controlled native evidence, not broad web autonomy proof.
 
-- `typeText@Dispatch Token` used transient execution text and was privacy-redacted
-- privacy-safe observer reported `no_effect`
-- base Strategy progressed to `submit@Dispatch Token`
-- `recoveryDeferredForBaseProgression:true`
-- submit produced real semantic effect and goal satisfied
+Harbor is closed evidence.
 
-Subgoal 2:
-
-- `click@Open Berth Schedule` produced real `no_effect`
-- recovery source `recoveryExploration`
-- `waitAndObserve` observed delayed semantic transition and goal satisfied
-
-Subgoal 3:
-
-- `click@Confirm Berth`
-- semantic effect observed and mission satisfied
-
-Invariants all true:
-
-- `frozenModelOnly:true`
-- `modelLoadedFromFile:true`
-- `modelFileMutated:false`
-- `transientPayloadRedacted:true`
-- `publicResultContainsTransientText:false`
-- `orderedExecution:true`
-- `semanticSubgoalCountMatchesPlan:true`
-- `allCompletedSubgoalsGoalChecked:true`
-- `noLiteralTrajectoryReplay:true`
-- `errors:[]`
-- `createdTabClosed:true`
-
-This is the first pristine fresh-unseen **long** browser-native mission proof for learned Strategy v0.3.3 with real recovery/replan. It is stronger than Signal Relay regression evidence. It is still controlled native evidence, not broad web autonomy proof.
-
-Harbor is now closed evidence. Do not tune/train on Harbor merely to accumulate PASSes.
-
-Gate/CI commits:
+Gate/CI:
 
 - `a20b0395a6a2bf8590bb5431aa54a5b3891c2bb8` — Harbor gate
 - `181f5cccc8b3b15a2cf01cc1e1a6a4ae5fb2219a` — Harbor contract
-- `ba55e442a76370336d4c0b28acb898d700504a12` — mission CI gates Harbor
+- `ba55e442a76370336d4c0b28acb898d700504a12` — CI
 - full runtime-syntax `33092139022`: success
 - dedicated mission-long-native `33092170119`: success
 
-## Current primary development — continuous learning
+## Continuous learning target
 
-Now shift the main source of new capability from controlled runtime plumbing to approved new user data.
-
-Target pipeline:
+Pipeline:
 
 `new user interaction -> raw capture -> privacy/noise filter -> semantic episode candidate -> resolver -> human review/explicit digest approval -> approved dataset -> retrain -> fresh evaluation`
 
@@ -227,92 +192,122 @@ Required properties:
 3. capture mechanics such as focus/click/edit noise remain excluded unless semantically necessary
 4. semantic candidate must distinguish WHAT from HOW before approval
 5. human approval must be explicit and digest-bound before candidate promotion
-6. approved episodes append/merge into a versioned dataset without mutating old heldout evidence merely to improve metrics
+6. approved episodes append/merge into a versioned dataset without moving old heldout evidence
 7. retraining creates a new Strategy version; v0.3.3 remains a frozen comparison baseline
 8. every new model must be evaluated on old regression gates plus new fresh-unseen families
 9. recovery experience may be learned only from successful, privacy-safe episodes; no literal trajectory replay
 
-## Incremental Strategy ingestion — REVIEW-ONLY GATE PASS
+## Incremental Strategy ingestion — REVIEW-ONLY PASS
 
-New orchestrator:
+Orchestrator:
 
 `training-collector/tools/prepare_incremental_strategy_learning.js`
 
 Version `0.1.0`.
 
-Purpose:
-
-- consume genuinely new `*.task-episode-review.json` exports, optionally alongside raw session data
-- reuse the existing privacy-safe learning batch, review pack, triage, review-draft, teaching resolver, and digest-candidate tools
-- deduplicate previously processed episode IDs and duplicate current exports before the review pack
-- produce one reviewable digest-bound candidate bundle
-- **stop before approval, dataset construction, or model fitting**
-
 Pipeline:
 
 `new reviews/raw -> privacy batch -> incremental episode filter -> review pack -> triage -> review drafts -> teaching resolver -> approval candidate digest -> STOP`
 
-CLI options:
-
-- `--reviews <task-episode-review-dir>` required
-- `--raw <raw-session-dir>` optional
-- `--exclude-approved <approved-annotations-dir>` optional
-- `--exclude-episodes <episode-id-file>` optional
-- `--out <output-dir>` optional
-
 Hard boundaries:
 
-- candidate digest must verify before output
-- candidate policy must remain `autoTrainEligible:false`
-- process throws if `apply_strategy_approval_candidates.js` is imported
-- process throws if `build_strategy_dataset_from_approvals.js` is imported
-- process throws if `fit_strategy_offline_baseline.js` is imported
-- manifest records `approvalApplied:false`, `datasetBuilt:false`, `trainingPerformed:false`
-- previously approved episode IDs can be excluded by scanning `.strategy-review.approved.json` annotations
-- duplicate current exports with the same episode ID are reduced to one review-queue entry
-- privacy-unsafe review exports remain blocked before candidate generation
+- digest integrity must verify
+- candidate policy remains `autoTrainEligible:false`
+- approval applicator, dataset builder, and fitter are forbidden from the orchestrator process
+- output says `approvalApplied:false`, `datasetBuilt:false`, `trainingPerformed:false`
+- previously approved IDs can be excluded before review pack creation
+- duplicate current episode exports are deduplicated by semantic episode ID
+- privacy-unsafe reviews remain blocked before candidate generation
 
-Default output layout:
+CLI:
 
-- `01-learning-batch/`
-- `02-incremental-filter/incremental-manifest.json`
-- `03-review-pack/`
-- `04-triage/triage.json`
-- `05-review-drafts/`
-- `06-resolution/`
-- `07-approval-candidates/`
-- `incremental-strategy-learning-manifest.json`
-- `incremental-strategy-learning-review.md`
+```text
+node training-collector/tools/prepare_incremental_strategy_learning.js --reviews <review-dir> [--raw <raw-dir>] [--exclude-approved <approved-dir>] [--exclude-episodes <episode-id-file>] [--out <dir>]
+```
 
 Commits:
 
-- `caff7ad78949bac6b9a81ddc603b52465f428a5f` — incremental review-only orchestrator
-- `ae4dac8bac4742bd6ee6aeee7dea32ce5189f882` — synthetic incremental boundary contract
-- `fca2f20d49143deb44c7eb66b7490e5794559b84` — dedicated incremental-learning CI workflow
+- `caff7ad78949bac6b9a81ddc603b52465f428a5f` — orchestrator
+- `ae4dac8bac4742bd6ee6aeee7dea32ce5189f882` — boundary contract
+- `fca2f20d49143deb44c7eb66b7490e5794559b84` — dedicated CI
 
-Synthetic contract proves in one batch:
+Synthetic boundary proof:
 
-- one previously approved episode is excluded
-- one duplicate current export is deduplicated
-- one privacy-unsafe review stays blocked before review pack/candidate
-- one genuinely new safe successful click review becomes exactly one digest candidate
-- digest integrity verifies
-- no approved annotation, approval receipt, train/validation/test dataset, or model is created
-- approval applicator/dataset builder/fitter modules are not imported by the orchestrator process
+- previously approved episode excluded
+- duplicate current export deduplicated
+- privacy-unsafe review blocked
+- one genuinely new safe episode becomes exactly one digest candidate
+- no approval receipt, approved annotation, dataset, or model created
 
 CI:
 
-- full runtime-syntax on orchestrator + boundary contract `33093032281`: success
-- dedicated `strategy-incremental-learning` run `33093059221`: success
-  - incremental Strategy learning boundary PASS
-  - privacy-safe human learning batch PASS
+- full runtime-syntax `33093032281`: success
+- dedicated incremental-learning `33093059221`: success
+
+## Incremental post-approval dataset merge — STABLE SPLITS PASS
+
+Problem found during continuous-learning audit:
+
+- the original batch builder orders all split groups by hash and then allocates a count of test/validation/train groups based on total group count
+- adding new groups can therefore move the old train/validation/test boundaries even with the same seed
+- that is acceptable for a one-time dataset build, but unsafe for longitudinal continuous learning because historical heldout evidence must remain fixed
+
+New builder:
+
+`training-collector/tools/build_incremental_strategy_dataset.js`
+
+Version `0.1.0`.
+
+Policy:
+
+- load the existing assigned base dataset (`train.jsonl`, `validation.jsonl`, `test.jsonl`)
+- only accept newly approved annotations through the existing explicit human-approval proof boundary
+- never reassign any base episode
+- if a new episode has a `splitGroup` already present in the base dataset, inherit that group's existing split
+- if a group is completely new, assign it using an independent stable hash threshold with seed `strategy-episode-v0`
+- independent threshold means appending future groups cannot move any already assigned group
+- validate the combined assigned dataset and recompute training eligibility from split
+- write a new versioned dataset package; never overwrite or mutate the frozen v0.3.3 dataset in place
+
+Commits:
+
+- `7f40dc6a0819c48c8ba035fb382da16a4d90dacc` — stable incremental dataset builder
+- `ab2d2108086563de029908571972591e37f014da` — split-preservation contract
+- `a5cc6adcc2986568cb7bdb5f1f59078aa76da41f` — incremental CI includes split preservation
+
+Contract proves:
+
+- existing train/validation/test episodes remain in their original split
+- a new episode sharing an existing semantic splitGroup inherits that exact split
+- a completely new group gets a deterministic independent split
+- a second future append cannot move records from the first append or the original base
+- duplicate episode IDs are rejected
+- train records become training-eligible; validation/test records stay heldout/ineligible for fit
+
+CI:
+
+- full runtime-syntax on builder + contract `33093540067`: success
+- dedicated `strategy-incremental-learning` `33093577877`: success
+  - review-only incremental boundary PASS
+  - stable split-preservation PASS
+  - privacy-safe learning batch PASS
   - Strategy teaching resolver PASS
   - explicit approval/dataset boundary PASS
 
-### Immediate next step
+## Immediate next user phase — genuinely new demonstrations
 
-Use genuinely new post-v0.3.3 user interaction episodes as the first real incremental input. Do not reuse the historical six teaching tasks, Cargo, Signal Relay, or Harbor as training additions.
+Collector task-episode flow remains:
 
-The first real incremental run should stop at a candidate digest. Inspect its candidate count, blocked count, unresolved count, privacy invariants, semantic sequences, and digest hash. Only after the user explicitly reviews and confirms that exact digest may approval annotations be created. Dataset merge/versioning and retraining come after that separate approval milestone.
+`enter task instruction -> Start Episode -> perform task -> Mark Success/Failed -> Stop Episode -> Export Task Episode for Review`
+
+The export is named:
+
+`training-collector-<episodeId>.task-episode-review.json`
+
+Do not reuse the historical six tasks, Cargo, Signal Relay, or Harbor as new training data.
+
+First real incremental batch should be small and privacy-safe. Produce new task-episode review exports, then run the review-only orchestrator and stop at the digest. Inspect candidate count, blocked count, unresolved count, semantic sequences and privacy invariants. Only after the user explicitly reviews and confirms the exact new digest may approval annotations be created.
+
+After approval, use the incremental dataset builder so v0.3.3's existing heldout split assignments remain unchanged. Fit a new Strategy version only from the resulting train split; keep v0.3.3 as the frozen comparison baseline.
 
 Never promote to `main` without explicit user approval after verified PASS.
