@@ -21,6 +21,7 @@ on:
       - 'control-center/manager/strategy/recovery_outcome_memory.js'
       - 'control-center/manager/strategy/recovery_memory_consolidation.js'
       - 'control-center/manager/strategy/adaptive_recovery_provider.js'
+      - 'control-center/manager/strategy/recovery_transfer_provider.js'
       - 'control-center/manager/strategy/index.js'
       - 'control-center/manager/goal/semantic_effect_evaluator.js'
       - 'control-center/manager/goal/outcome_controller.js'
@@ -41,6 +42,7 @@ on:
       - 'control-center/script/offline_strategy_self_experience_gate.js'
       - 'control-center/script/offline_strategy_self_exploration_gate.js'
       - 'control-center/script/offline_strategy_recovery_self_learning_gate.js'
+      - 'control-center/script/offline_strategy_recovery_transfer_gate.js'
       - 'control-center/script/checks/one_action_semantic_settle.js'
       - 'control-center/script/checks/semantic_action_effect.js'
       - 'control-center/script/checks/adaptive_outcome_feedback.js'
@@ -49,6 +51,7 @@ on:
       - 'control-center/script/checks/recovery_self_exploration_learning.js'
       - 'control-center/script/checks/recovery_outcome_confidence.js'
       - 'control-center/script/checks/recovery_memory_consolidation.js'
+      - 'control-center/script/checks/generalized_recovery_transfer.js'
       - 'control-center/script/checks/adaptive_recovery_drift.js'
       - 'control-center/script/checks/outcome_controller.js'
       - 'control-center/script/checks/offline_strategy_provider.js'
@@ -91,6 +94,7 @@ jobs:
           node --check control-center/manager/strategy/recovery_outcome_memory.js
           node --check control-center/manager/strategy/recovery_memory_consolidation.js
           node --check control-center/manager/strategy/adaptive_recovery_provider.js
+          node --check control-center/manager/strategy/recovery_transfer_provider.js
           node --check control-center/manager/goal/semantic_effect_evaluator.js
           node --check control-center/manager/goal/outcome_controller.js
           node --check control-center/manager/agent/one_action_bridge.js
@@ -108,6 +112,7 @@ jobs:
           node --check control-center/script/checks/recovery_self_exploration_learning.js
           node --check control-center/script/checks/recovery_outcome_confidence.js
           node --check control-center/script/checks/recovery_memory_consolidation.js
+          node --check control-center/script/checks/generalized_recovery_transfer.js
           node --check control-center/script/checks/adaptive_recovery_drift.js
           node --check control-center/script/checks/outcome_controller.js
           node --check control-center/script/checks/offline_strategy_provider.js
@@ -132,6 +137,7 @@ jobs:
           node --check control-center/script/offline_strategy_self_experience_gate.js
           node --check control-center/script/offline_strategy_self_exploration_gate.js
           node --check control-center/script/offline_strategy_recovery_self_learning_gate.js
+          node --check control-center/script/offline_strategy_recovery_transfer_gate.js
       - name: Run semantic post-action settle contract
         run: node control-center/script/checks/one_action_semantic_settle.js
       - name: Run semantic action effect contract
@@ -150,6 +156,8 @@ jobs:
         run: node control-center/script/checks/recovery_outcome_confidence.js
       - name: Run recovery memory consolidation contract
         run: node control-center/script/checks/recovery_memory_consolidation.js
+      - name: Run generalized recovery transfer contract
+        run: node control-center/script/checks/generalized_recovery_transfer.js
       - name: Run adaptive recovery drift contract
         run: node control-center/script/checks/adaptive_recovery_drift.js
       - name: Run offline Strategy baseline contract
