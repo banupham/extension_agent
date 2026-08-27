@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const APPROVAL_CANDIDATE_VERSION = '0.2.0';
+const APPROVAL_CANDIDATE_VERSION = '0.3.0';
 const HUMAN_CONFIRMATION_PHRASE = 'YES-I-REVIEWED-STRATEGY-APPROVAL-DIGEST';
 const MEDIA_SEMANTIC_TYPES = new Set(['play', 'pause', 'mute', 'unmute']);
 
@@ -86,21 +86,40 @@ function semanticizedAction(step) {
   return out;
 }
 
-function transformDraftSteps(item, draft) {
+function resolutionMap(resolutionItem) {
+  return new Map((Array.isArray(resolutionItem?.resolutions) ? resolutionItem.resolutions : [])
+    .map(item => [String(item?.transitionId || ''), item]));
+}
+
+function transformDraftSteps(item, draft, resolutionItem = null) {
   const steps = Array.isArray(draft?.steps) ? draft.steps : [];
+  const byTransition = resolutionMap(resolutionItem);
   const transformed = steps.map((step, index) => {
-    const incidentalFocus = isIncidentalFocus(step, index, steps, item?.task || draft?.task || {});
-    const proposedAction = incidentalFocus ? null : semanticizedAction(step);
+    const aid = byTransition.get(String(step?.transitionId || '')) || null;
+    const aidedNoise = aid?.status === 'capture-noise';
+    const aidedSemantic = aid?.status === 'resolved-semantic-action' && !!aid?.suggestedAction;
+    const incidentalFocus = !aid && isIncidentalFocus(step, index, steps, item?.task || draft?.task || {});
+    const proposedInclude = aidedNoise || incidentalFocus ? false : true;
+    const exclusionReason = aidedNoise
+      ? (aid.exclusionReason || aid.reasonCode || 'ambiguity_resolution_capture_noise')
+      : incidentalFocus
+        ? 'incidental_focus_acquisition_before_task_action'
+        : null;
+    const proposedAction = proposedInclude
+      ? (aidedSemantic ? aid.suggestedAction : semanticizedAction(step))
+      : null;
     return {
       transitionId: step?.transitionId || null,
-      proposedInclude: !incidentalFocus,
-      exclusionReason: incidentalFocus ? 'incidental_focus_acquisition_before_task_action' : null,
+      proposedInclude,
+      exclusionReason,
       proposedAction,
       reviewClass: step?.reviewerAid?.reviewClass || null,
       labelConfidence: Number(step?.reviewerAid?.labelConfidence || 0),
-      semanticTarget: step?.reviewerAid?.semanticTarget || null,
+      semanticTarget: aid?.semanticTarget || step?.reviewerAid?.semanticTarget || null,
       capturedActionSucceeded: step?.reviewerAid?.capturedActionSucceeded === true,
-      sourceSuggestedActionType: step?.reviewerAid?.suggestedAction?.type || null,
+      sourceSuggestedActionType: step?.reviewerAid?.suggestedAction?.type || aid?.sourceHint || null,
+      ambiguityResolutionStatus: aid?.status || null,
+      ambiguityResolutionReasonCode: aid?.reasonCode || null,
       reviewerMustConfirm: {
         taskRelevance: true,
         includeOrExclude: true,
@@ -128,16 +147,23 @@ function semanticSplitGroup(item, proposedSteps) {
   return `semantic-sequence:${sequence.join('>')}`;
 }
 
-function candidateBlockReasons(item, draft) {
+function candidateBlockReasons(item, draft, resolutionItem = null) {
   const reasons = [];
   const transitions = Array.isArray(item?.transitions) ? item.transitions : [];
   const draftSteps = Array.isArray(draft?.steps) ? draft.steps : [];
-  const transformed = transformDraftSteps(item, draft);
+  const transformed = transformDraftSteps(item, draft, resolutionItem);
   const included = transformed.filter(step => step.proposedInclude === true);
+  const transformedById = new Map(transformed.map(step => [String(step.transitionId || ''), step]));
+  const unresolvedAmbiguous = transitions.filter(step => {
+    if (step?.reviewClass === 'fast-label-review') return false;
+    const transformedStep = transformedById.get(String(step?.transitionId || '')) || null;
+    return !['capture-noise', 'resolved-semantic-action'].includes(transformedStep?.ambiguityResolutionStatus);
+  });
+
   if (String(item?.finalOutcomeStatus || '').toLowerCase() !== 'success') reasons.push('episode_final_outcome_not_success');
   if (!transitions.length) reasons.push('episode_has_no_transitions');
   if (draftSteps.length !== transitions.length) reasons.push('draft_transition_count_mismatch');
-  if (transitions.some(step => step?.reviewClass !== 'fast-label-review')) reasons.push('ambiguous_transition_present');
+  if (unresolvedAmbiguous.length) reasons.push('unresolved_ambiguous_transition');
   if (!included.length) reasons.push('no_task_relevant_strategy_steps');
   if (included.some(step => step.capturedActionSucceeded !== true)) reasons.push('captured_action_failure_present');
   if (included.some(step => !step.proposedAction)) reasons.push('suggested_action_missing');
@@ -162,8 +188,8 @@ function proposedOutcome(index, total) {
   };
 }
 
-function candidateForItem(item, draft) {
-  const steps = transformDraftSteps(item, draft);
+function candidateForItem(item, draft, resolutionItem = null) {
+  const steps = transformDraftSteps(item, draft, resolutionItem);
   return {
     episodeId: item?.episodeId || null,
     task: item?.task || null,
@@ -173,6 +199,8 @@ function candidateForItem(item, draft) {
     transitionCount: steps.length,
     includedStrategyStepCount: steps.filter(step => step.proposedInclude === true).length,
     excludedCaptureNoiseCount: steps.filter(step => step.proposedInclude !== true).length,
+    ambiguityResolvedStrategyStepCount: steps.filter(step => step.ambiguityResolutionStatus === 'resolved-semantic-action').length,
+    ambiguityResolvedNoiseCount: steps.filter(step => step.ambiguityResolutionStatus === 'capture-noise').length,
     proposedSteps: steps.map(step => ({
       transitionId: step.transitionId,
       proposedInclude: step.proposedInclude,
@@ -183,6 +211,8 @@ function candidateForItem(item, draft) {
       labelConfidence: step.labelConfidence,
       semanticTarget: step.semanticTarget,
       sourceSuggestedActionType: step.sourceSuggestedActionType,
+      ambiguityResolutionStatus: step.ambiguityResolutionStatus,
+      ambiguityResolutionReasonCode: step.ambiguityResolutionReasonCode,
       reviewerMustConfirm: step.reviewerMustConfirm
     }))
   };
@@ -192,6 +222,7 @@ function hashPayload(result) {
   return {
     approvalCandidateVersion: result.approvalCandidateVersion,
     sourceDraftDigest: result.sourceDraftDigest,
+    sourceAmbiguityResolution: result.sourceAmbiguityResolution,
     policy: result.policy,
     candidates: result.candidates,
     blocked: result.blocked
@@ -209,9 +240,10 @@ function markdownFor(result) {
     `Digest hash: \`${result.digestHash}\``,
     `Eligible episodes: ${result.candidateEpisodeCount}`,
     `Blocked episodes: ${result.blockedEpisodeCount}`,
+    `Ambiguity resolution loaded: ${result.sourceAmbiguityResolution ? 'yes' : 'no'}`,
     '',
     '> These are proposals only. Nothing in this file is a human-approved Strategy label until the reviewer explicitly confirms this exact digest hash.',
-    '> Incidental focus-acquisition events are proposed as excluded capture noise. Media-control clicks are proposed at semantic action level (play/pause/mute/unmute), not as literal clicks.',
+    '> Incidental focus/scroll acquisition may be excluded as HOW noise. Resolved review aids still require explicit human confirmation.',
     '',
     `Required confirmation phrase: \`${HUMAN_CONFIRMATION_PHRASE}\``,
     ''
@@ -223,21 +255,23 @@ function markdownFor(result) {
     lines.push(`Task: ${String(item.task?.instruction || '').replace(/\s+/g, ' ').trim()}`);
     lines.push(`Split group: ${item.splitGroup}`);
     lines.push(`Included Strategy steps: ${item.includedStrategyStepCount}; excluded capture noise: ${item.excludedCaptureNoiseCount}`);
+    lines.push(`Ambiguity aid: strategy=${item.ambiguityResolvedStrategyStepCount}; noise=${item.ambiguityResolvedNoiseCount}`);
     lines.push('');
     for (const step of item.proposedSteps) {
       const target = step.semanticTarget?.label || step.semanticTarget?.role || step.semanticTarget?.tag || '<target missing>';
+      const aid = step.ambiguityResolutionStatus ? `; ambiguity=${step.ambiguityResolutionStatus}` : '';
       if (step.proposedInclude !== true) {
-        lines.push(`- ${step.transitionId}: include=false; sourceAction=${step.sourceSuggestedActionType || '<missing>'} -> ${target}; exclusionReason=${step.exclusionReason}`);
+        lines.push(`- ${step.transitionId}: include=false; sourceAction=${step.sourceSuggestedActionType || '<missing>'} -> ${target}; exclusionReason=${step.exclusionReason}${aid}`);
         continue;
       }
       const action = step.proposedAction || {};
-      lines.push(`- ${step.transitionId}: include=true; action=${action.type || '<missing>'} -> ${target}; actionSucceeded=${step.proposedOutcome?.actionSucceeded}; taskSucceeded=${step.proposedOutcome?.taskSucceeded}; progress=${step.proposedOutcome?.progress}`);
+      lines.push(`- ${step.transitionId}: include=true; action=${action.type || '<missing>'} -> ${target}; actionSucceeded=${step.proposedOutcome?.actionSucceeded}; taskSucceeded=${step.proposedOutcome?.taskSucceeded}; progress=${step.proposedOutcome?.progress}${aid}`);
     }
     lines.push('');
   }
 
   if (result.blocked.length) {
-    lines.push('## Blocked from fast approval');
+    lines.push('## Blocked from approval candidate');
     lines.push('');
     for (const item of result.blocked) lines.push(`- ${item.episodeId}: ${item.reasons.join(', ')}`);
     lines.push('');
@@ -245,10 +279,14 @@ function markdownFor(result) {
   return `${lines.join('\n')}\n`;
 }
 
-function prepareApprovalCandidates(draftDigestFile, outputDir) {
+function prepareApprovalCandidates(draftDigestFile, outputDir, options = {}) {
   const fullDigest = path.resolve(draftDigestFile);
   const digest = readJson(fullDigest);
-  const outDir = path.resolve(outputDir || path.join(path.dirname(fullDigest), 'approval-candidates-v02'));
+  const resolutionFile = options.resolutionFile ? path.resolve(options.resolutionFile) : null;
+  const resolution = resolutionFile ? readJson(resolutionFile) : null;
+  const resolutionByEpisode = new Map((Array.isArray(resolution?.items) ? resolution.items : [])
+    .map(item => [String(item?.episodeId || ''), item]));
+  const outDir = path.resolve(outputDir || path.join(path.dirname(fullDigest), 'approval-candidates-v03'));
   const candidates = [];
   const blocked = [];
 
@@ -259,23 +297,27 @@ function prepareApprovalCandidates(draftDigestFile, outputDir) {
       continue;
     }
     const draft = readJson(draftFile);
-    const reasons = candidateBlockReasons(item, draft);
+    const resolutionItem = resolutionByEpisode.get(String(item?.episodeId || '')) || null;
+    const reasons = candidateBlockReasons(item, draft, resolutionItem);
     if (reasons.length) {
       blocked.push({ episodeId: item?.episodeId || null, reasons });
       continue;
     }
-    candidates.push(candidateForItem(item, draft));
+    candidates.push(candidateForItem(item, draft, resolutionItem));
   }
 
   const result = {
     approvalCandidateVersion: APPROVAL_CANDIDATE_VERSION,
     generatedAt: new Date().toISOString(),
     sourceDraftDigest: path.relative(process.cwd(), fullDigest),
+    sourceAmbiguityResolution: resolutionFile ? path.relative(process.cwd(), resolutionFile) : null,
     policy: {
-      onlyFullyFastLabelEpisodesEligible: true,
+      onlyFullyReviewAidResolvedEpisodesEligible: true,
       onlyCapturedSuccessfulIncludedActionsEligible: true,
       onlySuccessfulTerminalEpisodesEligible: true,
       incidentalFocusAcquisitionExcludedFromStrategy: true,
+      ambiguityResolverMayExcludeIncidentalHowNoise: true,
+      ambiguityResolverMayProposeSemanticActionButNeverVerifyIt: true,
       mediaControlSurfaceClicksAbstractedToSemanticActions: true,
       splitGroupsUseSemanticActionTargetSequence: true,
       proposedProgressPolicy: 'ordered_included_semantic_steps_fraction',
@@ -285,6 +327,7 @@ function prepareApprovalCandidates(draftDigestFile, outputDir) {
     },
     candidateEpisodeCount: candidates.length,
     blockedEpisodeCount: blocked.length,
+    ambiguityAidCandidateEpisodeCount: candidates.filter(item => item.ambiguityResolvedStrategyStepCount > 0 || item.ambiguityResolvedNoiseCount > 0).length,
     candidates,
     blocked
   };
@@ -314,14 +357,16 @@ function parseArgs(argv) {
 function main(argv = process.argv.slice(2)) {
   try {
     const args = parseArgs(argv);
-    if (!args.digest) throw new Error('Usage: node training-collector/tools/prepare_strategy_approval_candidates.js --digest <approval-digest.json> [--out dir]');
-    const prepared = prepareApprovalCandidates(args.digest, args.out);
+    if (!args.digest) throw new Error('Usage: node training-collector/tools/prepare_strategy_approval_candidates.js --digest <approval-digest.json> [--resolution <ambiguity-resolution.json>] [--out dir]');
+    const prepared = prepareApprovalCandidates(args.digest, args.out, { resolutionFile: args.resolution });
     console.log(JSON.stringify({
       ok: true,
       result: 'PASS',
       version: prepared.result.approvalCandidateVersion,
       candidateEpisodeCount: prepared.result.candidateEpisodeCount,
       blockedEpisodeCount: prepared.result.blockedEpisodeCount,
+      ambiguityAidCandidateEpisodeCount: prepared.result.ambiguityAidCandidateEpisodeCount,
+      ambiguityResolutionLoaded: !!prepared.result.sourceAmbiguityResolution,
       digestHash: prepared.result.digestHash,
       autoTrainEligible: prepared.result.policy.autoTrainEligible,
       candidates: path.resolve(prepared.jsonFile),
@@ -348,6 +393,7 @@ module.exports = {
   sameSemanticTarget,
   isIncidentalFocus,
   semanticizedAction,
+  resolutionMap,
   transformDraftSteps,
   semanticSplitGroup,
   candidateBlockReasons,
