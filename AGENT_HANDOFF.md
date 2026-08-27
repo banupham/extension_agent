@@ -26,8 +26,9 @@ Read this file before changing the repository.
 - Strategy v0.3.3 passes unchanged six-group regression exactly on validation/test.
 - Frozen v0.3.3 passed two fresh-unseen semantic decision families.
 - Frozen v0.3.3 passed a real fresh browser-native Cargo end-to-end family.
-- Mission/replan/recovery/world-model infrastructure exists and is now being integrated with the learned Strategy.
-- Real Signal Relay long-mission run proved recovery and multi-subgoal orchestration partly work, but exposed a controlled-lab form-design defect at subgoal 2.
+- Mission/replan/recovery/world-model infrastructure exists and is integrated with the learned Strategy.
+- Real Signal Relay long-mission run proved recovery and multi-subgoal orchestration partly work, and exposed a controlled-lab form-design defect at subgoal 2.
+- Signal Relay form semantics are now repaired and CI-green; the next real run is regression/runtime validation only.
 - Agent is maturing but is not broadly autonomous.
 
 ## Historical teaching data — CLOSED
@@ -167,7 +168,7 @@ Commits:
 - `f42a1f38f719c6c7c509b0f2aabf633f0a6dd5b4` — progression guard contract
 - `8324b0dfde0a66ba2c23d73c63cce4d91b203240` — mission CI includes recovery contract
 
-## Signal Relay long browser-native family — REAL RUN FAIL / DIAGNOSED
+## Signal Relay long browser-native family — REGRESSION AFTER DIAGNOSIS
 
 Gate:
 
@@ -183,17 +184,17 @@ Expected:
 2. `typeText@Relay Note -> submit@Relay Note`
 3. `click@Finalize Relay`
 
-Gate commits:
+Initial gate commits:
 
 - `7260930f1278ec814faf1d8fc67f8d4bd564c05e` — browser-native long mission gate
 - `90ec4cb3fd084967cc1c6d6f99468ba6b4fbe79e` — gate contract
 
-CI before real run:
+Initial CI:
 
 - dedicated mission run `33090453237`: success
 - full runtime run `33090453289`: success
 
-### Real user run result
+### First real user run
 
 Real browser run returned FAIL:
 
@@ -231,29 +232,80 @@ Subgoal 2 — **Strategy/progression PASS, page submit FAIL**:
 
 ### Root cause
 
-The controlled Signal Relay page has a test-design defect, not a learned-Strategy failure:
+The controlled Signal Relay page had a test-design defect, not a learned-Strategy failure:
 
-- `relayForm` contains two text `<input>` controls (`Relay Note`, `Operator Memo`)
-- its only button inside the form is `type="button"` (`Review Template`)
-- there is no submit control
-- page progression to stage 3 occurs only inside `relayForm.addEventListener('submit', ...)`
+- `relayForm` contained two text `<input>` controls (`Relay Note`, `Operator Memo`)
+- its only button inside the form was `type="button"` (`Review Template`)
+- there was no submit control
+- page progression to stage 3 occurred only inside `relayForm.addEventListener('submit', ...)`
 - pressing Enter in `Relay Note` therefore did not produce the form submit event in the real browser
-
-This is consistent with the real run: `typeText` succeeded visibly, Strategy chose `submit`, but stage 2 remained visible and recovery exhausted its budget.
 
 Do **not** change Strategy v0.3.3, its weights, dataset, or heldout split because of this failure.
 
 Do **not** treat the recovery scroll attempts as evidence for adding a generic failure-to-scroll rule; they were bounded exploration after a genuine no-effect submit.
 
-Signal Relay is no longer pristine unseen evidence because this failure has now influenced diagnosis. It may be repaired and rerun only as regression/runtime validation. A different fresh family is required later for pristine long-mission generalization evidence.
+Signal Relay is no longer pristine unseen evidence because this failure influenced diagnosis. It may be rerun only as regression/runtime validation. A different fresh family is required later for pristine long-mission generalization evidence.
 
-## Immediate next development
+### Form semantics repair — CI PASS, real regression pending
 
-1. Repair the generic controlled form semantics in Signal Relay so `press Enter` has a valid submit path; do not change Strategy/model.
-2. Add a contract proving the lab form actually supports Enter-submit rather than merely asserting planned action sequences.
-3. Rerun Signal Relay as **regression**, not pristine fresh proof.
-4. If regression passes, create a different fresh long native family for pristine multi-subgoal/recovery evidence.
-5. After long-mission runtime is stable, shift emphasis to continuous learning from approved new user interactions.
+Generic controlled-page repair:
+
+- added a real default `type="submit"` control inside `relayForm`
+- submit control is hidden/aria-hidden/non-tabbable so it supplies native implicit Enter-submit semantics without becoming a visible Strategy target
+- did **not** add a target-specific `keydown` handler
+- did **not** use `requestSubmit()` or direct `.submit()` bypasses
+- gate version is now `0.1.1`
+- result explicitly reports `evidenceClass:"regression-after-diagnosis"`
+- mission metadata no longer claims `frozenEvaluationFamily:true`
+
+Commits:
+
+- `972b78c5d4ea20b0477f2910e7a1b2f5a2d5c83e` — repair Signal Relay form semantics and mark regression evidence
+- `3cba592894bc7b4e6373a36c570499eee0230e99` — align gate contract with regression evidence class
+- `9c2f94bf47afb963b337091edd08dd99d315bb3f` — Enter-submit semantics contract requiring a native submit control and forbidding keydown/requestSubmit/direct-submit hacks
+- `5edd70c875339ba2e64da0cbf9681199371ae3e1` — mission workflow gates the new form semantics contract
+
+CI:
+
+- full runtime-syntax for the form repair commit `33091479720`: success
+- dedicated mission-long-native final run `33091577192`: success
+  - mission transient payload contract PASS
+  - recovery progression guard contract PASS
+  - Signal Relay Enter-submit semantics contract PASS
+  - Signal Relay regression gate contract PASS
+
+## Immediate next user action
+
+Rerun Signal Relay once with the frozen v0.3.3 model. This run is **regression/runtime validation**, not fresh-unseen evidence.
+
+Windows CMD:
+
+```bat
+cd /d C:\Users\duong\Downloads\extension_agent
+git pull
+git rev-parse --short HEAD
+
+set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
+node control-center\script\offline_strategy_fresh_long_mission_gate.js --model "%SIX%\strategy-approved-dataset-v03\baseline-v033\model.json"
+```
+
+Expected HEAD is this handoff commit.
+
+Desired regression result:
+
+- `ok:true`
+- `result:PASS`
+- `gateVersion:0.1.1`
+- `evidenceClass:regression-after-diagnosis`
+- `missionReasonCode:mission_satisfied`
+- actions exactly `[["click","waitAndObserve"],["typeText","submit"],["click"]]`
+- targets exactly `[["Open Relay Console",null],["Relay Note","Relay Note"],["Finalize Relay"]]`
+- all 3 subgoals done
+- model frozen/unchanged
+- transient text redacted
+- created tab closed
+
+If this regression passes, create a different fresh long native family for pristine multi-subgoal/recovery evidence before making broader generalization claims.
 
 ## Continuous-learning phase
 
