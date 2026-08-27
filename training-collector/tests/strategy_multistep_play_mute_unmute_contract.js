@@ -11,10 +11,10 @@ const {
 function obs() {
   return {
     interactiveElements: [
-      { ref: 'e6', label: 'Media Play' },
-      { ref: 'e8', label: 'Media Mute' },
+      { ref: 'e7', label: 'Media Play' },
+      { ref: 'e9', label: 'Media Mute' },
       { ref: 'e10', label: 'Media Unmute' },
-      { ref: 'e9', label: 'Noise' }
+      { ref: 'e11', label: 'Noise' }
     ]
   };
 }
@@ -22,18 +22,22 @@ function obs() {
 const review = {
   task: { instruction: 'Start media playback, mute it, then unmute it' },
   transitions: [
-    { transitionId: 'noise', status: 'complete', rawAction: { kind: 'click', targetRef: 'e9' }, strategyObservationBefore: obs() },
-    { transitionId: 'play', status: 'complete', rawAction: { kind: 'pointer-click', targetRef: 'e6' }, strategyObservationBefore: obs() },
-    { transitionId: 'mute', status: 'complete', rawAction: { kind: 'click', targetRef: 'e8' }, strategyObservationBefore: obs() },
-    { transitionId: 'unmute', status: 'complete', rawAction: { kind: 'semantic-click', targetRef: 'e10' }, strategyObservationBefore: obs() }
+    { transitionId: 'noise', status: 'complete', rawAction: { kind: 'click', targetRef: 'e11' }, strategyObservationBefore: obs() },
+    { transitionId: 'play-focus', status: 'complete', rawAction: { kind: 'focus', targetRef: 'e7' }, strategyObservationBefore: obs() },
+    { transitionId: 'play-click', status: 'complete', rawAction: { kind: 'click', targetRef: 'e7' }, strategyObservationBefore: obs() },
+    { transitionId: 'mute-focus', status: 'complete', rawAction: { kind: 'focus', targetRef: 'e9' }, strategyObservationBefore: obs() },
+    { transitionId: 'mute-click', status: 'complete', rawAction: { kind: 'click', targetRef: 'e9' }, strategyObservationBefore: obs() },
+    { transitionId: 'unmute-focus', status: 'complete', rawAction: { kind: 'focus', targetRef: 'e10' }, strategyObservationBefore: obs() },
+    { transitionId: 'unmute-click', status: 'complete', rawAction: { kind: 'click', targetRef: 'e10' }, strategyObservationBefore: obs() }
   ]
 };
 
 const hits = findSequence(review);
-assert.deepStrictEqual(hits.map(hit => hit.transitionId), ['play', 'mute', 'unmute']);
-assert.ok(transitionSummary(review).includes('Media Play'));
-assert.ok(transitionSummary(review).includes('Media Mute'));
-assert.ok(transitionSummary(review).includes('Media Unmute'));
+assert.deepStrictEqual(hits.map(hit => hit.transitionId), ['play-click', 'mute-click', 'unmute-click']);
+assert.ok(transitionSummary(review).includes('focus:e7:Media Play'));
+assert.ok(transitionSummary(review).includes('click:e7:Media Play'));
+assert.ok(transitionSummary(review).includes('click:e9:Media Mute'));
+assert.ok(transitionSummary(review).includes('click:e10:Media Unmute'));
 
 const annotation = {
   steps: review.transitions.map(transition => ({
@@ -59,6 +63,9 @@ assert.deepStrictEqual(included.map(step => step.outcome.taskSucceeded), [false,
 assert.ok(Math.abs(included[0].outcome.progress - (1 / 3)) < 1e-12);
 assert.ok(Math.abs(included[1].outcome.progress - (2 / 3)) < 1e-12);
 assert.strictEqual(included[2].outcome.progress, 1);
-assert.strictEqual(result.steps[0].include, false);
+assert.strictEqual(result.steps.find(step => step.transitionId === 'play-focus').include, false);
+assert.strictEqual(result.steps.find(step => step.transitionId === 'mute-focus').include, false);
+assert.strictEqual(result.steps.find(step => step.transitionId === 'unmute-focus').include, false);
+assert.strictEqual(result.steps.find(step => step.transitionId === 'noise').include, false);
 
 console.log('Strategy multistep play-mute-unmute processor contract: PASS');
