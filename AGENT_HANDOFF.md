@@ -16,6 +16,7 @@ Read this file before changing the repository.
 - No generic `failure => scroll` behavior.
 - Human demonstrations never auto-promote; exact digest confirmation is required before approval annotations are created.
 - Do not change split policy, seed, ratios, or move heldout groups into TRAIN to force PASS.
+- Do not recollect the six teaching tasks to make regression pass.
 
 ## Agent maturity
 
@@ -26,9 +27,10 @@ Read this file before changing the repository.
 - Agent is maturing but not fully autonomous.
 - Baseline v0.2.0 exposed action-sequence + target-grounding weaknesses.
 - Baseline v0.3.0 fixed action-sequence transfer: validation and test both reached `actionTypeAccuracy=1`.
-- Baseline v0.3.1 added generic editable-affordance gating, but the real six-group regression still fails exact target grounding.
-- Current blocker is now narrowly identified as **choosing among multiple semantically editable candidates**, not action sequencing, collector, approval, dataset, or split policy.
-- Immediate next step is a privacy-safe target-grounding diagnostic on the existing validation/test records. Do not change the model again before reading that output.
+- Baseline v0.3.1 added generic editable-affordance gating but still failed exact target grounding.
+- Privacy-safe diagnostic then identified the remaining causes instead of guessing weights.
+- Baseline v0.3.2 is now implemented from those diagnostic findings and repository CI is green.
+- Immediate next gate: rerun the same six-group regression with v0.3.2. This is a regression check, not pristine unseen proof.
 
 ## Collector state — CLOSED
 
@@ -42,7 +44,7 @@ Message Composer proof exists:
 - no pending transition
 - Enter completed
 
-Do **not** recollect Message Composer or the six-task set.
+Do not recollect Message Composer or the six-task set.
 
 ## Six teaching demonstrations
 
@@ -79,7 +81,7 @@ Important commits:
 - `673e3fbb5671dc24b993f342dd0a2f920b0434d9` — generic real editable text mechanics fix
 - `91605b632f7ac8cb7634ce6d53e04754ead7eabd` — real-shape + negative-case contract
 
-Real six-group resolver result:
+Real resolver result:
 
 - candidateEpisodeCount: 6
 - blockedEpisodeCount: 0
@@ -134,23 +136,18 @@ Deterministic split with seed `strategy-episode-v0`:
 - validation: `semantic-sequence:typeText:topic-search>submit:topic-search`
 - test: `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
 
-`baselineReady:true` means the data/split is valid for fitting. It does **not** mean broad Strategy generalization is established.
+`baselineReady:true` means data/split is valid for fitting. It does not establish broad Strategy generalization.
 
 ## Baseline v0.2.0 — genuine FAIL
 
 User ran train-only fitting on HEAD `f0507cc`.
 
-Result:
-
 - validation actionTypeAccuracy=1, exactSemanticAccuracy=0
 - test actionTypeAccuracy=0.5, exactSemanticAccuracy=0
+- Topic Search: correct `typeText -> submit`, wrong target e3 instead of e1
+- Google Search: first action click instead of typeText; target wrong
 
-Observed failures:
-
-- Topic Search predicted correct `typeText -> submit`, wrong target `e3` instead of `e1`
-- Google Search first action was `click` instead of `typeText`; target wrong
-
-This exposed a real model weakness, not collector/split failure.
+This was a genuine model weakness, not collector/split failure.
 
 ## Baseline v0.3.0 — action sequence fixed, target grounding FAIL
 
@@ -161,129 +158,146 @@ Important commits:
 - `478d57511fa82a5992fe62721494c2a2c37481bd`
 - `07cb9f362f78d1b5a6683c6bf2ef3c0b0cbe18fa`
 
-Generic improvements included Unicode/Vietnamese tokenization, task semantic intent, learned target role/tag/editable traits, learned local target continuity, shared fitter/runtime decision engine, and evaluation history based on model predictions.
+Real six-group v0.3.0 regression:
 
-Real six-group v0.3.0 regression on HEAD `6a640f8`:
-
-- validation: actionTypeAccuracy=1, targetRefAccuracy=0, exactSemanticAccuracy=0
-- test: actionTypeAccuracy=1, targetRefAccuracy=0, exactSemanticAccuracy=0
+- validation actionTypeAccuracy=1, targetRefAccuracy=0, exactSemanticAccuracy=0
+- test actionTypeAccuracy=1, targetRefAccuracy=0, exactSemanticAccuracy=0
 - Topic Search: `typeText@e3 -> submit@e3`, expected e1
 - Google Search: `typeText@e15 -> submit@e15`, expected e1
 
-Interpretation: action sequence matured; remaining failure is target grounding. Wrong first target propagates via correct learned submit continuity.
+Action sequencing matured; wrong first target propagated through correct learned target continuity.
 
-## Baseline v0.3.1 — editable affordance gate, real regression still FAIL
+## Baseline v0.3.1 — editable gate, real regression still FAIL
 
 Important commits:
 
-- `539e1cfb6b76fd5da64e7322a531e5d7b7cf7646` — corrected generic editable-affordance provider
-- `04359b288833e1cc046fd371b2ba083402086872` — model version 0.3.1
-- `1b213f60da3537b55b6a95593345b32ace9f307e` — adversarial grounding contract
-- `bda0010d42fca64a386b37fdec1782546394089b` — history contract alignment
+- `539e1cfb6b76fd5da64e7322a531e5d7b7cf7646`
+- `04359b288833e1cc046fd371b2ba083402086872`
+- `1b213f60da3537b55b6a95593345b32ace9f307e`
+- `bda0010d42fca64a386b37fdec1782546394089b`
 
-Generic rule:
+Real v0.3.1 result on HEAD `105efb4`:
 
-- `typeText`, `replaceText`, `clear` require an editable semantic target
-- editable evidence: `editable=true`, role `textbox/searchbox/combobox`, or tag `input/textarea`
-- button/link cannot win a text target only due to label overlap
-- if no editable candidate exists, target chooser returns no target
-- no site/ref hardcode
-
-Repository CI for v0.3.1 implementation:
-
-- strategy-offline-baseline run `33074632606`: success
-- runtime-syntax run `33074632620`: success
-
-User then ran the real six-group v0.3.1 regression on HEAD `105efb4`.
-
-Observed result:
-
-- modelVersion: `0.3.1`
-- overall: FAIL
+- modelVersion `0.3.1`
 - validation actionTypeAccuracy=1, targetRefAccuracy=0, exactSemanticAccuracy=0
 - test actionTypeAccuracy=1, targetRefAccuracy=0, exactSemanticAccuracy=0
-- Topic Search remains `typeText@e3 -> submit@e3`, expected e1
-- Google Search remains `typeText@e15 -> submit@e15`, expected e1
+- selected refs remained e3/e15
 
-Important inference:
+This proved e3/e15 were passing the editable gate; blind weight changes were stopped.
 
-- v0.3.1 did not change the selected refs at all
-- therefore e3/e15 are themselves passing the generic editable-affordance gate
-- the problem is not simply editable-vs-button anymore; it is ranking among multiple editable candidates
-- do not change weights blindly
+## Target-grounding diagnostic — REAL OUTPUT RECEIVED
 
-## Observation schema evidence
-
-Collector semantic observer `training-collector/observer/semantic_observer.js` exports each interactive element with:
-
-- ref
-- tag
-- role
-- redacted label
-- editable
-- enabled
-- rendered
-- inViewport
-- interactable
-- visible
-
-The observation also contains `focusedElementRef`.
-
-Runtime target registry similarly exposes tag/role/label/editable/enabled/visible.
-
-This makes `focusedElementRef`, `inViewport`, and `interactable` plausible generic grounding signals, but do **not** add them to the model until the real diagnostic below confirms how e1/e3/e15 differ.
-
-## Target grounding diagnostic — READY, CI PASS
-
-New tool:
+Tool:
 
 `training-collector/tools/diagnose_strategy_target_grounding.js`
 
-Commits:
+Diagnostic version `0.1.0`.
 
-- `c23c9915a13659de32f28b8cbfec8d2c317bc1fd` — privacy-safe target grounding diagnostic
-- `6575ab75e6bcf51935595a959d91e154ff54a865` — diagnostic privacy contract
-- `5653c4a1a07a8b561776075c1659dfdd63bc34c7` — corrected privacy assertion contract
+Privacy guarantees remained true:
 
-Final CI:
+- rawLabelsIncluded false
+- typedValuesIncluded false
+- selectorsIncluded false
+- coordinatesIncluded false
+- tabIdsIncluded false
+- rawCdpIncluded false
 
-- strategy-offline-baseline run `33075367261`: completed success
-- runtime-syntax run `33075367110`: completed success
+### Validation / Topic Search
 
-Diagnostic version: `0.1.0`.
+Expected typeText target e1 versus predicted e3:
 
-Default output only inspects `typeText` steps from validation/test and includes per candidate:
+- `focusedElementRefPresent:false`; focus is not a useful signal here
+- both e1 and e3: tag=input, role=null, editable=true, enabled/visible/rendered/inViewport/interactable=true
+- both affordanceEligible=true
+- e1: taskLabelSimilarity `0.222222...`, prototypeLabelSimilarity `0`, traitScore `1`, compatibility `0.45`
+- e3: taskLabelSimilarity `0`, prototypeLabelSimilarity `1`, traitScore `1`, compatibility `0.55`
 
-- ref
-- expected/predicted/focused booleans
-- tag/role/editable/enabled/visible/rendered/inViewport/interactable
-- affordance eligibility
-- label token count only (no raw label)
-- task-label similarity
-- prototype-label similarity
-- trait score
-- compatibility score
+Interpretation: e3 won solely because its label matched TRAIN prototype memory, while the current task named e1. TRAIN-local target label was too dominant for cross-family grounding.
 
-Privacy contract guarantees diagnostic output omits:
+### Test / Google Search
 
-- raw labels
-- typed values
-- selectors
-- coordinates
-- tab IDs
-- raw CDP
+Expected typeText target e1 versus predicted e15:
+
+- `focusedElementRefPresent:false`
+- e1: textarea, role=combobox, editable=true, taskLabelSimilarity `0.181818...`, prototypeLabelSimilarity `0`, traitScore `0.5`, compatibility `0.256818...`
+- e15: input, role=button, **editable=true**, taskLabelSimilarity `0.272727...`, traitScore `1`, compatibility `0.472727...`
+- another e151 had the same stale input/role=button/editable=true shape
+- other generic input candidates had taskLabelSimilarity `0.0625`, traitScore `1`
+
+Interpretation identified two generic issues:
+
+1. collector semantic observer classified every input/select as editable; input controls with button semantics could therefore become text targets
+2. exact TRAIN tag/role shape and TRAIN target-label memory were stronger than direct current-task target evidence
+
+Focus was explicitly ruled out as the fix.
+
+## Baseline v0.3.2 — diagnostic-driven generic grounding, CI PASS
+
+Important commits:
+
+- `310321606a2c87e65e2b8c444e349f3028de3d59` — collector text-editable semantic classification fix
+- `c1d2b1b75b5f6952004e23b13d0c3f8c375c8776` — current-task-dominant text target grounding + stale semantic-role veto
+- `0a85e5f1bdb653da9b52f2adce0d5a9da0b67192` — baseline model version `0.3.2`
+- `0271f8aff1bd59367f66127625a4253c81b4df52` — diagnostic-derived generic transfer contract
+- `b80e8f41fef9f43f4d3598a8456c9456e1b42674` — history contract alignment
+
+### Collector semantic fix
+
+`training-collector/observer/semantic_observer.js` schema is now `0.5.1`.
+
+- textarea and contenteditable remain text-editable
+- normal text-like input types remain text-editable
+- select is not a text-entry target
+- input types button/checkbox/color/file/hidden/image/radio/range/reset/submit are not text-entry targets
+- inputType is emitted as semantic observation metadata for future captures
+
+### Strategy grounding fix
+
+For `typeText`, `replaceText`, `clear`:
+
+- explicit non-text roles such as button/link/checkbox/radio/switch/slider/etc. veto stale `editable:true`
+- non-text input types veto text target eligibility when inputType is available
+- old snapshots remain compatible: input/textarea can still be recognized when inputType was not recorded
+- among eligible text targets, current-task label semantics dominate ranking
+- learned tag/role traits and TRAIN target labels are supporting evidence only
+- text-target compatibility weights: current task 0.80, learned traits 0.10, learned target label 0.10
+- non-text action target scoring remains unchanged
+- learned submit target continuity remains unchanged
+- no e1/e3/e15, site name, URL, selector, coordinate, tabId, or raw CDP hardcode
+- focus was not added as a rule because real diagnostic showed it absent
+
+Model v0.3.2 records:
+
+`targetGroundingPolicy: current-task-dominant-with-action-affordance`
+
+### Generic contract coverage
+
+Synthetic contract proves:
+
+- input text/search and textarea/contenteditable are text-editable
+- select, input button/submit/checkbox are not text-editable
+- stale `editable:true` on `input role=button` cannot win typeText
+- a target named by the current task beats a different editable target whose label exactly matches TRAIN
+- textarea/combobox named by current task can beat a generic input whose structural traits match TRAIN better
+- sequential typeText -> submit continuity still works
+- privacy/model serialization invariants remain intact
+
+CI on HEAD `b80e8f41fef9f43f4d3598a8456c9456e1b42674`:
+
+- strategy-offline-baseline run `33076663823`: completed success
+- runtime-syntax run `33076663685`: completed success
 
 ## Evaluation methodology
 
 Topic Search and Google Search were originally valid heldout records. Their failures have now influenced generic model redesigns, so repeated runs are regression checks rather than pristine unseen proofs.
 
-After this regression family eventually passes, use a fresh unseen family/native mission before claiming broader generalization.
+If v0.3.2 regression passes, use a fresh unseen family/native mission before claiming broader generalization.
 
 Do not recollect/relabel the existing six to manufacture a new heldout claim.
 
-## Immediate next step — run diagnostic only
+## Immediate next step — v0.3.2 six-group regression
 
-Do **not** rerun collector, resolver, approval, dataset builder, or baseline fit yet.
+Do not rerun collector, resolver, approval, or dataset builder.
 
 Windows CMD:
 
@@ -294,20 +308,20 @@ git rev-parse --short HEAD
 
 set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
 
-node training-collector\tools\diagnose_strategy_target_grounding.js "%SIX%\strategy-approved-dataset-v03\dataset"
+node training-collector\tools\fit_strategy_offline_baseline.js "%SIX%\strategy-approved-dataset-v03\dataset" --output "%SIX%\strategy-approved-dataset-v03\baseline-v032"
+
+type "%SIX%\strategy-approved-dataset-v03\baseline-v032\evaluation.json"
 ```
 
-Expected HEAD after this handoff commit will be newer than `5653c4a`.
+Desired regression target, without forcing it:
 
-When user sends diagnostic output:
+- modelVersion `0.3.2`
+- result PASS
+- validation actionTypeAccuracy=1, targetRefAccuracy=1, exactSemanticAccuracy=1
+- test actionTypeAccuracy=1, targetRefAccuracy=1, exactSemanticAccuracy=1
 
-1. compare expected e1 with predicted e3/e15 on each typeText step
-2. inspect `isFocusedTarget`, `inViewport`, `interactable`, role/tag/editable, and similarity scores
-3. identify the smallest generic semantic signal that distinguishes correct from wrong candidate
-4. update fitter + runtime provider together
-5. add generic positive + negative contract
-6. require Strategy CI + runtime syntax PASS
-7. rerun six-group regression only after the generic fix passes CI
-8. do not alter split policy
+If v0.3.2 still fails, inspect the actual remaining candidate pattern; do not change split policy or recollect the six.
+
+If v0.3.2 passes, next gate is fresh unseen proof, then learned Strategy + learned Behavior runtime integration, native long mission, multi-subgoal, replan, recovery, and semantic memory validation.
 
 Never promote to `main` without explicit user approval after verified PASS.
