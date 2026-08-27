@@ -197,6 +197,19 @@ function evaluateResult(result, strategy, modelHashBefore, modelHashAfter, trans
   };
 }
 
+function withCleanupStatus(summary, tabClosed) {
+  if (!summary) return summary;
+  const errors = [...(summary.errors || [])];
+  if (!tabClosed) errors.push('created_tab_cleanup_failed');
+  return {
+    ...summary,
+    ok: errors.length === 0,
+    result: errors.length === 0 ? 'PASS' : 'FAIL',
+    createdTabClosed: tabClosed === true,
+    errors
+  };
+}
+
 async function activeAnchorTab(client) {
   const visible = await client.listTabs({ mode: 'visible' });
   const active = visible.find(tab => tab?.active === true) || visible[0];
@@ -232,6 +245,7 @@ async function runGate(options = {}) {
   let client = null;
   let createdTabId = null;
   let tabClosed = false;
+  let summary = null;
 
   try {
     const port = await listen(server);
@@ -275,8 +289,7 @@ async function runGate(options = {}) {
       }
     });
     const modelHashAfter = sha256File(modelFile);
-    const summary = evaluateResult(result, strategy, modelHashBefore, modelHashAfter, transientText);
-    return { ...summary, createdTabClosed: false };
+    summary = evaluateResult(result, strategy, modelHashBefore, modelHashAfter, transientText);
   } finally {
     if (client && Number.isInteger(createdTabId) && createdTabId > 0) {
       try {
@@ -289,10 +302,9 @@ async function runGate(options = {}) {
     }
     try { client?.close(); } catch (_) {}
     await closeServer(server);
-    // `tabClosed` is intentionally not emitted here because return evaluation occurs before finally.
-    // main() verifies cleanup independently after runGate via its returned semantic result only.
-    void tabClosed;
   }
+
+  return withCleanupStatus(summary, tabClosed);
 }
 
 async function main(argv = process.argv.slice(2)) {
@@ -339,6 +351,7 @@ module.exports = {
   targetLabel,
   publicStep,
   evaluateResult,
+  withCleanupStatus,
   activeAnchorTab,
   waitForLab,
   runGate,
