@@ -30,7 +30,7 @@ function main() {
   const controller = createMissionController(plan);
   assert.equal(controller.progress().progress, 0);
   assert.equal(controller.startNext().subgoalId, 'mission-demo:sg-1');
-  assert.throws(() => controller.startNext(), /mission_multiple_active|mission_active|mission_subgoal/);
+  assert.equal(controller.startNext().subgoalId, 'mission-demo:sg-1', 'starting while active should be idempotent');
   let progress = controller.finishCurrent('done');
   assert.equal(progress.done, 1);
   assert.equal(progress.progress, 1 / 3);
