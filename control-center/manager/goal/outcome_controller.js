@@ -35,7 +35,8 @@ function actionEffectFor(outcome) {
   const codes = Array.isArray(outcome?.metadata?.actionEffectCodes)
     ? outcome.metadata.actionEffectCodes.map(value => String(value))
     : [];
-  return { status: status || null, codes };
+  const expected = outcome?.metadata?.actionEffectExpected === true;
+  return { status: status || null, codes, expected };
 }
 
 function reduceOutcomeToControl(input = {}) {
@@ -65,7 +66,7 @@ function reduceOutcomeToControl(input = {}) {
     terminal = false;
     shouldReplan = true;
     reasonCode = outcome.errorCode || 'action_execution_failed';
-  } else if (effect.status === 'no_effect' && progressDelta <= 0) {
+  } else if (effect.expected && effect.status === 'no_effect' && progressDelta <= 0) {
     status = 'failed';
     terminal = false;
     shouldReplan = true;
@@ -89,6 +90,7 @@ function reduceOutcomeToControl(input = {}) {
     progressDelta,
     effectStatus: effect.status,
     effectCodes: effect.codes,
+    effectExpected: effect.expected,
     errorCode: outcome.errorCode,
     blockerReasonCode: blocker?.reasonCode || null
   };
