@@ -4,7 +4,8 @@ const assert = require('assert');
 const {
   fitBaseline,
   predictAction,
-  evaluateHeldOut
+  evaluateHeldOut,
+  chooseTargetRef
 } = require('../tools/fit_strategy_offline_baseline.js');
 
 function observation() {
@@ -69,6 +70,22 @@ function formRecord(id, instruction, fieldRef, fieldLabel, suffix) {
   };
 }
 
+function adversarialFormObservation() {
+  const instruction = 'Type hidden value into Destination and press Enter';
+  return {
+    instruction,
+    observation: {
+      observationId: 'form-adversarial',
+      interactiveElements: [
+        { ref: 'editable-destination', label: 'Destination', role: 'textbox', tag: 'input', editable: true, visible: true, enabled: true },
+        { ref: 'label-distractor', label: instruction, role: 'button', tag: 'button', editable: false, visible: true, enabled: true },
+        { ref: 'help-distractor', label: 'Destination Help', role: 'link', tag: 'a', editable: false, visible: true, enabled: true }
+      ],
+      privacy: { redacted: true }
+    }
+  };
+}
+
 const train = [
   record('train-click', 'Click Submit Target', 'click', 'e4'),
   record('train-pause', 'Pause Media', 'pause', 'e8'),
@@ -80,7 +97,7 @@ const train = [
 ];
 
 const model = fitBaseline(train);
-assert.strictEqual(model.modelVersion, '0.3.0');
+assert.strictEqual(model.modelVersion, '0.3.1');
 assert.strictEqual(model.fitSource, 'train-only');
 assert.strictEqual(model.heldOutUsedForFit, false);
 assert.strictEqual(model.localTargetRefsPersisted, false);
@@ -112,6 +129,31 @@ const second = predictAction(
 );
 assert.strictEqual(second.action.type, 'submit');
 assert.strictEqual(second.action.targetRef, 'heldout-field');
+
+const adversarial = adversarialFormObservation();
+const adversarialFirst = predictAction(
+  model,
+  { instruction: adversarial.instruction },
+  adversarial.observation,
+  []
+);
+assert.strictEqual(adversarialFirst.action.type, 'typeText');
+assert.strictEqual(adversarialFirst.action.targetRef, 'editable-destination');
+
+const typeTextProto = model.actionPrototypes.find(proto => proto.type === 'typeText');
+assert.ok(typeTextProto);
+assert.strictEqual(chooseTargetRef(
+  typeTextProto,
+  { instruction: adversarial.instruction },
+  {
+    observationId: 'no-editable-target',
+    interactiveElements: [
+      { ref: 'button-only', label: adversarial.instruction, role: 'button', tag: 'button', editable: false, visible: true, enabled: true }
+    ],
+    privacy: { redacted: true }
+  },
+  []
+), null);
 
 const validationForm = formRecord(
   'validation-form',
