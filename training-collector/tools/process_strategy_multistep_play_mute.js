@@ -15,12 +15,45 @@ const SEQUENCE = [
   { type: 'mute', label: 'Media Mute', progress: 1, taskSucceeded: true }
 ];
 
+const MAX_SCAN_DEPTH = 5;
+const SKIP_DIRS = new Set(['.git', 'node_modules']);
+
 function die(message) {
   throw new Error(message);
 }
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+function normalizeInstruction(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+const TASK_BY_NORMALIZED = new Map(
+  Object.entries(TASKS).map(([instruction, cfg]) => [normalizeInstruction(instruction), { instruction, cfg }])
+);
+
+function collectReviewFiles(root, out, depth = 0) {
+  if (depth > MAX_SCAN_DEPTH) return;
+  let entries;
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch (_) {
+    return;
+  }
+  for (const entry of entries) {
+    const full = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      if (!SKIP_DIRS.has(entry.name)) collectReviewFiles(full, out, depth + 1);
+    } else if (entry.isFile() && entry.name.endsWith('.task-episode-review.json')) {
+      out.push(full);
+    }
+  }
 }
 
 function discoverInputs(args) {
@@ -30,13 +63,8 @@ function discoverInputs(args) {
     const resolved = path.resolve(input);
     if (!fs.existsSync(resolved)) die(`input_not_found: ${resolved}`);
     const stat = fs.statSync(resolved);
-    if (stat.isDirectory()) {
-      for (const name of fs.readdirSync(resolved)) {
-        if (name.endsWith('.task-episode-review.json')) out.push(path.join(resolved, name));
-      }
-    } else if (resolved.endsWith('.task-episode-review.json')) {
-      out.push(resolved);
-    }
+    if (stat.isDirectory()) collectReviewFiles(resolved, out);
+    else if (resolved.endsWith('.task-episode-review.json')) out.push(resolved);
   }
   if (!out.length) die('no_task_episode_review_files_found');
   return [...new Set(out)];
@@ -44,15 +72,26 @@ function discoverInputs(args) {
 
 function selectLatestTaskFiles(files) {
   const latest = new Map();
+  const discoveredInstructions = new Set();
   for (const file of files) {
-    const review = readJson(file);
-    const instruction = String(review?.task?.instruction || '').trim();
-    if (!TASKS[instruction]) continue;
+    let review;
+    try {
+      review = readJson(file);
+    } catch (_) {
+      continue;
+    }
+    const rawInstruction = String(review?.task?.instruction || '').trim();
+    if (rawInstruction) discoveredInstructions.add(rawInstruction);
+    const matched = TASK_BY_NORMALIZED.get(normalizeInstruction(rawInstruction));
+    if (!matched) continue;
+    const instruction = matched.instruction;
     const stamp = Date.parse(review.exportedAt || review.endedAt || '') || fs.statSync(file).mtimeMs;
     const prior = latest.get(instruction);
     if (!prior || stamp > prior.stamp) latest.set(instruction, { file, review, stamp });
   }
-  return [...latest.entries()].map(([instruction, value]) => ({ instruction, ...value }));
+  const items = [...latest.entries()].map(([instruction, value]) => ({ instruction, ...value }));
+  items.discoveredInstructions = [...discoveredInstructions].sort();
+  return items;
 }
 
 function transitionTargetLabel(transition) {
@@ -157,6 +196,7 @@ function processItem(item, repoRoot, sourceDir) {
   const adapter = path.join(tools, 'adapt_task_episode_review.js');
 
   console.log(`\n[${item.instruction}] play -> mute`);
+  console.log(`INPUT: ${item.file}`);
   runNode(checker, [item.file]);
   runNode(maker, [item.file]);
 
@@ -184,7 +224,12 @@ function main(argv = process.argv.slice(2)) {
     const files = discoverInputs(argv);
     const items = selectLatestTaskFiles(files);
     const missing = Object.keys(TASKS).filter(instruction => !items.some(item => item.instruction === instruction));
-    if (missing.length) die(`missing_multistep_tasks: ${missing.join(' | ')}`);
+    if (missing.length) {
+      const found = items.discoveredInstructions || [];
+      console.error(`DISCOVERED REVIEW FILES: ${files.length}`);
+      console.error(`DISCOVERED TASKS: ${found.length ? found.join(' | ') : '<none>'}`);
+      die(`missing_multistep_tasks: ${missing.join(' | ')}`);
+    }
 
     const repoRoot = path.resolve(__dirname, '..', '..');
     const root = path.join(repoRoot, 'training-collector', 'strategy-data', 'multistep-v01');
@@ -213,6 +258,9 @@ if (require.main === module) main();
 module.exports = {
   TASKS,
   SEQUENCE,
+  MAX_SCAN_DEPTH,
+  normalizeInstruction,
+  collectReviewFiles,
   discoverInputs,
   selectLatestTaskFiles,
   transitionTargetLabel,
