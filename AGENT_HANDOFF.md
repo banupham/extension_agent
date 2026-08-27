@@ -51,14 +51,20 @@ Important observations for the next processing stage:
 - Episode 3 cleanly records two semantically labeled actions: `Mission Atlas` followed by `Mission Orion`, with page transitions to `/mission/atlas` then `/mission/orion`.
 - Raw review exports are local teaching evidence and must not be committed to GitHub; only safe aggregate checkpoint metadata belongs in this handoff.
 
+## Current code adjustment for this batch
+
+Commit `ffb9752e490a27879c06ec6572270d99dad9053e` updates Strategy review-pack action hints so current collector action kinds `text-key`, `key`, `text-change`, and `change` enter the correct human-review ambiguity path rather than becoming missing-hint records. This does not auto-label typed text and does not auto-approve anything.
+
+GitHub Actions run `33063977132` was started for this change; check its final result before treating the patch as proven.
+
 ## Immediate next action
 
-On the user's machine, place only these three new review exports into a fresh local review folder, then run:
+On the user's machine, place only these three new review exports into a fresh local folder outside the Git repo, then run:
 
-1. `prepare_human_learning_batch.js` with that review folder and current `training-collector/socket-data`;
+1. `prepare_human_learning_batch.js` with that review folder;
 2. `prepare_strategy_review_pack.js` from the resulting manifest;
 3. `score_strategy_review_pack.js`;
-4. `backfill_strategy_episode_provenance.js` against the new review pack and current raw socket data.
+4. `backfill_strategy_episode_provenance.js` against the new review pack and current `training-collector/socket-data`.
 
 The immediate success signal is `provenanceAnchorCount > 0`. If ambiguous click evidence exists in the new pack, check whether at least some of it now yields `recoveredSemanticTargetCount > 0`.
 
