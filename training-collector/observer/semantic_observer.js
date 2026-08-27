@@ -10,6 +10,32 @@
   const fallbackRefs = new WeakMap();
   let fallbackNextRef = 1;
 
+  const NON_TEXT_INPUT_TYPES = new Set([
+    'button',
+    'checkbox',
+    'color',
+    'file',
+    'hidden',
+    'image',
+    'radio',
+    'range',
+    'reset',
+    'submit'
+  ]);
+
+  function normalizedInputType(value) {
+    const type = String(value || '').trim().toLowerCase();
+    return type || 'text';
+  }
+
+  function textEntryEditableFromSemantics({ tag, inputType = null, isContentEditable = false } = {}) {
+    const normalizedTag = String(tag || '').trim().toLowerCase();
+    if (isContentEditable === true) return true;
+    if (normalizedTag === 'textarea') return true;
+    if (normalizedTag !== 'input') return false;
+    return !NON_TEXT_INPUT_TYPES.has(normalizedInputType(inputType));
+  }
+
   function getRef(el) {
     if (!(el instanceof Element)) return null;
     if (registry) return registry.getRef(el);
@@ -75,13 +101,19 @@
     const state = renderState(el);
     const label = meta.ariaLabel || meta.placeholder || meta.label || '';
     const tag = el.tagName.toLowerCase();
+    const inputType = tag === 'input' ? normalizedInputType(meta.type) : null;
     const candidates = selectorCandidates(el);
     return {
       ref: getRef(el),
       tag,
       role: el.getAttribute('role') || null,
       label: Privacy.redactText(label, false),
-      editable: !!(el.isContentEditable || ['input', 'textarea', 'select'].includes(tag)),
+      editable: textEntryEditableFromSemantics({
+        tag,
+        inputType,
+        isContentEditable: el.isContentEditable === true
+      }),
+      inputType,
       enabled: state.enabled,
       rendered: state.rendered,
       inViewport: state.inViewport,
@@ -101,7 +133,7 @@
       .filter(el => renderState(el).rendered).slice(0, 500);
     const active = document.activeElement && document.activeElement !== document.body && !isSensitive(document.activeElement) ? document.activeElement : null;
     return {
-      schemaVersion: '0.5.0',
+      schemaVersion: '0.5.1',
       pageInstanceId: NS2.pageInstanceId,
       page: Privacy.sanitizeUrl(location.href),
       titleMetrics: Privacy.safePageTitle(document.title),
@@ -113,5 +145,15 @@
     };
   }
 
-  NS2.SemanticObserver = { getRef, semanticElement, snapshot, cssSelector, selectorCandidates, renderState, isSensitive };
+  NS2.SemanticObserver = {
+    getRef,
+    semanticElement,
+    snapshot,
+    cssSelector,
+    selectorCandidates,
+    renderState,
+    isSensitive,
+    normalizedInputType,
+    textEntryEditableFromSemantics
+  };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
