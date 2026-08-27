@@ -16,8 +16,12 @@ const {
   appendRecoveryRecords
 } = require('../strategy/recovery_policy_memory.js');
 const { recordRecoveryOutcomes } = require('../strategy/recovery_outcome_memory.js');
+const {
+  DEFAULT_RECOVERY_HALF_LIFE_MS,
+  consolidateRecoveryOutcomeMemory
+} = require('../strategy/recovery_memory_consolidation.js');
 
-const RECOVERY_EXPLORATION_LEARNING_VERSION = '0.3.0';
+const RECOVERY_EXPLORATION_LEARNING_VERSION = '0.4.0';
 
 function firstUsefulRecoveryIndex(steps, triggerIndex) {
   for (let index = triggerIndex + 1; index < steps.length; index += 1) {
@@ -97,8 +101,12 @@ function learnExploratoryRecoveryFromSuccessfulEpisode({ file, task, result, lea
   if (!file) throw new Error('recovery_exploration_memory_file_required');
   const records = buildExploratoryRecoveryRecords({ task, result, learnedAt });
   const write = appendRecoveryRecords(file, records);
+  const newlyLearned = Number(write?.appended || 0) > 0;
+  const reinforced = Number(write?.duplicates || 0) > 0;
   return {
     learned: records.length > 0,
+    newlyLearned,
+    reinforced,
     records,
     recordIds: records.map(record => record.recoveryId),
     write
@@ -145,6 +153,8 @@ async function executeRecoveryExplorationLearningEpisode(input = {}) {
   let recoveryLearning = {
     attempted: false,
     learned: false,
+    newlyLearned: false,
+    reinforced: false,
     reasonCode: 'episode_not_successful',
     records: [],
     recordIds: [],
@@ -164,18 +174,34 @@ async function executeRecoveryExplorationLearningEpisode(input = {}) {
     recoveryLearning = {
       attempted: true,
       learned: learned.learned,
-      reasonCode: learned.learned ? 'exploratory_recovery_learned' : 'no_recovery_transition_found',
+      newlyLearned: learned.newlyLearned,
+      reinforced: learned.reinforced,
+      reasonCode: learned.newlyLearned
+        ? 'exploratory_recovery_learned'
+        : learned.reinforced
+          ? 'exploratory_recovery_reinforced'
+          : 'no_recovery_transition_found',
       records: learned.records,
       recordIds: learned.recordIds,
       write: learned.write
     };
   }
 
+  const recoveryMemoryMaintenance = input.recoveryOutcomeSummaryFile && input.recoveryOutcomeMemoryFile
+    ? consolidateRecoveryOutcomeMemory({
+      rawFile: input.recoveryOutcomeMemoryFile,
+      summaryFile: input.recoveryOutcomeSummaryFile,
+      halfLifeMs: input.recoveryOutcomeHalfLifeMs || DEFAULT_RECOVERY_HALF_LIFE_MS,
+      consumeRaw: input.consumeRecoveryOutcomeRaw !== false
+    })
+    : null;
+
   return {
     ...result,
     recoveryExplorationLearningVersion: RECOVERY_EXPLORATION_LEARNING_VERSION,
     recoveryLearning,
-    recoveryOutcomeLearning
+    recoveryOutcomeLearning,
+    recoveryMemoryMaintenance
   };
 }
 
