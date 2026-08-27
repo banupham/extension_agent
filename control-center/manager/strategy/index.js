@@ -53,5 +53,6 @@ module.exports = {
   ...require('./recovery_exploration_provider'),
   ...require('./recovery_outcome_memory'),
   ...require('./recovery_memory_consolidation'),
-  ...require('./adaptive_recovery_provider')
+  ...require('./adaptive_recovery_provider'),
+  ...require('./recovery_transfer_provider')
 };
