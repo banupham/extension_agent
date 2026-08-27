@@ -276,16 +276,23 @@ function scorePrototypes(prototypes, task, observation = null) {
     const targetLabelScore = bestSimilarity(taskTokens, proto.targetLabels);
     const featureScore = taskFeatureScore(proto, task);
     const semanticTargetScore = observation ? bestTargetCompatibility(proto, task, observation) : 0.5;
-    const score = (0.12 * instructionScore) +
-      (0.08 * targetLabelScore) +
-      (0.45 * featureScore) +
-      (0.35 * semanticTargetScore);
-    return { proto, score, instructionScore, targetLabelScore, featureScore, semanticTargetScore };
+
+    // Action selection is intentionally task/history-level. Target labels, target traits and
+    // current observation target-ranking quality stay diagnostic/grounding evidence only.
+    // This prevents a target-grounding policy change from flipping WHAT action the agent picks.
+    const score = (0.50 * instructionScore) + (0.50 * featureScore);
+    return {
+      proto,
+      score,
+      instructionScore,
+      targetLabelScore,
+      featureScore,
+      semanticTargetScore,
+      actionSelectionTargetIndependent: true
+    };
   }).sort((a, b) => (
     b.score - a.score ||
     b.featureScore - a.featureScore ||
-    b.semanticTargetScore - a.semanticTargetScore ||
-    b.targetLabelScore - a.targetLabelScore ||
     b.instructionScore - a.instructionScore ||
     a.proto.type.localeCompare(b.proto.type)
   ));
@@ -441,6 +448,7 @@ function decisionMetadata(model, chosen) {
     targetLabelScore: chosen.targetLabelScore,
     taskFeatureScore: chosen.featureScore,
     semanticTargetScore: chosen.semanticTargetScore,
+    actionSelectionTargetIndependent: chosen.actionSelectionTargetIndependent === true,
     historyMatched: chosen.historyMatched,
     compositionMatched: chosen.compositionMatched === true,
     compositionSequence: chosen.compositionSequence || [],
