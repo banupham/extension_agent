@@ -42,9 +42,9 @@ function actionTypeHint(rawAction = {}) {
   if (kind === 'dom-focus' || kind === 'focus') return 'focus';
   if (kind === 'dom-submit' || kind === 'submit') return 'submit';
   if (kind.startsWith('dom-hover') || kind.includes('hover')) return 'hoverAndObserve';
-  if (kind === 'dom-change') return 'form-control-review-required';
-  if (kind === 'dom-input') return 'text-action-review-required';
-  if (kind === 'keyboard') return 'keyboard-action-review-required';
+  if (kind === 'dom-change' || kind === 'change') return 'form-control-review-required';
+  if (kind === 'dom-input' || kind === 'text-change') return 'text-action-review-required';
+  if (kind === 'keyboard' || kind === 'key' || kind === 'text-key') return 'keyboard-action-review-required';
   if (kind === 'wheel' || kind.includes('scroll')) return 'scroll-direction-review-required';
   return null;
 }
