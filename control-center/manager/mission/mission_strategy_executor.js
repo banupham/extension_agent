@@ -4,8 +4,9 @@ const { validateTask } = require('../strategy/contracts.js');
 const { executeBoundedEpisodeLoop } = require('../agent/bounded_episode_loop.js');
 const { executeMission } = require('./mission_executor.js');
 const { createSemanticMissionInterpreter } = require('./semantic_mission_interpreter.js');
+const { createSemanticGoalResolver } = require('./semantic_goal_resolver.js');
 
-const MISSION_STRATEGY_EXECUTOR_VERSION = '0.1.0';
+const MISSION_STRATEGY_EXECUTOR_VERSION = '0.2.0';
 
 function semanticBySubgoal(semanticMission) {
   return new Map((Array.isArray(semanticMission?.subgoals) ? semanticMission.subgoals : [])
@@ -26,10 +27,13 @@ function validateResolverTask(rawTask, subgoal) {
 async function executeMissionWithStrategy(input = {}) {
   if (!input.plan) throw new Error('mission_strategy_plan_required');
   if (!input.runtime) throw new Error('mission_strategy_runtime_required');
-  if (typeof input.resolveSubgoalTask !== 'function') throw new Error('mission_strategy_task_resolver_required');
   if (!input.strategy && typeof input.createStrategy !== 'function') throw new Error('mission_strategy_provider_required');
 
   const interpreter = input.interpreter || createSemanticMissionInterpreter();
+  const goalResolver = input.goalResolver || createSemanticGoalResolver();
+  const resolveSubgoalTask = typeof input.resolveSubgoalTask === 'function'
+    ? input.resolveSubgoalTask
+    : args => goalResolver.resolveSubgoalTask(args);
   const semanticMission = await interpreter.interpretPlan(input.plan);
   const semantics = semanticBySubgoal(semanticMission);
 
@@ -38,7 +42,7 @@ async function executeMissionWithStrategy(input = {}) {
     budgets: input.missionBudgets,
     executeSubgoal: async ({ mission, subgoal, subgoalIndex }) => {
       const semantic = semantics.get(subgoal.subgoalId) || null;
-      const rawTask = await input.resolveSubgoalTask({ mission, subgoal, semantic, subgoalIndex });
+      const rawTask = await resolveSubgoalTask({ mission, subgoal, semantic, subgoalIndex });
       const task = validateResolverTask(rawTask, subgoal);
       const strategy = typeof input.createStrategy === 'function'
         ? await input.createStrategy({ mission, subgoal, semantic, task, subgoalIndex })
@@ -57,7 +61,9 @@ async function executeMissionWithStrategy(input = {}) {
         missionSubgoal: {
           subgoalId: subgoal.subgoalId,
           instruction: subgoal.instruction,
-          semantic
+          semantic,
+          semanticGoalState: task.metadata?.semanticGoalState || null,
+          semanticGoalResolutionSource: task.metadata?.semanticGoalResolutionSource || null
         }
       };
     }
@@ -72,7 +78,10 @@ async function executeMissionWithStrategy(input = {}) {
       semanticSubgoalCountMatchesPlan: semanticMission.subgoals.length === missionResult.plan.subgoals.length,
       allCompletedSubgoalsUsedGoalCheckedEpisodes: missionResult.subgoalResults
         .filter(item => item.status === 'done')
-        .every(item => item?.result?.finalBudget?.reasonCode === 'goal_satisfied')
+        .every(item => item?.result?.finalBudget?.reasonCode === 'goal_satisfied'),
+      noPassTitleCriterionRequired: missionResult.subgoalResults
+        .filter(item => item.status === 'done')
+        .every(item => item?.result?.task?.metadata?.titlePassCriterionRequired !== true)
     }
   };
 }
