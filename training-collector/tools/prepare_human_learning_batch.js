@@ -8,7 +8,7 @@ const Windows = require('./build_action_windows.js');
 const Features = require('./extract_behavior_features.js');
 const { collectFiles, curateSession } = require('./curate_random_human_data.js');
 
-const BATCH_VERSION = '0.1.0';
+const BATCH_VERSION = '0.2.0';
 const CONTEXT_FORBIDDEN_KEYS = new Set([
   'tabId', 'windowId', 'frameId', 'documentId', 'pageInstanceId',
   'selector', 'selectors', 'targetRef', 'elementRef', 'privateReasoning', 'chainOfThought'
@@ -100,15 +100,37 @@ function reviewQueueItem(file, review) {
   };
 }
 
+function quarantineDiagnostics(curation) {
+  const keyCounts = {};
+  let quarantinedEvents = 0;
+  for (const item of Array.isArray(curation?.eventManifest) ? curation.eventManifest : []) {
+    if (item?.quarantine !== true) continue;
+    quarantinedEvents += 1;
+    for (const key of Array.isArray(item.sensitiveKeyNames) ? item.sensitiveKeyNames : []) {
+      const safeKey = String(key || '').trim();
+      if (!safeKey) continue;
+      keyCounts[safeKey] = (keyCounts[safeKey] || 0) + 1;
+    }
+  }
+  return {
+    quarantinedEventCount: quarantinedEvents,
+    sensitiveKeyNames: Object.keys(keyCounts).sort(),
+    sensitiveKeyCounts: keyCounts,
+    rawSensitiveValuesCopied: false
+  };
+}
+
 function prepareBehaviorFile(file, outputDir) {
   const raw = Semantics.readRaw(file);
   const curation = curateSession(raw);
   if (!curation.behavior.eligibleForBehaviorFeatureExtraction) {
+    const diagnostics = quarantineDiagnostics(curation);
     return {
       file: path.relative(process.cwd(), file),
-      status: 'quarantined',
+      status: curation.privacy.quarantinedEventCount ? 'quarantined' : 'no-behavior-candidates',
       reasonCode: curation.privacy.quarantinedEventCount ? 'privacy_quarantine' : 'no_behavior_candidates',
       quarantinedEventCount: curation.privacy.quarantinedEventCount,
+      quarantineDiagnostics: diagnostics,
       featureRows: 0,
       output: null
     };
@@ -121,6 +143,7 @@ function prepareBehaviorFile(file, outputDir) {
       status: 'no-derived-actions',
       reasonCode: 'no_supported_behavior_windows',
       quarantinedEventCount: 0,
+      quarantineDiagnostics: quarantineDiagnostics(curation),
       featureRows: 0,
       output: null
     };
@@ -134,10 +157,31 @@ function prepareBehaviorFile(file, outputDir) {
     status: 'behavior-features-ready',
     reasonCode: 'privacy_safe_derived_behavior',
     quarantinedEventCount: 0,
+    quarantineDiagnostics: quarantineDiagnostics(curation),
     featureRows: features.rows.length,
     counts: features.counts,
     output: path.relative(process.cwd(), output)
   };
+}
+
+function aggregateActionCounts(sessions) {
+  const counts = {};
+  for (const session of sessions) {
+    for (const [type, count] of Object.entries(session?.counts || {})) {
+      counts[type] = (counts[type] || 0) + Number(count || 0);
+    }
+  }
+  return Object.fromEntries(Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0])));
+}
+
+function aggregateQuarantineKeys(sessions) {
+  const counts = {};
+  for (const session of sessions) {
+    for (const [key, count] of Object.entries(session?.quarantineDiagnostics?.sensitiveKeyCounts || {})) {
+      counts[key] = (counts[key] || 0) + Number(count || 0);
+    }
+  }
+  return Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
 }
 
 function prepareBatch(options = {}) {
@@ -177,6 +221,8 @@ function prepareBatch(options = {}) {
       readySessionCount: behaviorSessions.filter(item => item.status === 'behavior-features-ready').length,
       quarantinedSessionCount: behaviorSessions.filter(item => item.status === 'quarantined').length,
       featureRowCount: behaviorSessions.reduce((sum, item) => sum + Number(item.featureRows || 0), 0),
+      actionCounts: aggregateActionCounts(behaviorSessions),
+      quarantineSensitiveKeyCounts: aggregateQuarantineKeys(behaviorSessions),
       sessions: behaviorSessions
     },
     strategy: {
@@ -188,7 +234,8 @@ function prepareBatch(options = {}) {
     invariants: {
       rawRandomTelemetryAutoPromotedToStrategyTraining: false,
       behaviorOutputsAreDerivedFeaturesOnly: true,
-      strategyStillRequiresHumanReview: true
+      strategyStillRequiresHumanReview: true,
+      quarantineDiagnosticsContainKeyNamesOnly: true
     }
   };
   fs.mkdirSync(outputDir, { recursive: true });
@@ -230,7 +277,9 @@ function main(argv = process.argv.slice(2)) {
       sourceSessionCount: manifest.behavior.sourceSessionCount,
       readySessionCount: manifest.behavior.readySessionCount,
       quarantinedSessionCount: manifest.behavior.quarantinedSessionCount,
-      featureRowCount: manifest.behavior.featureRowCount
+      featureRowCount: manifest.behavior.featureRowCount,
+      actionCounts: manifest.behavior.actionCounts,
+      quarantineSensitiveKeyCounts: manifest.behavior.quarantineSensitiveKeyCounts
     },
     strategy: {
       reviewFileCount: manifest.strategy.reviewFileCount,
@@ -251,7 +300,10 @@ module.exports = {
   sanitizeBehaviorFeatures,
   collectReviewFiles,
   reviewQueueItem,
+  quarantineDiagnostics,
   prepareBehaviorFile,
+  aggregateActionCounts,
+  aggregateQuarantineKeys,
   prepareBatch,
   parseArgs,
   main
