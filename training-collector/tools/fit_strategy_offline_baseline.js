@@ -21,7 +21,7 @@ const {
   evaluateBaselineReadiness
 } = require('./check_strategy_baseline_readiness.js');
 
-const MODEL_VERSION = '0.3.2';
+const MODEL_VERSION = '0.3.3';
 
 function die(message) {
   throw new Error(message);
@@ -156,6 +156,8 @@ function fitBaseline(trainRecords) {
     heldOutUsedForFit: false,
     historyAware: true,
     historyFeature: 'prior-semantic-action-types-and-local-target-continuity',
+    actionSelectionPolicy: 'task-history-decoupled-from-current-target-ranking',
+    actionSelectionUsesCurrentTargetRanking: false,
     semanticTargetFeatures: ['label', 'role', 'tag', 'editable'],
     targetGroundingPolicy: 'current-task-dominant-with-action-affordance',
     localTargetRefsPersisted: false,
@@ -193,6 +195,7 @@ function predictAction(model, task, observation, history = []) {
       targetLabelScore: chosen.targetLabelScore,
       taskFeatureScore: chosen.featureScore,
       semanticTargetScore: chosen.semanticTargetScore,
+      actionSelectionTargetIndependent: chosen.actionSelectionTargetIndependent === true,
       historyMatched: chosen.historyMatched,
       compositionMatched: chosen.compositionMatched === true,
       compositionSequence: chosen.compositionSequence || [],
@@ -308,7 +311,7 @@ function main(argv = process.argv.slice(2)) {
 
     const model = fitBaseline(splits.train);
     const evaluation = evaluateHeldOut(model, splits.validation, splits.test);
-    const outputDir = path.resolve(args.outputDir || path.join(datasetDir, 'baseline-v032'));
+    const outputDir = path.resolve(args.outputDir || path.join(datasetDir, 'baseline-v033'));
     fs.mkdirSync(outputDir, { recursive: true });
     const modelFile = path.join(outputDir, 'model.json');
     const evaluationFile = path.join(outputDir, 'evaluation.json');
