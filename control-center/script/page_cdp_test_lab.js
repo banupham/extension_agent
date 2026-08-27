@@ -61,6 +61,52 @@ function nestedFrameLevel2Html() {
 </body></html>`;
 }
 
+function recoveryHtml() {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>RECOVERY LEARNING READY</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:20px;line-height:1.35}
+    #state{position:sticky;top:0;background:#fffbe6;border:1px solid #cc9;padding:8px;z-index:3}
+    #probe{padding:10px 16px;margin:16px 0}
+    #spacer{height:1100px;border-left:3px dashed #bbb;margin-left:20px;padding-left:12px}
+    #continue{display:none;position:fixed;right:24px;top:84px;padding:12px 18px;z-index:4}
+  </style>
+</head>
+<body>
+  <h1>RECOVERY SELF-LEARNING LAB</h1>
+  <div id="state">READY</div>
+  <p>The probe intentionally has no task effect. A later environmental action can reveal the next control.</p>
+  <button id="probe" aria-label="Recovery Probe">Recovery Probe</button>
+  <div id="spacer">Recovery environment</div>
+  <button id="continue" aria-label="Recovery Continue">Recovery Continue</button>
+  <script>
+    const state = document.getElementById('state');
+    const probe = document.getElementById('probe');
+    const next = document.getElementById('continue');
+    probe.addEventListener('click', () => {
+      // Intentionally no semantic task effect. Native click focus is incidental evidence only.
+    });
+    function revealAfterEnvironmentChange() {
+      if (window.scrollY < 160 || next.style.display === 'block') return;
+      next.style.display = 'block';
+      next.dataset.revealed = 'true';
+      state.textContent = 'RECOVERY CONTROL REVEALED';
+    }
+    window.addEventListener('scroll', revealAfterEnvironmentChange, { passive: true });
+    next.addEventListener('click', () => {
+      next.remove();
+      state.textContent = 'RECOVERY LEARNING PASS';
+      document.title = 'RECOVERY LEARNING PASS';
+      document.body.dataset.result = 'RECOVERY LEARNING PASS';
+    });
+  </script>
+</body>
+</html>`;
+}
+
 function mainHtml(url) {
   const waitCase = url.searchParams.get('case') === 'wait';
   const tabCase = String(url.searchParams.get('tab') || '').trim().toLowerCase();
@@ -238,6 +284,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/frame') return sendHtml(res, frameHtml());
   if (url.pathname === '/frame-level1') return sendHtml(res, nestedFrameLevel1Html());
   if (url.pathname === '/frame-level2') return sendHtml(res, nestedFrameLevel2Html());
+  if (url.pathname === '/recovery') return sendHtml(res, recoveryHtml());
   if (url.pathname === '/' || url.pathname === '/lab') return sendHtml(res, mainHtml(url));
   res.statusCode = 404;
   res.end('not found');
@@ -246,6 +293,7 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`PAGE_CDP batch lab: http://${HOST}:${PORT}/`);
   console.log(`waitAndObserve case: http://${HOST}:${PORT}/?case=wait`);
+  console.log(`Recovery self-learning case: http://${HOST}:${PORT}/recovery`);
   console.log(`Browser UI tabs: http://${HOST}:${PORT}/?tab=alpha | ?tab=beta | ?tab=disposable`);
   console.log('Opaque discovery challenge: Discovery Alpha/Beta/Gamma → DISCOVERY PASS');
   console.log('Nested frame gate: TOP → /frame-level1 → /frame-level2 → Nested Frame Action Target');
