@@ -3,6 +3,7 @@
 const assert = require('assert');
 const {
   GATE_VERSION,
+  EVIDENCE_CLASS,
   EXPECTED_SUBGOAL_ACTIONS,
   EXPECTED_SUBGOAL_TARGETS,
   labHtml,
@@ -105,7 +106,8 @@ function passingMissionResult() {
 }
 
 function main() {
-  assert.equal(GATE_VERSION, '0.1.0');
+  assert.equal(GATE_VERSION, '0.1.1');
+  assert.equal(EVIDENCE_CLASS, 'regression-after-diagnosis');
   assert.deepStrictEqual(EXPECTED_SUBGOAL_ACTIONS, [
     ['click', 'waitAndObserve'],
     ['typeText', 'submit'],
@@ -119,6 +121,8 @@ function main() {
 
   const plan = missionPlan();
   assert.equal(plan.subgoals.length, 3);
+  assert.equal(plan.metadata.frozenEvaluationFamily, false);
+  assert.equal(plan.metadata.evidenceClass, EVIDENCE_CLASS);
   assert.equal(plan.subgoals[0].instruction, 'Click Open Relay Console');
   assert.ok(plan.subgoals[1].instruction.includes('Relay Note'));
   assert.equal(plan.subgoals[2].instruction, 'click Finalize Relay');
@@ -144,6 +148,7 @@ function main() {
   const pass = evaluateResult(passingMissionResult(), baseStrategy, 'same-hash', 'same-hash', SECRET);
   assert.equal(pass.ok, true);
   assert.equal(pass.result, 'PASS');
+  assert.equal(pass.evidenceClass, EVIDENCE_CLASS);
   assert.equal(pass.invariant.publicResultContainsTransientText, false);
   assert.equal(pass.invariant.transientPayloadRedacted, true);
   assert.deepStrictEqual(pass.actualSubgoalActions, EXPECTED_SUBGOAL_ACTIONS);
@@ -165,13 +170,13 @@ function main() {
   assert.equal(mutationFail.ok, false);
   assert.ok(mutationFail.errors.includes('model_file_mutated'));
 
-  console.log('Fresh long mission gate contract: PASS');
+  console.log('Signal Relay regression gate contract: PASS');
 }
 
 if (require.main === module) {
   try { main(); }
   catch (error) {
-    console.error('Fresh long mission gate contract: FAIL');
+    console.error('Signal Relay regression gate contract: FAIL');
     console.error(error?.stack || error);
     process.exitCode = 1;
   }
