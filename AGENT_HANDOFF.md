@@ -38,52 +38,83 @@ The controlled lab is `http://127.0.0.1:8092/` and adds three new semantic group
 2. Message Composer: type text + submit.
 3. Teaching Confirm: click.
 
-The user has already exported task 1 (`Atlas` / Topic Search) and task 3 (`Teaching Confirm`). Those do not need to be repeated.
+Second-round review exports now available:
 
-Task 2 (`Orion` / Message Composer / Enter) repeatedly produced `episode_success_has_pending_transition` even after bounded settlement and START-before-END ordering were installed.
+- task 1 / Topic Search: `training-collector-ep-1787828642619.task-episode-review.json`
+- task 2 / Message Composer: `training-collector-ep-1787831377719.task-episode-review.json`
+- task 3 / Teaching Confirm: `training-collector-ep-1787828809498.task-episode-review.json`
 
-Important evidence:
+Task 2 previously reproduced `episode_success_has_pending_transition` repeatedly. Root-fix v3 serialized all episode-state mutations through one queue so rapid transition updates cannot overwrite each other.
 
-- Task 1 also used Enter, and its Enter transition was exported as complete. Enter itself is not generally broken.
-- Task 3 is a simple click and succeeds.
-- The remaining failure is a collector state-consistency issue exposed by the Message Composer sequence, not user error.
+Root-fix commits:
 
-## Pending-transition root fix v3
+- `89fce567c76a5793f656722cde8d23a7ba912a60` — serialized episode-state queue.
+- `f49399b044fd2824836d0325b8f1a624421e23da` — queue START/END/STOP/start-episode state mutations and safe diagnostic endpoint.
+- `857369f37c2f2bade414f462e57b2500e78bc81c` — episode state queue contract.
+- `c1d8148735d2db9b477be4a9a97b7c48ee030257` — popup pending-transition diagnostic.
+- `fd273ef91ba1cdefa2c1a09cbe411202c98c6829` — CI gate.
+- `b99e1bb0276da52fbdc3c386af593b970bebb8d3` — durable handoff before native retry.
 
-The background worker previously handled each episode transition with independent `load state -> mutate -> save state` calls. Rapid START/END messages from typing could overlap and overwrite each other's persisted episode snapshots. That can resurrect an already-finished transition as `pending` even when the matching END message was delivered correctly.
+GitHub Actions run `33068893125` passed stop-settlement, transition-order, episode-state-queue, and Strategy teaching coverage contracts.
 
-The collector now serializes all episode-state mutations through one queue and reads consistent state only after that queue drains. START, END, STOP, and START-EPISODE state mutations no longer race each other.
+## Native proof after root fix v3
 
-New commits:
+The user retried only task 2 and exported `ep-1787831377719` successfully.
 
-- `89fce567c76a5793f656722cde8d23a7ba912a60` — add serialized episode-state queue.
-- `f49399b044fd2824836d0325b8f1a624421e23da` — wire START/END/STOP/episode state mutations through the queue and add safe episode diagnostic endpoint.
-- `857369f37c2f2bade414f462e57b2500e78bc81c` — contract for queue ordering and recovery after errors.
-- `c1d8148735d2db9b477be4a9a97b7c48ee030257` — popup shows the exact safe pending action/target if a pending transition still survives.
-- `fd273ef91ba1cdefa2c1a09cbe411202c98c6829` — CI gate for serialized episode-state mutations.
+Verified from the exported review:
 
-GitHub Actions run `33068893125` completed successfully. Stop-settlement, transition-order, episode-state-queue, and Strategy teaching coverage contracts all pass.
+- task instruction: `nhập Orion vào ô Message Composer rồi gửi bằng Enter.`
+- final outcome: `success`
+- `strategyReady: true`
+- no `status: pending` transitions remain
+- the Enter action on `Message Composer` is present as a completed transition
 
-The diagnostic remains privacy-safe: no selectors, coordinates, tab IDs, raw text values, secrets, or private reasoning.
+Therefore the pending-transition blocker is closed for the controlled teaching scenario. Do not ask the user to repeat task 2 again.
 
-## Immediate next action
+## Immediate next action: six-group Strategy teaching dataset
 
-The user should pull the feature branch, reload Training Collector, refresh the teaching lab, and retry **task 2 only once**:
+Build a fresh combined review set with the original first 3 approved teaching demonstrations plus the 3 second-round demonstrations, then rerun review -> triage -> teaching resolver -> approval candidates.
+
+Original first-round files:
+
+- `training-collector-ep-1787826569158.task-episode-review.json`
+- `training-collector-ep-1787826618214.task-episode-review.json`
+- `training-collector-ep-1787826766003.task-episode-review.json`
+
+Second-round files:
+
+- `training-collector-ep-1787828642619.task-episode-review.json`
+- `training-collector-ep-1787831377719.task-episode-review.json`
+- `training-collector-ep-1787828809498.task-episode-review.json`
+
+Use a fresh local folder such as `%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827` and do not mutate the previous three-group dataset.
+
+Run:
 
 ```bat
 cd /d C:\Users\duong\Downloads\extension_agent
 git pull
 git rev-parse --short HEAD
-node training-collector\tests\episode_state_queue_contract.js
-start chrome://extensions/
+
+set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
+mkdir "%SIX%\reviews" 2>nul
+
+copy /Y "%USERPROFILE%\Downloads\extension_agent-local-data\teaching-batch-20260827\reviews\training-collector-ep-1787826569158.task-episode-review.json" "%SIX%\reviews\"
+copy /Y "%USERPROFILE%\Downloads\extension_agent-local-data\teaching-batch-20260827\reviews\training-collector-ep-1787826618214.task-episode-review.json" "%SIX%\reviews\"
+copy /Y "%USERPROFILE%\Downloads\extension_agent-local-data\teaching-batch-20260827\reviews\training-collector-ep-1787826766003.task-episode-review.json" "%SIX%\reviews\"
+copy /Y "%USERPROFILE%\Downloads\training-collector-ep-1787828642619.task-episode-review.json" "%SIX%\reviews\"
+copy /Y "%USERPROFILE%\Downloads\training-collector-ep-1787831377719.task-episode-review.json" "%SIX%\reviews\"
+copy /Y "%USERPROFILE%\Downloads\training-collector-ep-1787828809498.task-episode-review.json" "%SIX%\reviews\"
+
+node training-collector\tools\prepare_human_learning_batch.js --reviews "%SIX%\reviews" --out "%SIX%\batch-v01"
+node training-collector\tools\prepare_strategy_review_pack.js --manifest "%SIX%\batch-v01\manifest.json" --out "%SIX%\review-pack-v01"
+node training-collector\tools\score_strategy_review_pack.js --pack "%SIX%\review-pack-v01\review-pack.json" --out "%SIX%\review-pack-v01\triage.v01.json"
+node training-collector\tools\resolve_strategy_teaching_batch.js --pack "%SIX%\review-pack-v01\review-pack.json" --triage "%SIX%\review-pack-v01\triage.v01.json" --out "%SIX%\teaching-resolution-v01"
+node training-collector\tools\prepare_strategy_review_drafts.js --pack "%SIX%\review-pack-v01\review-pack.json" --triage "%SIX%\review-pack-v01\triage.v01.json" --out "%SIX%\review-drafts-v01"
+node training-collector\tools\prepare_strategy_approval_candidates.js --digest "%SIX%\review-drafts-v01\approval-digest.json" --resolution "%SIX%\teaching-resolution-v01\ambiguity-resolution.json" --out "%SIX%\approval-candidates-v01"
+type "%SIX%\approval-candidates-v01\approval-candidates.md"
 ```
 
-Then Reload Training Collector, refresh `http://127.0.0.1:8092/`, and record only:
+Stop before applying approvals. Explicit human confirmation of the new exact digest is still required.
 
-`Trên http://127.0.0.1:8092/, nhập Orion vào ô Message Composer rồi gửi bằng Enter.`
-
-If Mark Success now succeeds, export the single task-2 review file and continue the six-group Strategy teaching pipeline using original task 1 + replacement task 2 + original task 3.
-
-If Mark Success still fails, the popup now prints the exact pending semantic action and target. Ask the user to send that popup text/screenshot; do not ask for another blind retry.
-
-Target before Strategy fit remains `datasetBuilt:true` and `baselineReady:true`; fit TRAIN only and keep validation/test held out. Do not promote `main`.
+Target after approval/build: `distinctSplitGroupCount >= 6`, `datasetBuilt:true`, `baselineReady:true`, train covers `click`, `typeText`, and `submit`, validation/test remain held out. Only then fit Strategy from TRAIN only and evaluate heldout. Do not promote `main`.
