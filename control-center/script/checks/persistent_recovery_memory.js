@@ -119,6 +119,22 @@ function baseProvider() {
   };
 }
 
+function assertStoredMemoryPrivacy(value) {
+  const forbidden = new Set([
+    'selector', 'selectors', 'targetRef', 'rect', 'x', 'y',
+    'cdpPlan', 'cdpPacket', 'rawCdp', 'cdpMethod', 'tabId'
+  ]);
+  function walk(node) {
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (!node || typeof node !== 'object') return;
+    for (const [key, child] of Object.entries(node)) {
+      assert.equal(forbidden.has(key), false, `forbidden recovery memory key: ${key}`);
+      walk(child);
+    }
+  }
+  walk(value);
+}
+
 async function main() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-recovery-memory-'));
   const memoryFile = path.join(dir, 'recovery.jsonl');
@@ -190,9 +206,7 @@ async function main() {
   assert.equal(stored[0].trigger.targetLabel, 'Probe');
   assert.equal(stored[0].trigger.effectStatus, 'no_effect');
   assert.equal(stored[0].recovery.type, 'scrollVertical');
-  assert.equal(JSON.stringify(stored[0]).includes('targetRef'), false);
-  assert.equal(JSON.stringify(stored[0]).includes('selector'), false);
-  assert.equal(JSON.stringify(stored[0]).includes('rect'), false);
+  assertStoredMemoryPrivacy(stored[0]);
 
   const recallProvider = createRecoveryPolicyProvider({
     baseProvider: baseProvider(),
