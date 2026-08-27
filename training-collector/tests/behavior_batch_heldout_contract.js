@@ -18,6 +18,12 @@ function featureSet(actionType, offset) {
         acquisition: { endToCenterNormalized: 0.2 },
         target: { areaPx2: 5000 }
       } });
+    } else if (actionType === 'focus') {
+      rows.push({ actionType, features: {
+        leadInTiming: { durationMs: 110 + offset + i, gapMedianMs: 18 },
+        pointerLeadIn: { durationMs: 90 + offset + i, straightness: 0.84, meanSpeedPxS: 440 + offset, meanAbsTurnDeg: 11 },
+        target: { areaPx2: 6000 }
+      } });
     } else {
       rows.push({ actionType, features: {
         timing: { durationMs: 150 + offset + i, gapMedianMs: 20 },
@@ -44,8 +50,8 @@ function main() {
     const behaviorDir = path.join(temp, 'behavior');
     fs.mkdirSync(behaviorDir, { recursive: true });
     const sessions = [];
-    for (let i = 0; i < 20; i += 1) {
-      const actionType = i % 2 ? 'click' : 'scrollVertical';
+    for (let i = 0; i < 30; i += 1) {
+      const actionType = i % 3 === 0 ? 'focus' : i % 2 ? 'click' : 'scrollVertical';
       const output = path.join(behaviorDir, `s${i}.json`);
       fs.writeFileSync(output, `${JSON.stringify(featureSet(actionType, i), null, 2)}\n`, 'utf8');
       sessions.push({ file: `raw/s${i}.raw.jsonl`, status: 'behavior-features-ready', featureRows: 3, output });
@@ -56,9 +62,14 @@ function main() {
     const baselineFile = path.join(temp, 'baseline.json');
     fs.writeFileSync(baselineFile, `${JSON.stringify(baseline, null, 2)}\n`, 'utf8');
 
+    assert.equal(baseline.model.behaviorBaselineVersion, '0.2.0');
+    assert.equal(baseline.model.design.unmodeledRowCount, 0);
+    assert.ok(baseline.model.families['form-control'].global.sampleCount > 0);
+
     const report = evaluateBehaviorBatchBaseline(manifestFile, baselineFile);
-    assert.equal(report.evaluatorVersion, '0.1.0');
+    assert.equal(report.evaluatorVersion, '0.2.0');
     assert.equal(report.trainOnlyUsedForFit, true);
+    assert.equal(report.modelCoverage.unmodeledRowCount, 0);
     assert.ok(report.validation.rowCount > 0);
     assert.ok(report.test.rowCount > 0);
     assert.equal(report.validation.rowSupportCoverage, 1);
