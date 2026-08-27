@@ -14,7 +14,7 @@ Read this file before changing the repository.
 - No generic `failure => scroll`.
 - Do not change split seed/ratios or move heldout into TRAIN to force PASS.
 - Do not recollect/relabel the six historical teaching tasks to force PASS.
-- Do not persist selectors, coordinates, tab IDs, raw CDP, credentials, passwords, secrets, typed sensitive values, or private reasoning in Strategy/recovery/memory/training.
+- Do not persist selectors, coordinates, tab IDs, raw CDP, credentials/passwords/secrets, typed sensitive values, or private reasoning in Strategy/recovery/memory/training.
 - No literal trajectory replay.
 - Human demonstrations never auto-promote; exact digest confirmation is required before approval is applied.
 
@@ -26,15 +26,15 @@ Read this file before changing the repository.
 - Agent is maturing but is not fully autonomous.
 - Collector/resolver/approval/dataset readiness are not blockers.
 - Strategy v0.3.3 passes the unchanged six-group regression exactly on validation and test.
-- The user's frozen v0.3.3 model passed two fresh-unseen semantic families created after the model was frozen.
+- Frozen v0.3.3 also passed two fresh-unseen semantic families created after model freeze.
 - Strategy model-file runtime loading is implemented with privacy validation.
-- Native `typeText` receives text only through a transient execution payload; typed values are redacted from public result/history and are not stored in Strategy.
-- Real browser-native Cargo execution has already proven the exact Strategy sequence and exact target grounding: `typeText -> submit` on `Cargo Instruction -> Cargo Instruction`.
-- Current blocker is execution plumbing for editable-target submit, not Strategy/model selection.
+- Native `typeText` receives typed content only through transient execution payload; public result/history/Strategy model remain redacted.
+- Real browser-native Cargo runs have repeatedly proven exact Strategy sequence and target grounding: `typeText -> submit` on `Cargo Instruction -> Cargo Instruction`.
+- Current remaining gate is editable-target native submit/goal completion; this is execution plumbing, not Strategy selection.
 
 ## Historical teaching data — CLOSED
 
-Six fixed historical episodes:
+Six fixed episodes:
 
 1. `ep-1787826569158` — Google -> Gmail click
 2. `ep-1787826618214` — Google -> type OpenAI -> submit search
@@ -47,9 +47,9 @@ Approved digest:
 
 `8f18d4e5b053d9dae57107b4aa021dfbf46128df3c75b9c50dbad996346b8241`
 
-Human approval already received exactly. Do not ask again.
+Exact human approval already received. Do not ask again.
 
-Dataset readiness:
+Dataset:
 
 - approvedEpisodeCount 6
 - approvedStrategyStepCount 10
@@ -58,9 +58,7 @@ Dataset readiness:
 - distinctSplitGroupCount 6
 - train 4 / validation 1 / test 1
 - `baselineReady:true`
-- heldout is never fit
-
-Split:
+- heldout never used for fit
 
 TRAIN:
 - click:gmail
@@ -74,24 +72,17 @@ VALIDATION:
 TEST:
 - typeText:t-m-ki-m>submit:t-m-ki-m
 
-Current six-group reruns are regression evidence, not pristine unseen proof, because earlier failures influenced v0.3.x redesigns.
+Six-group reruns are regression evidence, not pristine unseen proof, because prior heldout failures influenced v0.3.x redesign.
 
-## Strategy v0.3.3 state
+## Strategy v0.3.3 — PASS regression
 
-v0.3.3 separates WHAT selection from current-target ranking:
+Policy:
 
 - `actionSelectionPolicy: task-history-decoupled-from-current-target-ranking`
 - `actionSelectionUsesCurrentTargetRanking:false`
 - `targetGroundingPolicy: current-task-dominant-with-action-affordance`
 
-Important commits:
-
-- `14a75c87acc749b318198858b4d5083cdd11eaa3` — retain TRAIN lexical anchors while removing current target ranking from WHAT
-- `ccc88d94377eb4b7e772eb8ff3191973f97e5752` — model v0.3.3
-- `a542737d3e4152069a73d35d4fda3988d87e1c57` — final v0.3.3 contract alignment
-- `eb388be5ab438a553a4e67e288d065753b48d306` — records real six-group regression PASS
-
-Six-group real regression PASS:
+Real unchanged six-group rerun:
 
 Validation Topic Search:
 - actionTypeAccuracy 1
@@ -107,43 +98,33 @@ Test Google Search:
 
 Do not keep tuning on these six records.
 
-## Real fresh-unseen semantic gate — PASS
+## Fresh-unseen frozen-model semantic gate — PASS
 
-Frozen `baseline-v033/model.json`, no fit/modification.
+Frozen `baseline-v033/model.json`, no fit or mutation.
 
-Fresh family 1 `fresh-parcel-approval`:
-- expected/actual `click`
-- target correct
+Fresh families created after model freeze:
 
-Fresh family 2 `fresh-dispatch-note`:
-- expected/actual `typeText -> submit`
-- target continuity correct
+- `fresh-parcel-approval`: expected/actual `click`, target correct
+- `fresh-dispatch-note`: expected/actual `typeText -> submit`, target continuity correct
 
-Result/invariants:
+Invariants:
 
-- PASS
 - `modelVersion:0.3.3`
 - `trainingOrFitPerformed:false`
 - `modelMutatedInMemory:false`
 - `modelFileMutated:false`
-- `freshFamilyCount:2`
-- no literal trajectory replay
 - no selector/coordinate targeting
+- no literal trajectory replay
 
 This is controlled fresh-unseen semantic evidence, not broad web autonomy proof.
 
-## Runtime Strategy loading + transient text execution — PASS contracts
+## Runtime loading / transient execution — PASS contracts
 
-Strategy file loader:
+Runtime Strategy loader validates frozen model files and rejects forbidden/private persisted keys.
 
-- `control-center/manager/strategy/offline_model_loader.js`
-- runtime can create Strategy from frozen model file
-- loader rejects forbidden/private persisted keys
-- CI `33083343691`: success
+Execution boundary:
 
-Transient text bridge:
-
-`Strategy WHAT + target -> transient execution payload -> Behavior HOW -> native execution`
+`Strategy WHAT + target -> transient execution payload -> Behavior HOW -> browser execution`
 
 Properties:
 
@@ -151,12 +132,14 @@ Properties:
 - public step/history/decision/action/plan are redacted
 - text actions require targetRef
 - `typeText` acquires semantic target before inserting text
-- submit button can click; editable submit uses Enter semantics
+- button submit remains click semantics
+- editable submit uses native Enter semantics
 
-CI:
+Important CI:
 
+- Strategy runtime model loading `33083343691`: success
 - transient payload `33084021426`: success
-- full runtime suite after plumbing `33084676420`: success
+- full runtime after plumbing `33084676420`: success
 
 ## Fresh browser-native Cargo gate
 
@@ -166,108 +149,67 @@ Gate:
 
 Controlled family:
 
-- page: `Cargo Routing Lab`
-- task: type provided transient value into `Cargo Instruction` and press Enter
+- page `Cargo Routing Lab`
+- task: type transient value into `Cargo Instruction` and press Enter
 - distractors: Cargo Reference, Crew Note, Destination Memo, Route Cargo
-- expected sequence `typeText -> submit`
-- expected target labels `Cargo Instruction -> Cargo Instruction`
+- expected semantic sequence `typeText -> submit`
+- expected target continuity `Cargo Instruction -> Cargo Instruction`
 - success title `CARGO INSTRUCTION PASS`
 
 Gate invariants:
 
-- frozen Strategy model loaded from file
+- frozen model loaded from file
 - no fit path
 - no selector targeting by Strategy
-- transient text redacted from public output
+- transient text redacted
 - model hash unchanged
-- created lab tab cleaned up
+- created tab cleanup required
 
-### Cleanup hang fix — PASS
+### Native attempt history
 
-First local attempt visibly typed into correct target but CMD hung after lab tab closed.
+1. First real run visibly typed into correct field, but CMD hung after cleanup.
+   - root: unbounded `server.close()` waiting on Chrome localhost connection
+   - fixed by bounded/forced cleanup commits `13b9692`, `65ec3cf`
+   - CI `33087500659` and runtime `33087500282`: success
 
-Cause: unbounded `server.close()` could wait on lingering Chrome localhost connection.
+2. Next real run returned JSON:
+   - exact actions `typeText -> submit`
+   - exact targets `Cargo Instruction -> Cargo Instruction`
+   - final title remained `Cargo Routing Lab`
+   - `final_goal_not_satisfied`
+   - `budget_consecutive_failures_reached`
+   - proves Strategy/target correct; remaining issue was editable submit execution
 
-Fix:
+3. Submit key path was changed from `rawKeyDown -> keyUp` to `keyDown -> keyUp`:
+   - commit `85540fea4310e3e0626c33c49d77d94cbf93b2c1`
+   - dedicated contract `f459566b45925f384b83baa0daee59a8a21b4323`
+   - CI `33088244754`: success
 
-- `13b96925ca927e3f496c71a7e36449352c07278a` — bounded/forced local server cleanup
-- `65ec3cfaa4d9e5c197ef8fbaee5892892efeb8a9` — cleanup regression contract
-- native cleanup CI `33087500659`: success
-- full runtime-syntax `33087500282`: success
+4. A compatibility regression then exposed module-version/wire-version conflation:
+   - local error `unsupported_cdp_plan_version`
+   - fixed by separating submit implementation version from supported CDP wire schema
+   - commit `25e77d7a1a06903bb41257624093e08248270ca0`
+   - dispatcher-validation contract `083430d8546e0257591569c8bcc5d81334b9cb3a`
+   - dedicated CI `33088623615`: success
+   - full runtime `33088623858`: success
 
-### Real browser-native rerun — Strategy/target PASS, goal FAIL
+5. Latest real run after compatibility fix again reached exact Strategy actions/targets but goal still did not change title.
+   - This preserves proof that model selection is correct.
+   - Deeper diagnosis: CDP `keyDown` supports generated `text/unmodifiedText`; Enter keyboard mapping uses carriage return `\r`.
+   - editable-submit key event was missing this payload.
 
-User reran gate v0.1.1 with frozen model v0.3.3.
+Latest generic execution fix, without Strategy/model change:
 
-Observed result:
-
-- exact action sequence `typeText -> submit`
-- exact target labels `Cargo Instruction -> Cargo Instruction`
-- `modelLoadedFromFile:true`
-- `modelFileMutated:false`
-- transient payload redacted
-- no selector targeting by Strategy
-- `createdTabClosed:true`
-- final title remained `Cargo Routing Lab`
-- `final_goal_not_satisfied`
-- `final_budget:budget_consecutive_failures_reached`
-
-Interpretation:
-
-- Strategy WHAT and target grounding are proven correct on this real native run.
-- `typeText` executed visibly in the real browser.
-- remaining failure is editable-target submit/Enter execution.
-
-### Editable submit key semantics fix — PASS contracts
-
-Diagnosis:
-
-- generic `pressKey` emits `keyDown -> keyUp`
-- editable submit had emitted `rawKeyDown -> keyUp`
-
-Generic fix, no Strategy/model change:
-
-- `85540fea4310e3e0626c33c49d77d94cbf93b2c1` — editable submit now emits semantic Enter `keyDown -> keyUp`; button submit remains click-only
-- `f459566b45925f384b83baa0daee59a8a21b4323` — dedicated submit native key semantics contract
-- `0d8aeeceeb72522b4a00b7342369eef664c16d67` — native workflow gates contract
-
-CI:
-
-- runtime-syntax `33088198806`: success
-- transient payload execution `33088198866`: success
-- dedicated fresh-native + submit semantics `33088244754`: success
-
-### Real rerun after key semantics fix — compatibility FAIL
-
-User pulled handoff HEAD `059087f` and reran the same frozen model.
-
-Result failed immediately during CDP dispatch with:
-
-`unsupported_cdp_plan_version`
-
-Root cause:
-
-- `submit_plan.js` used `SUBMIT_PLAN_VERSION = 0.2.0` as `cdpPlanVersion`
-- Agent Runtime dispatcher accepts wire schemas only `0.1.0` through `0.1.3`
-- module implementation version and CDP wire schema version had been conflated
-
-This failure is execution compatibility only. It does not invalidate prior Strategy/target evidence and does not involve retraining.
-
-Generic compatibility fix:
-
-- `25e77d7a1a06903bb41257624093e08248270ca0` — separates `SUBMIT_PLAN_VERSION = 0.2.1` from `CDP_PLAN_VERSION = 0.1.2`; submit plans now emit supported wire schema `0.1.2`
-- `083430d8546e0257591569c8bcc5d81334b9cb3a` — contract imports Agent Runtime `cdp_plan_dispatcher.js` and requires both editable/button submit plans to pass `Dispatcher.validatePlan()`
-
-CI after compatibility fix:
-
-- dedicated fresh-native/submit contract `33088623615`: success
-- full runtime-syntax `33088623858`: success
+- `e7c6215962d588b31f4b1eca93ab72e67bff6a7f` — submit plan v0.2.2 sends Enter `keyDown` with `text:"\r"` and `unmodifiedText:"\r"`, followed by `keyUp`; button submit remains click-only; CDP wire version remains supported `0.1.2`
+- `f983621a6c7d64505b08ad3f01bdc1bf6a05f5b8` — contract requires exact Enter payload and dispatcher compatibility
+- dedicated fresh-native/submit contract run `33089075418`: success
+- full runtime-syntax run `33089075384`: success
 
 Do not retrain on Cargo Routing Lab to force PASS.
 
 ## Immediate next user action
 
-Pull latest branch and rerun the same frozen-model browser gate. Control Center should remain running and one normal `http(s)` anchor tab such as `https://example.com` should be open.
+Pull latest branch and rerun the same frozen-model browser gate once. Keep Control Center running and one normal `http(s)` anchor tab such as `https://example.com` open.
 
 Windows CMD:
 
@@ -280,7 +222,7 @@ set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
 node control-center\script\offline_strategy_fresh_native_text_gate.js --model "%SIX%\strategy-approved-dataset-v03\baseline-v033\model.json"
 ```
 
-Expected HEAD is the handoff commit created after `083430d`.
+Expected HEAD is this handoff commit.
 
 Desired native PASS:
 
@@ -290,17 +232,54 @@ Desired native PASS:
 - `actualActionTypes:["typeText","submit"]`
 - `actualTargetLabels:["Cargo Instruction","Cargo Instruction"]`
 - `finalTitle:"CARGO INSTRUCTION PASS"`
-- frozen model / redaction / no-selector invariants true
+- frozen model/redaction/no-selector invariants true
 - `createdTabClosed:true`
 
-If it still FAILs, preserve the proven Strategy/target correctness and diagnose execution/effect generically. Do not change the six split, retrain on Cargo, weaken the goal, or hardcode the lab.
+If it still FAILs, preserve proven Strategy/target correctness and diagnose execution/effect generically. Do not change six split, retrain on Cargo, weaken goal, or hardcode lab.
 
-## After native PASS
+## Next phase: make the agent smarter
 
-1. Record exact native PASS in this handoff and commit.
-2. Stop optimizing on Cargo.
-3. Move to a new longer controlled/native mission with multi-subgoal + observe-after + goal check + replan/recovery + semantic memory.
-4. Only after those runtime gates shift emphasis to continuous learning:
-   `new user interaction -> raw capture -> privacy/noise curation -> semantic candidate -> explicit approval -> dataset -> later retrain`.
-5. Never auto-train directly from raw user interaction.
-6. Never promote to `main` without explicit user approval after verified PASS.
+After native PASS, stop optimizing on Cargo and move to learning-capability gates.
+
+### A. Fresh long controlled/native mission
+
+Create a new family after Cargo with multiple subgoals and dynamic observations, using already-known action types but new semantic composition. The mission should require:
+
+- observe -> choose next semantic action
+- execute -> observe-after
+- intermediate goal/progress check
+- change plan based on new state
+- at least one recoverable failure or alternate state
+- recovery/replan without generic `failure => scroll`
+- semantic memory useful across subgoals
+
+Do not fit on this fresh evaluation family.
+
+### B. Continuous-learning loop from new user interaction
+
+Once runtime long-mission behavior is stable, shift emphasis from hand-written plumbing to new data:
+
+`new user interaction -> raw capture -> privacy/noise filter -> semantic episode candidate -> resolver -> human review/explicit digest approval -> approved dataset -> retrain -> fresh evaluation`
+
+Rules:
+
+- raw interaction never auto-trains directly
+- typed secrets/credentials/private values stay out of Strategy/memory/training
+- clicks/focus/edit mechanics remain HOW/capture noise unless semantically necessary
+- no literal trajectory replay
+- new evaluation families stay held out and are never moved into TRAIN just to pass
+
+The goal is that increasing semantic diversity in approved user demonstrations, not site-specific rules, becomes the main source of additional capability.
+
+### C. Strategy next model
+
+After enough new approved groups exist, fit a new Strategy version using the expanded train split while preserving validation/test family boundaries. Compare against v0.3.3 on:
+
+- action type accuracy
+- target grounding
+- exact semantic sequence
+- long-mission completion
+- recovery quality
+- fresh-unseen family performance
+
+Do not promote to `main` without explicit user approval after verified PASS.
