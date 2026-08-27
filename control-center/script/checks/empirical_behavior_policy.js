@@ -2,7 +2,7 @@
 
 const assert = require('assert');
 const { fitBehaviorBaseline } = require('../../../training-collector/tools/build_behavior_baseline.js');
-const { sampledBehavior } = require('../../manager/behavior/empirical_policy.js');
+const { sampledBehavior, normalizeBaseline } = require('../../manager/behavior/empirical_policy.js');
 const { mapAgentAction } = require('../../manager/strategy/agent_action_contract.js');
 
 const featureSet = {
@@ -58,6 +58,24 @@ assert.strictEqual(click.profile, 'empirical-quantile-v01');
 assert.strictEqual(click.metadata.literalTrajectoryReplay, false);
 assert.ok(Number.isFinite(click.pointer.holdMs));
 assert.ok(Number.isFinite(click.pointer.constraints.approachDurationMs));
+
+const batchWrapper = {
+  batchBehaviorBaselineVersion: '0.1.0',
+  sourceReadySessionCount: 48,
+  sourceFeatureRowCount: 8666,
+  model: baseline
+};
+assert.strictEqual(normalizeBaseline(batchWrapper), baseline);
+const humanBatchClick = sampledBehavior({
+  baseline: batchWrapper,
+  mappedAction: mapAgentAction({ type: 'click', targetRef: 'human-target' }),
+  target: { rect: { width: 80, height: 30 } },
+  rng: fixedRng
+});
+assert.strictEqual(humanBatchClick.profile, 'empirical-quantile-v01');
+assert.strictEqual(humanBatchClick.metadata.batchBaselineVersion, '0.1.0');
+assert.strictEqual(humanBatchClick.metadata.baselineVersion, '0.1.0');
+assert.ok(Number.isFinite(humanBatchClick.pointer.holdMs));
 
 const scroll = sampledBehavior({
   baseline,
