@@ -1,5 +1,6 @@
 'use strict';
 
+const path = require('path');
 const { validateAgentAction } = require('./agent_action_contract.js');
 const {
   RECOVERY_ACTION_TYPES,
@@ -7,8 +8,12 @@ const {
   triggerFromHistory
 } = require('./recovery_policy_memory.js');
 const { normalizeInstruction } = require('./self_experience_memory.js');
+const {
+  readRecoveryOutcomeMemory,
+  recoveryOutcomeStats
+} = require('./recovery_outcome_memory.js');
 
-const RECOVERY_EXPLORATION_VERSION = '0.1.0';
+const RECOVERY_EXPLORATION_VERSION = '0.2.0';
 const DEFAULT_RECOVERY_ACTION_TYPES = Object.freeze([
   'waitAndObserve',
   'scrollVertical',
@@ -43,13 +48,15 @@ function candidateTargets(observation, type) {
 
 function recoveryCandidates(observation, actionTypes) {
   const out = [];
+  let ordinal = 0;
   for (const type of normalizeRecoveryActionTypes(actionTypes)) {
     for (const target of candidateTargets(observation, type)) {
       out.push({
         type,
         targetRef: target.targetRef,
         targetLabel: target.targetLabel,
-        key: `${type}|${normalizeInstruction(target.targetLabel)}`
+        key: `${type}|${normalizeInstruction(target.targetLabel)}`,
+        ordinal: ordinal++
       });
     }
   }
@@ -60,11 +67,36 @@ function taskExplorationKey(task) {
   return normalizeInstruction(task?.instruction) || '<unknown-task>';
 }
 
+function rankCandidatesByOutcomeHistory(candidates, records, task, trigger) {
+  return (Array.isArray(candidates) ? candidates : [])
+    .map(candidate => ({
+      ...candidate,
+      historical: recoveryOutcomeStats(records, {
+        task,
+        trigger,
+        recovery: { type: candidate.type, targetLabel: candidate.targetLabel }
+      })
+    }))
+    .sort((a, b) =>
+      b.historical.confidence - a.historical.confidence ||
+      b.historical.successes - a.historical.successes ||
+      a.historical.failures - b.historical.failures ||
+      a.ordinal - b.ordinal
+    );
+}
+
 function createRecoveryExplorationProvider(options = {}) {
   const baseProvider = options.baseProvider;
   if (!baseProvider || typeof baseProvider.decide !== 'function') throw new Error('recovery_exploration_base_provider_required');
   const actionTypes = normalizeRecoveryActionTypes(options.actionTypes);
   const triedByTask = new Map();
+  const staticOutcomeRecords = Array.isArray(options.outcomeRecords) ? options.outcomeRecords : null;
+  const outcomeMemoryFile = options.outcomeMemoryFile ? path.resolve(options.outcomeMemoryFile) : null;
+
+  function currentOutcomeRecords() {
+    if (staticOutcomeRecords) return staticOutcomeRecords;
+    return outcomeMemoryFile ? readRecoveryOutcomeMemory(outcomeMemoryFile) : [];
+  }
 
   return {
     name: 'recovery-self-exploration',
@@ -76,8 +108,13 @@ function createRecoveryExplorationProvider(options = {}) {
 
       const key = taskExplorationKey(task);
       const tried = triedByTask.get(key) || new Set();
-      const candidates = recoveryCandidates(observation, actionTypes);
-      const candidate = candidates.find(item => !tried.has(item.key)) || null;
+      const ranked = rankCandidatesByOutcomeHistory(
+        recoveryCandidates(observation, actionTypes),
+        currentOutcomeRecords(),
+        task,
+        trigger
+      );
+      const candidate = ranked.find(item => !tried.has(item.key)) || null;
 
       if (!candidate) {
         return baseProvider.decide({ task, observation, history });
@@ -98,20 +135,28 @@ function createRecoveryExplorationProvider(options = {}) {
         status: 'act',
         action,
         targetRef: action.targetRef,
-        confidence: 0,
+        confidence: candidate.historical.attempts ? candidate.historical.confidence : 0,
         reasonCode: 'recovery_self_exploration',
         expectedOutcome: {},
         recovery: {},
         metadata: {
           prototypeSource: 'recoveryExploration',
           triggerActionType: trigger.actionType,
+          triggerTargetLabel: trigger.targetLabel,
+          triggerReasonCode: trigger.reasonCode,
           triggerEffectStatus: trigger.effectStatus,
           triggerEffectCodes: trigger.effectCodes,
           explorationActionType: candidate.type,
           explorationTargetLabel: candidate.targetLabel,
           attemptedRecoveryCount: tried.size,
-          candidateCount: candidates.length,
-          actionTypes
+          candidateCount: ranked.length,
+          actionTypes,
+          historicalAttempts: candidate.historical.attempts,
+          historicalSuccesses: candidate.historical.successes,
+          historicalFailures: candidate.historical.failures,
+          historicalSuccessRate: candidate.historical.successRate,
+          historicalConfidence: candidate.historical.confidence,
+          outcomeMemory: !!outcomeMemoryFile
         }
       };
     }
@@ -125,5 +170,6 @@ module.exports = {
   candidateTargets,
   recoveryCandidates,
   taskExplorationKey,
+  rankCandidatesByOutcomeHistory,
   createRecoveryExplorationProvider
 };
