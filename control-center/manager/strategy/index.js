@@ -46,5 +46,6 @@ module.exports = {
   ...require('./agent_action_contract'),
   ...require('./execution_surface_contract'),
   ...require('./execution_behavior_contract'),
-  ...require('./offline_baseline_provider')
+  ...require('./offline_baseline_provider'),
+  ...require('./self_experience_memory')
 };
