@@ -1,8 +1,13 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const {
   TASKS,
+  discoverInputs,
+  normalizeInstruction,
   findSequence,
   applyAnnotation
 } = require('../tools/process_strategy_multistep_play_mute.js');
@@ -25,6 +30,20 @@ const review = {
     { transitionId: 'mute', status: 'complete', rawAction: { kind: 'click', targetRef: 'e8' }, strategyObservationBefore: obs() }
   ]
 };
+
+assert.strictEqual(
+  normalizeInstruction('  Start media playback, THEN mute it!! '),
+  normalizeInstruction('Start media playback, then mute it')
+);
+
+const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'multistep-review-'));
+const nested = path.join(tempRoot, 'nested', 'exports');
+fs.mkdirSync(nested, { recursive: true });
+const nestedReview = path.join(nested, 'sample.task-episode-review.json');
+fs.writeFileSync(nestedReview, JSON.stringify(review));
+const discovered = discoverInputs([tempRoot]);
+assert.deepStrictEqual(discovered, [nestedReview]);
+fs.rmSync(tempRoot, { recursive: true, force: true });
 
 const hits = findSequence(review);
 assert.deepStrictEqual(hits.map(hit => hit.transitionId), ['play', 'mute']);
