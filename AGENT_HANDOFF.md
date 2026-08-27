@@ -26,10 +26,11 @@ Read this file before changing the repository.
 - Agent is maturing but is not fully autonomous.
 - Collector/resolver/approval/dataset readiness are not blockers.
 - Strategy v0.3.3 passes the unchanged six-group regression exactly on validation and test.
-- The user's frozen v0.3.3 model also passed two fresh-unseen semantic families created after the model was frozen.
+- The user's frozen v0.3.3 model passed two fresh-unseen semantic families created after the model was frozen.
 - Strategy model-file runtime loading is implemented with privacy validation.
 - Native `typeText` receives text only through a transient execution payload; typed values are redacted from public result/history and are not stored in Strategy.
-- Native browser execution has reached the correct fresh Cargo target and typed into it. The remaining current gate is editable-target submit semantics.
+- Real browser-native Cargo execution has already proven the exact Strategy sequence and exact target grounding: `typeText -> submit` on `Cargo Instruction -> Cargo Instruction`.
+- Current blocker is execution plumbing for editable-target submit, not Strategy/model selection.
 
 ## Historical teaching data — CLOSED
 
@@ -77,7 +78,7 @@ Current six-group reruns are regression evidence, not pristine unseen proof, bec
 
 ## Strategy v0.3.3 state
 
-v0.3.3 separates action selection from current-target ranking:
+v0.3.3 separates WHAT selection from current-target ranking:
 
 - `actionSelectionPolicy: task-history-decoupled-from-current-target-ranking`
 - `actionSelectionUsesCurrentTargetRanking:false`
@@ -108,7 +109,7 @@ Do not keep tuning on these six records.
 
 ## Real fresh-unseen semantic gate — PASS
 
-User ran frozen `baseline-v033/model.json` without fitting/modifying it.
+Frozen `baseline-v033/model.json`, no fit/modification.
 
 Fresh family 1 `fresh-parcel-approval`:
 - expected/actual `click`
@@ -120,7 +121,7 @@ Fresh family 2 `fresh-dispatch-note`:
 
 Result/invariants:
 
-- `PASS`
+- PASS
 - `modelVersion:0.3.3`
 - `trainingOrFitPerformed:false`
 - `modelMutatedInMemory:false`
@@ -129,7 +130,7 @@ Result/invariants:
 - no literal trajectory replay
 - no selector/coordinate targeting
 
-This is first controlled fresh-unseen semantic evidence, not broad web autonomy proof.
+This is controlled fresh-unseen semantic evidence, not broad web autonomy proof.
 
 ## Runtime Strategy loading + transient text execution — PASS contracts
 
@@ -163,7 +164,7 @@ Gate:
 
 `control-center/script/offline_strategy_fresh_native_text_gate.js`
 
-Fresh controlled family:
+Controlled family:
 
 - page: `Cargo Routing Lab`
 - task: type provided transient value into `Cargo Instruction` and press Enter
@@ -194,53 +195,79 @@ Fix:
 - native cleanup CI `33087500659`: success
 - full runtime-syntax `33087500282`: success
 
-### Latest real browser-native rerun — Strategy/target PASS, submit execution FAIL
+### Real browser-native rerun — Strategy/target PASS, goal FAIL
 
 User reran gate v0.1.1 with frozen model v0.3.3.
 
 Observed result:
 
-- `actualActionTypes: ["typeText","submit"]` — exact expected sequence
-- `actualTargetLabels: ["Cargo Instruction","Cargo Instruction"]` — exact expected targets
+- exact action sequence `typeText -> submit`
+- exact target labels `Cargo Instruction -> Cargo Instruction`
 - `modelLoadedFromFile:true`
 - `modelFileMutated:false`
 - transient payload redacted
 - no selector targeting by Strategy
 - `createdTabClosed:true`
 - final title remained `Cargo Routing Lab`
-- errors:
-  - `final_goal_not_satisfied`
-  - `final_budget:budget_consecutive_failures_reached`
+- `final_goal_not_satisfied`
+- `final_budget:budget_consecutive_failures_reached`
 
 Interpretation:
 
 - Strategy WHAT and target grounding are proven correct on this real native run.
 - `typeText` executed visibly in the real browser.
-- remaining failure is editable-target submit/Enter execution, not model selection.
+- remaining failure is editable-target submit/Enter execution.
 
-Execution diagnosis:
+### Editable submit key semantics fix — PASS contracts
 
-- generic `pressKey` path in `cdp_plan.js` emits `keyDown -> keyUp`
-- editable submit path had used form helper `rawKeyDown -> keyUp`
-- this inconsistency was not caught by old contracts, which only asserted that an Enter event existed
+Diagnosis:
 
-Generic fix, without changing Strategy/model:
+- generic `pressKey` emits `keyDown -> keyUp`
+- editable submit had emitted `rawKeyDown -> keyUp`
 
-- `85540fea4310e3e0626c33c49d77d94cbf93b2c1` — `submit_plan` v0.2.0 uses semantic Enter `keyDown -> keyUp` for editable targets; button submit remains click-only
+Generic fix, no Strategy/model change:
+
+- `85540fea4310e3e0626c33c49d77d94cbf93b2c1` — editable submit now emits semantic Enter `keyDown -> keyUp`; button submit remains click-only
 - `f459566b45925f384b83baa0daee59a8a21b4323` — dedicated submit native key semantics contract
-- `0d8aeeceeb72522b4a00b7342369eef664c16d67` — native workflow gates the new contract
+- `0d8aeeceeb72522b4a00b7342369eef664c16d67` — native workflow gates contract
 
-CI after fix:
+CI:
 
-- full runtime-syntax `33088198806`: success
+- runtime-syntax `33088198806`: success
 - transient payload execution `33088198866`: success
 - dedicated fresh-native + submit semantics `33088244754`: success
+
+### Real rerun after key semantics fix — compatibility FAIL
+
+User pulled handoff HEAD `059087f` and reran the same frozen model.
+
+Result failed immediately during CDP dispatch with:
+
+`unsupported_cdp_plan_version`
+
+Root cause:
+
+- `submit_plan.js` used `SUBMIT_PLAN_VERSION = 0.2.0` as `cdpPlanVersion`
+- Agent Runtime dispatcher accepts wire schemas only `0.1.0` through `0.1.3`
+- module implementation version and CDP wire schema version had been conflated
+
+This failure is execution compatibility only. It does not invalidate prior Strategy/target evidence and does not involve retraining.
+
+Generic compatibility fix:
+
+- `25e77d7a1a06903bb41257624093e08248270ca0` — separates `SUBMIT_PLAN_VERSION = 0.2.1` from `CDP_PLAN_VERSION = 0.1.2`; submit plans now emit supported wire schema `0.1.2`
+- `083430d8546e0257591569c8bcc5d81334b9cb3a` — contract imports Agent Runtime `cdp_plan_dispatcher.js` and requires both editable/button submit plans to pass `Dispatcher.validatePlan()`
+
+CI after compatibility fix:
+
+- dedicated fresh-native/submit contract `33088623615`: success
+- full runtime-syntax `33088623858`: success
 
 Do not retrain on Cargo Routing Lab to force PASS.
 
 ## Immediate next user action
 
-Pull latest branch and rerun the same frozen model/browser gate. Control Center should remain running and one normal `http(s)` anchor tab such as `https://example.com` should be open.
+Pull latest branch and rerun the same frozen-model browser gate. Control Center should remain running and one normal `http(s)` anchor tab such as `https://example.com` should be open.
 
 Windows CMD:
 
@@ -253,7 +280,7 @@ set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
 node control-center\script\offline_strategy_fresh_native_text_gate.js --model "%SIX%\strategy-approved-dataset-v03\baseline-v033\model.json"
 ```
 
-Expected HEAD is the handoff commit created after `0d8aeece`.
+Expected HEAD is the handoff commit created after `083430d`.
 
 Desired native PASS:
 
@@ -263,10 +290,10 @@ Desired native PASS:
 - `actualActionTypes:["typeText","submit"]`
 - `actualTargetLabels:["Cargo Instruction","Cargo Instruction"]`
 - `finalTitle:"CARGO INSTRUCTION PASS"`
-- frozen model / redaction / no-selector invariants remain true
+- frozen model / redaction / no-selector invariants true
 - `createdTabClosed:true`
 
-If it still FAILs, preserve the now-proven Strategy/target correctness and diagnose execution/effect generically. Do not change the six split, retrain on Cargo, weaken the goal, or hardcode the lab.
+If it still FAILs, preserve the proven Strategy/target correctness and diagnose execution/effect generically. Do not change the six split, retrain on Cargo, weaken the goal, or hardcode the lab.
 
 ## After native PASS
 
