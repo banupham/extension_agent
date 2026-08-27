@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "name": "Training Collector V0.8 Socket Mirror",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Privacy-first continuous physical and semantic DOM capture with frame-aware telemetry, IndexedDB safety buffering, reliable localhost WebSocket mirroring, and Strategy-safe optional task episode snapshots.",
   "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage"],
   "host_permissions": ["http://*/*", "https://*/*"],

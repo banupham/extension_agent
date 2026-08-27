@@ -360,7 +360,15 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     if (!response?.ok) return;
     S.browserSessionId = response.browserSessionId || null;
     S.episodeActive = IS_TOP_FRAME && !!response.episodeActive;
-    if (S.episodeActive) S.lastEpisodeState = Observer.snapshot();
+    if (S.episodeActive) {
+      S.lastEpisodeState = Observer.snapshot();
+      await send('EPISODE_DOCUMENT_READY', {
+        pageInstanceId: NS2.pageInstanceId,
+        observedAtMs: Math.round(relTime()),
+        observation: S.lastEpisodeState,
+        strategyObservation: strategyObservation(S.lastEpisodeState, `${NS2.pageInstanceId}-navigation`, 'after')
+      });
+    }
     S.rawSender = ReliableSender?.createReliableSender?.({
       send,
       journalKey: `tcRawPendingV072:${NS2.pageInstanceId}`,

@@ -388,6 +388,45 @@ function transitionEnd(sender, transition) {
   return queueEpisodeMutation(() => transitionEndUnlocked(sender, transition));
 }
 
+async function episodeDocumentReadyUnlocked(sender, payload = {}) {
+  const state = await loadEpisodeState();
+  if (sender.frameId !== 0 || !state.active || !state.episode || sender.tab?.id !== state.episode.tabId) {
+    return { ok: true, ignored: true, settled: 0 };
+  }
+
+  const pageInstanceId = String(payload.pageInstanceId || '').trim();
+  const stateAfter = payload.observation && typeof payload.observation === 'object' ? payload.observation : null;
+  const strategyObservationAfter = payload.strategyObservation && typeof payload.strategyObservation === 'object'
+    ? payload.strategyObservation
+    : null;
+  if (!pageInstanceId || !stateAfter || !strategyObservationAfter) {
+    return { ok: false, error: 'episode_document_ready_snapshot_required', settled: 0 };
+  }
+
+  let settled = 0;
+  for (const transition of state.episode.transitions || []) {
+    if (transition?.status !== 'pending') continue;
+    if (String(transition.transitionId || '').startsWith(`${pageInstanceId}-`)) continue;
+    const matched = EpisodeBuilder.finishTransition(state.episode, {
+      transitionId: transition.transitionId,
+      endedAtMs: Number(payload.observedAtMs || 0),
+      stateAfter,
+      strategyObservationAfter,
+      actionSucceeded: true,
+      outcome: {
+        documentChanged: true,
+        settlementReason: 'next_document_ready'
+      }
+    });
+    if (matched) settled += 1;
+  }
+  if (settled > 0) await saveEpisodeState(state);
+  return { ok: true, ignored: false, settled };
+}
+function episodeDocumentReady(sender, payload) {
+  return queueEpisodeMutation(() => episodeDocumentReadyUnlocked(sender, payload));
+}
+
 function bootstrap() {
   SocketMirror?.start?.();
   ensureBrowserSession()
@@ -447,6 +486,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'STOP_EPISODE') return { ok: true, state: await stopEpisode(message.outcome) };
     if (message.type === 'TRANSITION_START') return transitionStart(sender, message.transition);
     if (message.type === 'TRANSITION_END') return transitionEnd(sender, message.transition);
+    if (message.type === 'EPISODE_DOCUMENT_READY') return episodeDocumentReady(sender, message);
     return { ok: false, error: 'unknown_message' };
   })().then(sendResponse).catch(error => sendResponse({ ok: false, error: String(error?.message || error) }));
   return true;

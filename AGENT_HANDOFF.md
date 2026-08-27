@@ -311,3 +311,26 @@ First real incremental batch should be small and privacy-safe. Produce new task-
 After approval, use the incremental dataset builder so v0.3.3's existing heldout split assignments remain unchanged. Fit a new Strategy version only from the resulting train split; keep v0.3.3 as the frozen comparison baseline.
 
 Never promote to `main` without explicit user approval after verified PASS.
+
+## Training Collector cross-document episode continuity — CODE/CONTRACT PASS, MANUAL PENDING
+
+During the first new Wikipedia demonstration, a full-page navigation destroyed the old content-script document before its delayed `TRANSITION_END` messages completed. The new document restored the active episode flag, but the background had no cross-document settlement step, leaving 18 transitions pending and correctly blocking `Mark Success` with `episode_success_has_pending_transition`.
+
+Minimal fix in Training Collector `0.8.2`:
+
+- the new top document sends a privacy-safe `EPISODE_DOCUMENT_READY` observation when it resumes an active episode
+- background settles only pending transitions belonging to an older `pageInstanceId`, scoped to the original episode tab
+- settled transitions carry explicit `documentChanged:true` and `settlementReason:next_document_ready` provenance
+- the new document never settles its own in-flight transitions
+- after the socket server confirms `session-closed` through the session's full event count, the closed session is removed from the in-memory waiting/status queue
+- socket cleanup never deletes IndexedDB raw evidence or server-side `socket-data` files
+
+Verification completed locally:
+
+- `episode_cross_document_settlement_contract.js`: PASS
+- `episode_capture_integration_contract.js`: PASS
+- `episode_capture_gate_contract.js`: PASS
+- `v08_socket_mirror_contract.js`: PASS
+- `node --check` on `background.js` and `content.js`: PASS
+
+Real Chrome navigation retest is still required after reloading Training Collector and reopening/refreshing the target tab. Do not treat this milestone as browser-native PASS yet.

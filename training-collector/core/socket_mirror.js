@@ -156,6 +156,17 @@
         row.ackedThrough = Math.max(row.ackedThrough, Number(message.lastSeq || 0));
         return;
       }
+      if (message?.type === 'session-closed') {
+        const sessionId = String(message.sessionId || '');
+        const row = sessions.get(sessionId);
+        if (!row || !row.closeWhenSynced) return;
+        const acknowledgedThrough = Math.max(row.ackedThrough, Number(message.lastSeq || 0));
+        const expectedThrough = Number(row.session?.eventCount || 0);
+        if (acknowledgedThrough < expectedThrough) return;
+        row.liveQueue.splice(0, row.liveQueue.length);
+        sessions.delete(sessionId);
+        return;
+      }
       if (message?.type === 'resync') {
         const row = sessions.get(String(message.sessionId || ''));
         if (!row) return;

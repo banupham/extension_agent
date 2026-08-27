@@ -16,7 +16,7 @@ const popup = read('popup.js');
 const server = read('socket-server/server.js');
 const serverPkg = JSON.parse(read('socket-server/package.json'));
 
-assert.strictEqual(manifest.version, '0.8.1');
+assert.strictEqual(manifest.version, '0.8.2');
 assert.strictEqual(manifest.minimum_chrome_version, '116');
 assert.ok(manifest.name.includes('V0.8 Socket Mirror'));
 assert.ok(!manifest.host_permissions.some(pattern => /^wss?:/i.test(pattern)));
@@ -30,6 +30,9 @@ assert.ok(background.includes("const SOCKET_ENDPOINT = 'ws://127.0.0.1:8765/trai
 assert.ok(background.includes('ChunkStore.append(candidate, normalizedEvents, batchId)'));
 assert.ok(background.includes('SocketMirror?.publish?.(persistedSession, normalizedEvents)'));
 assert.ok(background.indexOf('ChunkStore.append(candidate, normalizedEvents, batchId)') < background.indexOf('SocketMirror?.publish?.(persistedSession, normalizedEvents)'));
+assert.ok(mirror.includes("message?.type === 'session-closed'"), 'server-confirmed closed sessions must be handled');
+assert.ok(mirror.includes('acknowledgedThrough < expectedThrough'), 'closed session cleanup must require full server acknowledgement');
+assert.ok(mirror.includes('sessions.delete(sessionId)'), 'fully acknowledged closed sessions must leave the waiting/status queue');
 assert.ok(background.includes('replaySession'));
 assert.ok(background.includes('getChunkRecord'));
 assert.ok(background.includes('registerClosedBacklog'));
@@ -66,4 +69,4 @@ assert.ok(rawStore.includes('manual-chunked-jsonl-gzip-fallback-only'));
 assert.ok(popup.includes('GET_SOCKET_STATUS'));
 assert.ok(!popup.includes('RETRY_AUTO_EXPORT'));
 
-console.log('Training Collector V0.8.1 socket mirror inheritance contract OK');
+console.log('Training Collector V0.8.2 socket mirror inheritance contract OK');
