@@ -42,7 +42,7 @@ function effect({ before, after, action = { type: 'click', targetRef: 'e0' }, ex
 }
 
 (function main() {
-  assert.equal(SEMANTIC_EFFECT_VERSION, '0.1.1');
+  assert.equal(SEMANTIC_EFFECT_VERSION, '0.2.0');
   assert.equal(observableEffectExpectedFor({ type: 'click' }), true);
   assert.equal(observableEffectExpectedFor({ type: 'moveTo' }), false);
   assert.equal(observableEffectExpectedFor({ type: 'waitAndObserve' }), false);
@@ -53,21 +53,21 @@ function effect({ before, after, action = { type: 'click', targetRef: 'e0' }, ex
   });
   assert.equal(disappeared.status, 'effect_observed');
   assert.equal(disappeared.observableEffectExpected, true);
-  assert.ok(disappeared.codes.includes('target_disappeared'));
-  assert.ok(disappeared.codes.includes('elements_removed'));
+  assert.ok(disappeared.meaningfulCodes.includes('target_disappeared'));
+  assert.ok(disappeared.meaningfulCodes.includes('elements_removed'));
 
   const toggled = effect({
     before: page({ interactiveElements: [button('e0', 'Choice', { checked: false })] }),
     after: page({ observationId: 'obs2', interactiveElements: [button('e9', 'Choice', { checked: true })] })
   });
   assert.equal(toggled.status, 'effect_observed');
-  assert.ok(toggled.codes.includes('target_checked_changed'));
+  assert.ok(toggled.meaningfulCodes.includes('target_checked_changed'));
 
   const disabled = effect({
     before: page({ interactiveElements: [button('e0', 'Run')] }),
     after: page({ observationId: 'obs2', interactiveElements: [button('e7', 'Run', { enabled: false })] })
   });
-  assert.ok(disabled.codes.includes('target_enabled_changed'));
+  assert.ok(disabled.meaningfulCodes.includes('target_enabled_changed'));
 
   const newUi = effect({
     before: page({ interactiveElements: [button('e0', 'Open')] }),
@@ -77,14 +77,14 @@ function effect({ before, after, action = { type: 'click', targetRef: 'e0' }, ex
     })
   });
   assert.equal(newUi.status, 'effect_observed');
-  assert.ok(newUi.codes.includes('elements_added'));
+  assert.ok(newUi.meaningfulCodes.includes('elements_added'));
 
   const navigation = effect({
     before: page({ url: 'https://example.test/a', title: 'A', interactiveElements: [button('e0', 'Next')] }),
     after: page({ observationId: 'obs2', url: 'https://example.test/b', title: 'B', interactiveElements: [] })
   });
-  assert.ok(navigation.codes.includes('page_url_changed'));
-  assert.ok(navigation.codes.includes('page_title_changed'));
+  assert.ok(navigation.meaningfulCodes.includes('page_url_changed'));
+  assert.ok(navigation.meaningfulCodes.includes('page_title_changed'));
 
   const scrolled = evaluateActionEffect({
     execution: { ok: true },
@@ -94,7 +94,31 @@ function effect({ before, after, action = { type: 'click', targetRef: 'e0' }, ex
   });
   assert.equal(scrolled.status, 'effect_observed');
   assert.equal(scrolled.observableEffectExpected, true);
-  assert.deepEqual(scrolled.codes, ['scroll_changed']);
+  assert.deepEqual(scrolled.meaningfulCodes, ['scroll_changed']);
+
+  const incidentalFocus = effect({
+    before: page({
+      interactiveElements: [button('e0', 'No Op')],
+      focusedRef: null
+    }),
+    after: page({
+      observationId: 'obs2',
+      interactiveElements: [button('e9', 'No Op')],
+      focusedRef: 'e9'
+    })
+  });
+  assert.equal(incidentalFocus.status, 'no_effect');
+  assert.deepEqual(incidentalFocus.meaningfulCodes, []);
+  assert.deepEqual(incidentalFocus.incidentalCodes, ['focus_changed']);
+
+  const explicitFocus = evaluateActionEffect({
+    execution: { ok: true },
+    action: { type: 'focus', targetRef: 'e0' },
+    before: page({ interactiveElements: [button('e0', 'Search')], focusedRef: null }),
+    after: page({ observationId: 'obs2', interactiveElements: [button('e9', 'Search')], focusedRef: 'e9' })
+  });
+  assert.equal(explicitFocus.status, 'effect_observed');
+  assert.deepEqual(explicitFocus.meaningfulCodes, ['focus_changed']);
 
   const noEffect = effect({
     before: page({ interactiveElements: [button('e0', 'No Op')] }),
@@ -130,7 +154,7 @@ function effect({ before, after, action = { type: 'click', targetRef: 'e0' }, ex
     afterBrowserContext: { tabs: [{ title: 'A', url: 'https://a.test/', active: false }, { title: 'B', url: 'https://b.test/', active: true }] }
   });
   assert.equal(tabs.status, 'effect_observed');
-  assert.ok(tabs.codes.includes('browser_context_changed'));
+  assert.ok(tabs.meaningfulCodes.includes('browser_context_changed'));
 
   console.log('Semantic action effect contract: PASS');
 })();
