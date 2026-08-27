@@ -28,12 +28,14 @@ on:
       - 'training-collector/tools/evaluate_behavior_batch_baseline.js'
       - 'training-collector/tools/prepare_strategy_review_pack.js'
       - 'training-collector/tools/score_strategy_review_pack.js'
+      - 'training-collector/tools/prepare_strategy_review_drafts.js'
       - 'training-collector/tests/random_human_data_curator_contract.js'
       - 'training-collector/tests/human_learning_batch_contract.js'
       - 'training-collector/tests/quarantine_diagnostic_contract.js'
       - 'training-collector/tests/human_learning_next_stage_contract.js'
       - 'training-collector/tests/behavior_batch_heldout_contract.js'
       - 'training-collector/tests/strategy_review_triage_contract.js'
+      - 'training-collector/tests/strategy_review_draft_contract.js'
       - '.github/workflows/semantic-mission-and-curation.yml'
   workflow_dispatch:
 
@@ -66,12 +68,14 @@ jobs:
           node --check training-collector/tools/evaluate_behavior_batch_baseline.js
           node --check training-collector/tools/prepare_strategy_review_pack.js
           node --check training-collector/tools/score_strategy_review_pack.js
+          node --check training-collector/tools/prepare_strategy_review_drafts.js
           node --check training-collector/tests/random_human_data_curator_contract.js
           node --check training-collector/tests/human_learning_batch_contract.js
           node --check training-collector/tests/quarantine_diagnostic_contract.js
           node --check training-collector/tests/human_learning_next_stage_contract.js
           node --check training-collector/tests/behavior_batch_heldout_contract.js
           node --check training-collector/tests/strategy_review_triage_contract.js
+          node --check training-collector/tests/strategy_review_draft_contract.js
       - name: Run semantic goal resolver contract
         run: node control-center/script/checks/semantic_goal_resolver.js
       - name: Run semantic mission execution contract
@@ -96,3 +100,5 @@ jobs:
         run: node training-collector/tests/behavior_batch_heldout_contract.js
       - name: Run strategy review triage contract
         run: node training-collector/tests/strategy_review_triage_contract.js
+      - name: Run strategy review draft contract
+        run: node training-collector/tests/strategy_review_draft_contract.js
