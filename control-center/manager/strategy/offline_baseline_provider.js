@@ -9,6 +9,12 @@ const TASK_FEATURE_NAMES = [
   'clickIntent'
 ];
 
+const EDITABLE_TARGET_ACTION_TYPES = new Set([
+  'typeText',
+  'replaceText',
+  'clear'
+]);
+
 function normalizeText(value) {
   return String(value || '')
     .replace(/([\p{Ll}\p{N}])([\p{Lu}])/gu, '$1 $2')
@@ -129,7 +135,7 @@ function validateModel(model) {
       if (!Array.isArray(proto.priorActionTypes)) throw new Error(`historyPrototypes[${index}].priorActionTypes must be an array`);
       for (const [historyIndex, actionType] of proto.priorActionTypes.entries()) {
         if (typeof actionType !== 'string' || !actionType.trim()) {
-          throw new Error(`historyPrototypes[${index}].priorActionTypes[${historyIndex}] required`);
+          throw new Error(`${name}.priorActionTypes[${historyIndex}] required`);
         }
       }
     }
@@ -147,6 +153,27 @@ function normalizedElementRole(element) {
 
 function elementAvailable(element) {
   return element?.visible !== false && element?.rendered !== false && element?.enabled !== false;
+}
+
+function elementHasEditableAffordance(element) {
+  if (element?.editable === true) return true;
+  const role = normalizedElementRole(element);
+  if (['textbox', 'searchbox', 'combobox'].includes(role)) return true;
+  const tag = normalizedElementTag(element);
+  return ['input', 'textarea'].includes(tag);
+}
+
+function actionRequiresEditableTarget(protoOrType) {
+  const type = typeof protoOrType === 'string'
+    ? protoOrType
+    : String(protoOrType?.type || '');
+  return EDITABLE_TARGET_ACTION_TYPES.has(type);
+}
+
+function actionTargetEligible(proto, element) {
+  if (!elementAvailable(element)) return false;
+  if (actionRequiresEditableTarget(proto)) return elementHasEditableAffordance(element);
+  return true;
 }
 
 function targetTraitScore(proto, element) {
@@ -168,7 +195,9 @@ function targetTraitScore(proto, element) {
 }
 
 function elementTargetCompatibility(proto, task, element) {
-  if (!elementAvailable(element)) return { score: 0, prototypeLabelScore: 0, taskLabelScore: 0, traitScore: 0 };
+  if (!actionTargetEligible(proto, element)) {
+    return { score: 0, prototypeLabelScore: 0, taskLabelScore: 0, traitScore: 0, affordanceEligible: false };
+  }
   const label = String(element?.label || '').trim();
   const labelTokens = tokens(label);
   const taskTokens = tokens(task?.instruction);
@@ -181,13 +210,14 @@ function elementTargetCompatibility(proto, task, element) {
   const score = hasTraits
     ? (0.45 * taskLabelScore) + (0.20 * prototypeLabelScore) + (0.35 * traitScore)
     : (0.75 * prototypeLabelScore) + (0.25 * taskLabelScore);
-  return { score, prototypeLabelScore, taskLabelScore, traitScore };
+  return { score, prototypeLabelScore, taskLabelScore, traitScore, affordanceEligible: true };
 }
 
 function bestTargetCompatibility(proto, task, observation) {
   const elements = Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : [];
   let best = 0;
   for (const element of elements) {
+    if (!actionTargetEligible(proto, element)) continue;
     const result = elementTargetCompatibility(proto, task, element);
     best = Math.max(best, Number(result?.score || 0));
   }
@@ -334,13 +364,13 @@ function chooseTargetRef(proto, task, observation, history = []) {
   if (shouldReusePreviousTarget(proto)) {
     const previousRef = historyLastTargetRef(history);
     if (previousRef) {
-      const previous = elements.find(element => element?.ref === previousRef && elementAvailable(element));
+      const previous = elements.find(element => element?.ref === previousRef && actionTargetEligible(proto, element));
       if (previous) return previousRef;
     }
   }
 
   const candidates = elements
-    .filter(element => typeof element?.ref === 'string' && element.ref.trim() && elementAvailable(element))
+    .filter(element => typeof element?.ref === 'string' && element.ref.trim() && actionTargetEligible(proto, element))
     .map(element => {
       const compatibility = elementTargetCompatibility(proto, task, element);
       return {
@@ -445,6 +475,7 @@ function createOfflineBaselineProvider(options = {}) {
 
 module.exports = {
   TASK_FEATURE_NAMES,
+  EDITABLE_TARGET_ACTION_TYPES,
   normalizeText,
   tokenList,
   tokens,
@@ -460,6 +491,9 @@ module.exports = {
   normalizedElementTag,
   normalizedElementRole,
   elementAvailable,
+  elementHasEditableAffordance,
+  actionRequiresEditableTarget,
+  actionTargetEligible,
   targetTraitScore,
   elementTargetCompatibility,
   bestTargetCompatibility,
