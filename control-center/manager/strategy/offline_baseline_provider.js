@@ -277,10 +277,16 @@ function scorePrototypes(prototypes, task, observation = null) {
     const featureScore = taskFeatureScore(proto, task);
     const semanticTargetScore = observation ? bestTargetCompatibility(proto, task, observation) : 0.5;
 
-    // Action selection is intentionally task/history-level. Target labels, target traits and
-    // current observation target-ranking quality stay diagnostic/grounding evidence only.
-    // This prevents a target-grounding policy change from flipping WHAT action the agent picks.
-    const score = (0.50 * instructionScore) + (0.50 * featureScore);
+    // Preserve the pre-v0.3.3 TRAIN-level action evidence ratio while removing only the
+    // current-observation target-ranking term (previously 0.35 of total score).
+    // Learned target labels remain a small lexical action anchor; current target quality does not
+    // participate in WHAT selection and is used only after an action type has been chosen.
+    const taskLevelWeight = 0.12 + 0.08 + 0.45;
+    const score = (
+      (0.12 * instructionScore) +
+      (0.08 * targetLabelScore) +
+      (0.45 * featureScore)
+    ) / taskLevelWeight;
     return {
       proto,
       score,
@@ -293,6 +299,7 @@ function scorePrototypes(prototypes, task, observation = null) {
   }).sort((a, b) => (
     b.score - a.score ||
     b.featureScore - a.featureScore ||
+    b.targetLabelScore - a.targetLabelScore ||
     b.instructionScore - a.instructionScore ||
     a.proto.type.localeCompare(b.proto.type)
   ));
