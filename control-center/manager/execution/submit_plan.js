@@ -2,7 +2,8 @@
 
 const { clickPlan, keyDescription } = require('./cdp_plan.js');
 
-const SUBMIT_PLAN_VERSION = '0.2.0';
+const SUBMIT_PLAN_VERSION = '0.2.1';
+const CDP_PLAN_VERSION = '0.1.2';
 const BUTTON_ROLES = new Set(['button']);
 const BUTTON_INPUT_TYPES = new Set(['submit', 'button', 'image']);
 
@@ -41,7 +42,7 @@ function buildSubmitCdpPlan({ mappedAction, behavior, target, context = {} }) {
     steps.push(...semanticSubmitKeyStroke(behavior, 35));
   }
   return {
-    cdpPlanVersion: SUBMIT_PLAN_VERSION,
+    cdpPlanVersion: CDP_PLAN_VERSION,
     actionType: 'submit',
     targetRef: mappedAction.targetRef || null,
     behaviorProfile: behavior?.profile || null,
@@ -51,6 +52,7 @@ function buildSubmitCdpPlan({ mappedAction, behavior, target, context = {} }) {
 
 module.exports = {
   SUBMIT_PLAN_VERSION,
+  CDP_PLAN_VERSION,
   BUTTON_ROLES,
   BUTTON_INPUT_TYPES,
   buttonLikeTarget,
