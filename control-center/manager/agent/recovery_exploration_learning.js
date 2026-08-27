@@ -15,8 +15,9 @@ const {
   validateRecoveryRecord,
   appendRecoveryRecords
 } = require('../strategy/recovery_policy_memory.js');
+const { recordRecoveryOutcomes } = require('../strategy/recovery_outcome_memory.js');
 
-const RECOVERY_EXPLORATION_LEARNING_VERSION = '0.1.0';
+const RECOVERY_EXPLORATION_LEARNING_VERSION = '0.2.0';
 
 function firstUsefulRecoveryIndex(steps, triggerIndex) {
   for (let index = triggerIndex + 1; index < steps.length; index += 1) {
@@ -107,6 +108,15 @@ function learnExploratoryRecoveryFromSuccessfulEpisode({ file, task, result, lea
 async function executeRecoveryExplorationLearningEpisode(input = {}) {
   if (!input.recoveryMemoryFile) throw new Error('recovery_exploration_memory_file_required');
   const result = await executeBoundedEpisodeLoop(input);
+
+  const recoveryOutcomeLearning = input.recoveryOutcomeMemoryFile
+    ? recordRecoveryOutcomes({
+      file: input.recoveryOutcomeMemoryFile,
+      task: result.task,
+      result
+    })
+    : { attempted: 0, appended: 0, records: [], writes: [], file: null };
+
   let recoveryLearning = {
     attempted: false,
     learned: false,
@@ -139,7 +149,8 @@ async function executeRecoveryExplorationLearningEpisode(input = {}) {
   return {
     ...result,
     recoveryExplorationLearningVersion: RECOVERY_EXPLORATION_LEARNING_VERSION,
-    recoveryLearning
+    recoveryLearning,
+    recoveryOutcomeLearning
   };
 }
 
