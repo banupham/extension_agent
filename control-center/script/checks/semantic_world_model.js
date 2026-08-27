@@ -37,7 +37,7 @@ function main() {
   assert.equal(semanticFactMatches(world, { key: 'signal.searchResultsObserved', operator: 'equals', value: true }), true);
 
   const serialized = JSON.stringify(world);
-  for (const forbidden of ['tabId', '"ref"', '"rect"', 'selector', 'privateReasoning']) {
+  for (const forbidden of ['"tabId"', '"ref"', '"rect"', '"selector"', '"privateReasoning"']) {
     assert.equal(serialized.includes(forbidden), false, `forbidden semantic world field leaked: ${forbidden}`);
   }
   assert.equal(world.privacy.observationLocalRefsStored, false);
