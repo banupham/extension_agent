@@ -49,5 +49,6 @@ module.exports = {
   ...require('./offline_baseline_provider'),
   ...require('./self_experience_memory'),
   ...require('./self_exploration_provider'),
-  ...require('./recovery_policy_memory')
+  ...require('./recovery_policy_memory'),
+  ...require('./recovery_exploration_provider')
 };
