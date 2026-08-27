@@ -12,24 +12,23 @@ Read this file before changing the repository.
 - Strategy chooses **WHAT**; Behavior chooses **HOW**.
 - No site/ref hardcode to force PASS.
 - No generic `failure => scroll`.
-- Do not change split seed/ratios or move heldout into TRAIN to force PASS.
-- Do not recollect/relabel the six historical teaching tasks to force PASS.
+- Never move heldout into TRAIN or change split policy merely to force PASS.
+- Do not recollect/relabel the six historical teaching tasks merely to force PASS.
 - Do not persist selectors, coordinates, tab IDs, raw CDP, credentials/passwords/secrets, typed sensitive values, or private reasoning in Strategy/recovery/memory/training.
 - No literal trajectory replay.
 - Human demonstrations never auto-promote; exact digest confirmation is required before approval is applied.
+- Raw user interaction never auto-trains directly.
 
 ## Current maturity
 
 - Behavior/HOW is learned from real human interaction and runtime-loadable.
 - Strategy/WHAT is supervised and trained from the first human-approved leakage-safe six-group dataset.
-- Recovery/replan/semantic world-model infrastructure exists and is now being integrated with the frozen learned Strategy.
-- Collector/resolver/approval/dataset readiness are not blockers.
-- Strategy v0.3.3 passes the unchanged six-group regression exactly on validation and test.
-- Frozen v0.3.3 passed two fresh-unseen semantic decision families created after model freeze.
-- Frozen v0.3.3 passed a real browser-native end-to-end Cargo family with learned Strategy + Behavior + goal checking + privacy redaction.
-- Cargo is closed as evaluation evidence. Do not tune/train on Cargo merely to accumulate PASSes.
-- A fresh long browser-native mission gate is now implemented and CI-green. It is the immediate user gate.
-- Agent is maturing but is not yet broadly autonomous.
+- Strategy v0.3.3 passes unchanged six-group regression exactly on validation/test.
+- Frozen v0.3.3 passed two fresh-unseen semantic decision families.
+- Frozen v0.3.3 passed a real fresh browser-native Cargo end-to-end family.
+- Mission/replan/recovery/world-model infrastructure exists and is now being integrated with the learned Strategy.
+- Real Signal Relay long-mission run proved recovery and multi-subgoal orchestration partly work, but exposed a controlled-lab form-design defect at subgoal 2.
+- Agent is maturing but is not broadly autonomous.
 
 ## Historical teaching data — CLOSED
 
@@ -71,9 +70,9 @@ VALIDATION:
 TEST:
 - typeText:t-m-ki-m>submit:t-m-ki-m
 
-Six-group reruns are regression evidence, not pristine unseen proof, because prior heldout failures influenced v0.3.x redesign.
+Six-group reruns are regression evidence, not pristine unseen proof, because prior failures influenced v0.3.x redesign.
 
-## Strategy v0.3.3 — regression PASS
+## Strategy v0.3.3
 
 Policy:
 
@@ -81,45 +80,23 @@ Policy:
 - `actionSelectionUsesCurrentTargetRanking:false`
 - `targetGroundingPolicy: current-task-dominant-with-action-affordance`
 
-Real unchanged six-group rerun:
+Real six-group regression:
 
-Validation Topic Search:
-- actionTypeAccuracy 1
-- targetRefAccuracy 1
-- exactSemanticAccuracy 1
-- `typeText@e1 -> submit@e1`
-
-Test Google Search:
-- actionTypeAccuracy 1
-- targetRefAccuracy 1
-- exactSemanticAccuracy 1
-- `typeText@e1 -> submit@e1`
+- validation Topic Search: action/target/exact semantic all 1.0
+- test Google Search: action/target/exact semantic all 1.0
 
 Do not keep tuning on these six records.
 
-## Fresh-unseen frozen-model semantic decision gate — PASS
+## Fresh-unseen frozen-model semantic gate — PASS
 
-Frozen `baseline-v033/model.json`, no fit or mutation.
+Frozen `baseline-v033/model.json`, no fit/mutation:
 
-Fresh families created after model freeze:
-
-- `fresh-parcel-approval`: expected/actual `click`, target correct
-- `fresh-dispatch-note`: expected/actual `typeText -> submit`, target continuity correct
-
-Invariants:
-
-- `modelVersion:0.3.3`
-- `trainingOrFitPerformed:false`
-- `modelMutatedInMemory:false`
-- `modelFileMutated:false`
-- no selector/coordinate targeting
+- `fresh-parcel-approval`: click + correct target
+- `fresh-dispatch-note`: `typeText -> submit` + target continuity
 - no literal trajectory replay
-
-This is controlled fresh-unseen semantic evidence, not broad web autonomy proof.
+- no selector/coordinate targeting
 
 ## Runtime loading / transient execution
-
-Runtime Strategy loader validates frozen model files and rejects forbidden/private persisted keys.
 
 Execution boundary:
 
@@ -136,7 +113,7 @@ Properties:
 
 Important CI:
 
-- Strategy runtime model loading `33083343691`: success
+- Strategy model loading `33083343691`: success
 - transient payload `33084021426`: success
 - full runtime after plumbing `33084676420`: success
 
@@ -146,189 +123,141 @@ Gate:
 
 `control-center/script/offline_strategy_fresh_native_text_gate.js`
 
-Latest real local PASS at HEAD `bcec745` with frozen `baseline-v033/model.json`:
+Real local PASS at HEAD `bcec745` with frozen v0.3.3:
 
-- `ok:true`
-- `result:PASS`
-- gateVersion `0.1.1`
-- modelVersion `0.3.3`
-- expected/actual `typeText -> submit`
-- expected/actual `Cargo Instruction -> Cargo Instruction`
-- finalTitle `CARGO INSTRUCTION PASS`
-- transient payload applied only to `typeText`, redacted
-- `frozenModelOnly:true`
-- `modelLoadedFromFile:true`
-- `modelFileMutated:false`
-- `noLiteralTrajectoryReplay:true`
-- `noSelectorTargetingByStrategy:true`
-- `transientPayloadRedacted:true`
-- `publicResultContainsTransientText:false`
-- `errors:[]`
-- `createdTabClosed:true`
+- `ok:true`, `result:PASS`
+- exact actions `typeText -> submit`
+- exact targets `Cargo Instruction -> Cargo Instruction`
+- final title `CARGO INSTRUCTION PASS`
+- model loaded from file and unchanged
+- transient text redacted and absent from public result
+- no selector targeting by Strategy
+- no literal trajectory replay
+- created tab closed
 
-Interpretation:
+Cargo is now closed evaluation evidence. Do not keep optimizing or training on Cargo.
 
-- first real controlled fresh browser-native end-to-end PASS for learned Strategy v0.3.3
-- Strategy WHAT, target grounding, learned Behavior execution, observe-after, goal checking, privacy boundary, frozen model loading, and cleanup all completed in one real Chrome run
-- stronger than offline decision evidence, but still not broad web autonomy proof
-- stop optimizing on Cargo
+## Mission stack upgrades
 
-## Mission stack upgrade for long missions
+### Transient payload and step hooks
 
-### Transient payload + step hooks
-
-`mission_strategy_executor.js` now passes execution-time transient args and step hooks into each bounded subgoal episode.
-
-Commits:
-
-- `4cec004bd51a01185f59e2b16f4f56f2252e45d6` — mission executor v0.4.0 passes `resolveTransientActionArgs` + `onStep` with mission/subgoal context and checks cross-subgoal transient redaction
+- `4cec004bd51a01185f59e2b16f4f56f2252e45d6` — mission executor passes `resolveTransientActionArgs` + `onStep` to each subgoal episode and verifies cross-subgoal redaction
 - `32f6df2540f3e946491118f0c116669813ebf5d1` — mission transient payload contract
-- `6e2eab02a70c6e42ff4257fc7ac8de427461422c` — dedicated `mission-long-native` CI workflow
-
-This preserves the same privacy boundary as one-action execution: typed values can reach raw browser execution but do not persist in public mission result/history.
+- `6e2eab02a70c6e42ff4257fc7ac8de427461422c` — dedicated mission workflow
 
 ### Recovery planned-progression guard
 
-Problem found before running the long mission:
+Problem:
 
-- privacy-safe observations intentionally do not persist typed input values
-- therefore a successful `typeText` can look like semantic `no_effect`
-- old recovery exploration would treat any failed/no-effect step as a recovery trigger before asking whether base Strategy was deliberately progressing to the next semantic action
-- that could hijack a correct learned `typeText -> submit` sequence with `wait/scroll`
+- privacy-safe observation does not persist typed values
+- successful `typeText` can therefore look like semantic `no_effect`
+- old recovery could hijack a correct `typeText -> submit` sequence
 
 Generic fix:
 
-- recovery first asks base Strategy for the next semantic decision
-- if base Strategy changes action type, recovery defers because this is planned semantic progression
-- if action type is the same but target label changes, recovery also defers because this can be a legitimate multi-target sequence
-- recovery exploration proceeds when base Strategy repeats the same failed action/semantic target or is otherwise not progressing
-- no generic `failure => scroll` rule was added
+- ask base Strategy for planned next semantic decision before recovery
+- if action type changes, preserve planned progression
+- if same action type but semantic target label changes, preserve planned progression
+- recovery explores only when base repeats the same failed action/semantic target or otherwise does not progress
+- no generic `failure => scroll` rule
 
 Commits:
 
-- `cc7acf88e2a559c9229c366a8c208cf4118ee587` — recovery exploration v0.5.0 planned-progression guard
-- `f42a1f38f719c6c7c509b0f2aabf633f0a6dd5b4` — contract proves:
-  - failed `typeText` + base `submit` => keep `submit`
-  - failed click + same click/target => permit recovery `waitAndObserve`
-  - failed click + different semantic target => keep planned click progression
-- `8324b0dfde0a66ba2c23d73c63cce4d91b203240` — mission CI gates the recovery contract
+- `cc7acf88e2a559c9229c366a8c208cf4118ee587` — recovery exploration v0.5.0 progression guard
+- `f42a1f38f719c6c7c509b0f2aabf633f0a6dd5b4` — progression guard contract
+- `8324b0dfde0a66ba2c23d73c63cce4d91b203240` — mission CI includes recovery contract
 
-## Fresh long browser-native mission — READY
+## Signal Relay long browser-native family — REAL RUN FAIL / DIAGNOSED
 
 Gate:
 
 `control-center/script/offline_strategy_fresh_long_mission_gate.js`
 
-Family created after the frozen model and after Cargo was closed:
-
-`Signal Relay Lab`
-
-Natural-language mission:
+Mission:
 
 `Click Open Relay Console, then type the provided value into Relay Note and press Enter, then click Finalize Relay`
 
-The mission planner splits this into three ordered subgoals.
+Expected:
 
-Expected subgoal 1:
+1. `click@Open Relay Console -> waitAndObserve`
+2. `typeText@Relay Note -> submit@Relay Note`
+3. `click@Finalize Relay`
 
-- Strategy: `click` target `Open Relay Console`
-- page intentionally schedules the real transition 1200ms later with no immediate DOM mutation
-- normal click settle should observe `no_effect`
-- base Strategy would repeat the same click/target
-- recovery exploration should choose `waitAndObserve`
-- delayed state then reveals `Relay Note`
-- subgoal semantic goal becomes satisfied
+Gate commits:
 
-Expected subgoal 2:
+- `7260930f1278ec814faf1d8fc67f8d4bd564c05e` — browser-native long mission gate
+- `90ec4cb3fd084967cc1c6d6f99468ba6b4fbe79e` — gate contract
 
-- `typeText@Relay Note -> submit@Relay Note`
-- typed value injected only through transient mission payload
-- typeText may appear `no_effect` under privacy-safe observation
-- base Strategy progresses to `submit`, so recovery progression guard must defer recovery
-- submit reveals `Finalize Relay`
+CI before real run:
 
-Expected subgoal 3:
+- dedicated mission run `33090453237`: success
+- full runtime run `33090453289`: success
 
-- `click@Finalize Relay`
-- reveals semantic element `Relay Complete`
-- mission becomes fully satisfied
+### Real user run result
 
-Exact expected action sequences:
+Real browser run returned FAIL:
 
-1. `click -> waitAndObserve`
-2. `typeText -> submit`
-3. `click`
-
-Exact expected target-label sequences:
-
-1. `Open Relay Console -> null`
-2. `Relay Note -> Relay Note`
-3. `Finalize Relay`
-
-The gate requires:
-
-- all 3 subgoals done in order
-- each subgoal ended through actual goal checking
-- subgoal 1 first click produced real `no_effect`/failed control state
-- subgoal 1 recovery came from `recoveryExploration` and used `waitAndObserve`
-- subgoal 2 preserved `typeText -> submit` and recorded `recoveryDeferredForBaseProgression:true`
-- transient text remained redacted
-- frozen model loaded from file and hash unchanged
-- no fit module imported
+- `missionReasonCode:subgoal_failed`
+- progress `1/3`
+- model version `0.3.3`
+- frozen model invariant true
+- model file unchanged
+- transient payload redacted
 - no literal trajectory replay
-- created lab tab cleaned up
+- created tab closed
 
-Gate / contract commits:
+Subgoal 1 — **PASS and useful recovery evidence**:
 
-- `7260930f1278ec814faf1d8fc67f8d4bd564c05e` — fresh long browser-native gate
-- `90ec4cb3fd084967cc1c6d6f99468ba6b4fbe79e` — long mission gate contract with negative checks for missing recovery/progression guard/model mutation
+- action 0 `click@Open Relay Console`
+- control `failed`, reason `action_no_observable_effect`
+- effect `no_effect`; only incidental `focus_changed`
+- recovery action `waitAndObserve`
+- recovery source `recoveryExploration`
+- after wait: `elements_added/elements_removed`
+- subgoal goal satisfied
 
-CI on `90ec4cb`:
+This proves the generic recovery loop can observe a real no-effect state, choose a bounded semantic recovery action, reobserve, and complete the subgoal.
 
-- dedicated `mission-long-native` run `33090453237`: success
-  - mission transient payload contract PASS
-  - recovery planned progression guard contract PASS
-  - fresh long mission gate contract PASS
-- full `runtime-syntax` run `33090453289`: success
+Subgoal 2 — **Strategy/progression PASS, page submit FAIL**:
 
-This is the immediate fresh runtime evaluation. Do not fit on Signal Relay Lab if it fails; diagnose generic architecture and later use a new fresh family for pristine evidence.
+- step 0 `typeText@Relay Note`
+- transient text was applied and redacted; user visibly saw text in the correct field
+- privacy-safe effect observer called it `no_effect`, as expected
+- step 1 base Strategy correctly progressed to `submit@Relay Note`
+- `recoveryDeferredForBaseProgression:true` proves the progression guard worked
+- submit produced `no_effect`, no DOM/state change
+- recovery then explored `waitAndObserve`, `scrollVertical`, `scrollHorizontal`, `scrollIntoView`
+- none could satisfy the goal; episode ended `budget_max_steps_reached`
 
-## Immediate user action
+### Root cause
 
-Keep Control Center running, keep one normal `http(s)` anchor tab such as `https://example.com` open, and use the same frozen v0.3.3 model.
+The controlled Signal Relay page has a test-design defect, not a learned-Strategy failure:
 
-Windows CMD:
+- `relayForm` contains two text `<input>` controls (`Relay Note`, `Operator Memo`)
+- its only button inside the form is `type="button"` (`Review Template`)
+- there is no submit control
+- page progression to stage 3 occurs only inside `relayForm.addEventListener('submit', ...)`
+- pressing Enter in `Relay Note` therefore did not produce the form submit event in the real browser
 
-```bat
-cd /d C:\Users\duong\Downloads\extension_agent
-git pull
-git rev-parse --short HEAD
+This is consistent with the real run: `typeText` succeeded visibly, Strategy chose `submit`, but stage 2 remained visible and recovery exhausted its budget.
 
-set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
-node control-center\script\offline_strategy_fresh_long_mission_gate.js --model "%SIX%\strategy-approved-dataset-v03\baseline-v033\model.json"
-```
+Do **not** change Strategy v0.3.3, its weights, dataset, or heldout split because of this failure.
 
-Expected HEAD is this handoff commit.
+Do **not** treat the recovery scroll attempts as evidence for adding a generic failure-to-scroll rule; they were bounded exploration after a genuine no-effect submit.
 
-Desired key PASS fields:
+Signal Relay is no longer pristine unseen evidence because this failure has now influenced diagnosis. It may be repaired and rerun only as regression/runtime validation. A different fresh family is required later for pristine long-mission generalization evidence.
 
-- `ok:true`
-- `result:PASS`
-- `gate:offline-strategy-fresh-long-mission`
-- `modelVersion:0.3.3`
-- `missionReasonCode:mission_satisfied`
-- actual subgoal actions exactly `[["click","waitAndObserve"],["typeText","submit"],["click"]]`
-- actual target labels exactly `[["Open Relay Console",null],["Relay Note","Relay Note"],["Finalize Relay"]]`
-- all three subgoals status `done`
-- recovery evidence on subgoal 1
-- `recoveryDeferredForBaseProgression:true` on subgoal 2 submit decision
-- frozen model / redaction / ordered execution / goal-check invariants true
-- `errors:[]`
-- `createdTabClosed:true`
+## Immediate next development
 
-## Continuous-learning phase after long-mission runtime is stable
+1. Repair the generic controlled form semantics in Signal Relay so `press Enter` has a valid submit path; do not change Strategy/model.
+2. Add a contract proving the lab form actually supports Enter-submit rather than merely asserting planned action sequences.
+3. Rerun Signal Relay as **regression**, not pristine fresh proof.
+4. If regression passes, create a different fresh long native family for pristine multi-subgoal/recovery evidence.
+5. After long-mission runtime is stable, shift emphasis to continuous learning from approved new user interactions.
 
-Once this class of long mission is stable, shift the main source of additional capability from hand-written plumbing to approved user data:
+## Continuous-learning phase
+
+Target pipeline:
 
 `new user interaction -> raw capture -> privacy/noise filter -> semantic episode candidate -> resolver -> human review/explicit digest approval -> approved dataset -> retrain -> fresh evaluation`
 
@@ -338,9 +267,9 @@ Rules:
 - typed secrets/credentials/private values stay out of Strategy/memory/training
 - click/focus/edit mechanics remain HOW/capture noise unless semantically necessary
 - no literal trajectory replay
-- new evaluation families stay held out and are never moved into TRAIN just to pass
-- human approval remains explicit before candidate data is promoted
+- fresh evaluation families stay held out and are never moved into TRAIN merely to pass
+- human approval remains explicit before promotion
 
-After enough new approved semantic groups exist, fit a new Strategy version using the expanded train split and compare it against v0.3.3 on action type, target grounding, exact semantic sequence, long-mission completion, recovery quality, and fresh-unseen families.
+After enough new approved semantic groups exist, fit the next Strategy version and compare against v0.3.3 on action type, target grounding, exact semantic sequence, long-mission completion, recovery quality, and new fresh-unseen families.
 
 Never promote to `main` without explicit user approval after verified PASS.
