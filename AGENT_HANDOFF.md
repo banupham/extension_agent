@@ -15,7 +15,7 @@ This file is the durable continuation point for future ChatGPT sessions. Read th
 ## Agent maturity status
 
 - Behavior/HOW: learned from real human demonstrations and runtime-loadable.
-- Strategy/WHAT: still in supervised teaching, now with a valid diverse three-task batch ready for semantic review-aid processing.
+- Strategy/WHAT: still in supervised teaching, but now has a valid three-task approval-candidate batch spanning three distinct semantic task families.
 - Overall: agent is maturing, but it is still being taught.
 
 ## Historical blocked data
@@ -28,30 +28,44 @@ This file is the durable continuation point for future ChatGPT sessions. Read th
 
 ## Current replacement teaching batch
 
-Three distinct successful episodes are accepted:
+Three distinct successful episodes:
 
 1. `ep-1787826569158` — Google -> Gmail — 5 captured transitions.
 2. `ep-1787826618214` — Google -> type `OpenAI` into Search -> submit — 10 captured transitions.
 3. `ep-1787826766003` — mission Atlas -> mission Orion — 2 captured transitions.
 
-Local batch processing result reported by the user:
+Batch review results reported by the user:
 
-- review files: 3
-- ready for human review: 3
-- total transitions: 17
-- fast-label review: 7
-- ambiguous-label review: 10
-- fast-label coverage: `0.4117647058823529`
-- episode fast-label candidates: 1
-- provenance source raw files: 68
-- provenance anchors found: 0
-- provenance target recovery requested: 1
-- recovered semantic targets: 0
-- unresolved provenance targets: 1
+- episodeCount: 3
+- transitionCount: 17
+- fastLabelReviewCount: 7
+- ambiguousLabelReviewCount: 10
+- teaching resolver: PASS
+- resolvedSemanticActionCount: 2
+- captureNoiseCount: 12
+- unresolvedHumanReviewCount: 0
+- fullyResolvedEpisodeCount: 3
+- approval candidates: 3
+- blocked episodes: 0
+- ambiguity-aid candidate episodes: 2
+- exact candidate digest hash: `758b466357580ca3e9d5914c8f91712b10fcf543b2ac0979f4f21bf1a2a6c740`
+- autoTrainEligible remains false pending explicit human confirmation.
 
-The `provenanceAnchorCount=0` means the new raw provenance channel did not contribute evidence for this batch. Do not block the whole batch on that: the review exports themselves contain enough semantic observation evidence to process the teaching examples conservatively, while the one targetless click remains review-aid-only.
+The three semantic split groups are:
 
-## Teaching-batch semantic resolver
+- `semantic-sequence:click:gmail`
+- `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
+- `semantic-sequence:click:mission-atlas>click:mission-orion`
+
+The approval digest proposes:
+
+- Gmail task: 1 Strategy click, 4 capture-noise steps excluded.
+- Search task: 2 Strategy actions (`typeText`, `submit`), 8 capture-noise steps excluded.
+- Mission task: 2 Strategy clicks (`Mission Atlas`, `Mission Orion`), 0 excluded.
+
+The user displayed the full approval-candidates markdown. Displaying it is not itself approval. The next command uses the exact digest hash and explicit confirmation phrase; running that command is the human confirmation boundary.
+
+## Teaching-batch semantic resolver milestone
 
 Commits:
 
@@ -59,42 +73,21 @@ Commits:
 - `0027e74519e9eb0bdeeadf900b5138f91a186410` — add `training-collector/tests/strategy_teaching_batch_resolver_contract.js`.
 - `067ba25f0976fb260e1f8211dd7b2c9cef3d138b` — add dedicated CI workflow `strategy-teaching-batch-resolver.yml`.
 
-The resolver is a review aid only. It conservatively:
-
-- excludes focus acquisition from Strategy;
-- excludes editable-field clicks used only to acquire typing focus;
-- collapses per-character `text-key` capture into one semantic `typeText` proposal using text explicitly present in the task instruction, never raw key characters;
-- maps Enter to semantic submit when the task explicitly indicates search/submit intent;
-- may propose a targetless no-effect click as capture noise only when a later successful task-aligned semantic action exists;
-- rejects task-declared text extraction when the instruction looks credential/secret-sensitive;
-- always requires explicit human confirmation and remains `autoTrainEligible:false`.
-
 GitHub Actions run `33064693398` completed successfully. `Strategy teaching batch resolver contract: PASS`.
 
 ## Immediate next action
 
-On the user's local machine, with `%TEACH%` still set to the teaching-batch directory:
+If the human reviewer agrees the displayed digest matches the three demonstrations, run:
 
 ```bat
 cd /d C:\Users\duong\Downloads\extension_agent
 git pull
 git rev-parse --short HEAD
+set TEACH=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-batch-20260827
 
-node training-collector\tests\strategy_teaching_batch_resolver_contract.js
+node training-collector\tools\apply_strategy_approval_candidates.js --candidates "%TEACH%\approval-candidates-v01\approval-candidates.json" --confirm-digest 758b466357580ca3e9d5914c8f91712b10fcf543b2ac0979f4f21bf1a2a6c740 --confirm YES-I-REVIEWED-STRATEGY-APPROVAL-DIGEST --out "%TEACH%\strategy-approved-v01"
 
-node training-collector\tools\resolve_strategy_teaching_batch.js --pack "%TEACH%\review-pack-v01\review-pack.json" --triage "%TEACH%\review-pack-v01\triage.v01.json" --out "%TEACH%\teaching-resolution-v01"
-
-node training-collector\tools\prepare_strategy_review_drafts.js --pack "%TEACH%\review-pack-v01\review-pack.json" --triage "%TEACH%\review-pack-v01\triage.v01.json" --out "%TEACH%\review-drafts-v01"
-
-node training-collector\tools\prepare_strategy_approval_candidates.js --digest "%TEACH%\review-drafts-v01\approval-digest.json" --resolution "%TEACH%\teaching-resolution-v01\ambiguity-resolution.json" --out "%TEACH%\approval-candidates-v01"
-
-type "%TEACH%\approval-candidates-v01\approval-candidates.md"
+node training-collector\tools\build_strategy_dataset_from_approvals.js --pack "%TEACH%\review-pack-v01\review-pack.json" --annotations "%TEACH%\strategy-approved-v01" --out "%TEACH%\strategy-human-dataset-v01"
 ```
 
-Expected goal: 3 approval-candidate episodes, 0 blocked, with three distinct semantic split groups:
-
-- Gmail: one task-relevant click;
-- Search: `typeText -> submit`;
-- Mission: `click Mission Atlas -> click Mission Orion`.
-
-Do not apply approval until the user has read the generated approval-candidates digest and explicitly confirms its exact digest hash. After approval, build the Strategy dataset; only fit if at least 3 distinct semantic split groups remain and readiness passes. Fit TRAIN only; validation/test stay held out.
+Expected target: explicit approval PASS, then dataset build sees 3 distinct semantic split groups. Only if the dataset reports both `datasetBuilt:true` and `baselineReady:true` should the next step run readiness check and fit Strategy TRAIN-only; validation/test remain held out. Do not promote `main`.
