@@ -49,7 +49,7 @@ function extractTopic(instruction) {
 
 function extractTemporalWindow(instruction) {
   const text = normalizeMissionText(instruction);
-  const match = /\b(\d+)\s*(ngày|day|days|tuần|week|weeks|tháng|month|months)\s*(tới|tiếp|sắp\s+tới|next|ahead)?\b/iu.exec(text);
+  const match = /(\d+)\s*(ngày|day|days|tuần|week|weeks|tháng|month|months)(?:\s*(tới|tiếp|sắp\s+tới|next|ahead))?(?=\s|[,;.]|$)/iu.exec(text);
   if (!match) return null;
   const unitRaw = normalizeLower(match[2]);
   const unit = unitRaw.startsWith('ngày') || unitRaw.startsWith('day')
@@ -67,14 +67,14 @@ function extractTemporalWindow(instruction) {
 
 function extractLocation(instruction) {
   const text = normalizeMissionText(instruction);
-  const match = /(?:\bở\b|\btại\b|\bin\b)\s+([^,;.]+?)(?=\s+(?:trong\s+\d+|for\s+the\s+next|for\s+\d+|\d+\s*(?:ngày|days?|tuần|weeks?|tháng|months?))\b|[,;.]|$)/iu.exec(text);
+  const match = /(?:^|\s)(?:ở|tại|in)\s+([^,;.]+?)(?=\s+(?:trong\s+\d+|for\s+the\s+next|for\s+\d+|\d+\s*(?:ngày|days?|tuần|weeks?|tháng|months?))(?:\s|$)|[,;.]|$)/iu.exec(text);
   return match ? normalizeMissionText(match[1]) : null;
 }
 
 function inferGoalKinds(instruction) {
   const text = normalizeLower(instruction);
   const kinds = [];
-  if (/(?:\blên\b|\bvào\b|\bmở\b|truy cập|\bđến\b|\bgo to\b|\bopen\b|\bvisit\b|https?:\/\/)/iu.test(text)) kinds.push('navigate');
+  if (/(?:\blên\b|\bvào\b|(?:^|\s)mở(?:\s|$)|truy cập|(?:^|\s)đến(?:\s|$)|\bgo to\b|\bopen\b|\bvisit\b|https?:\/\/)/iu.test(text)) kinds.push('navigate');
   if (/(?:\btìm\b|tìm kiếm|search|tra cứu|lookup|look up)/iu.test(text)) kinds.push('search');
   if (/(?:\bxem\b|watch|read|đọc|video|videos|nội dung|content)/iu.test(text)) kinds.push('consume_content');
   if (/(?:kiểm tra|check|tra cứu|lấy thông tin|get information|weather|thời tiết|forecast|dự báo)/iu.test(text)) kinds.push('retrieve_information');
