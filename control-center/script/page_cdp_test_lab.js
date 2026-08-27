@@ -138,6 +138,16 @@ function mainHtml(url) {
     </div>
   </section>
 
+  <section id="discovery">
+    <h2>Opaque discovery challenge</h2>
+    <div>Goal: reach DISCOVERY PASS. The required order is not shown.</div>
+    <div class="row">
+      <button id="discoveryAlpha" aria-label="Discovery Alpha">Discovery Alpha</button>
+      <button id="discoveryBeta" aria-label="Discovery Beta">Discovery Beta</button>
+      <button id="discoveryGamma" aria-label="Discovery Gamma">Discovery Gamma</button>
+    </div>
+  </section>
+
   <section id="frames">
     <h2>Multi-frame</h2>
     <iframe src="/frame" title="Batch Lab Child Frame"></iframe>
@@ -197,6 +207,18 @@ function mainHtml(url) {
     document.getElementById('seek').addEventListener('input',e=>mark(Number(e.target.value)>=70?'SEEK PASS':'SEEK '+e.target.value));
     document.getElementById('rate').addEventListener('change',e=>mark(e.target.value==='2'?'PLAYBACKRATE PASS':'PLAYBACKRATE '+e.target.value));
 
+    const discoveryOrder = ['discoveryBeta', 'discoveryAlpha', 'discoveryGamma'];
+    let discoveryIndex = 0;
+    for (const id of ['discoveryAlpha', 'discoveryBeta', 'discoveryGamma']) {
+      document.getElementById(id).addEventListener('click', event => {
+        if (id !== discoveryOrder[discoveryIndex]) return;
+        event.currentTarget.disabled = true;
+        event.currentTarget.dataset.discoveryAccepted = 'true';
+        discoveryIndex += 1;
+        if (discoveryIndex === discoveryOrder.length) mark('DISCOVERY PASS');
+      });
+    }
+
     if (${waitCase ? 'true' : 'false'}) {
       if (!preserveBrowserUiTabTitle) document.title='WAITANDOBSERVE ARMED';
       setTimeout(() => {
@@ -225,6 +247,7 @@ server.listen(PORT, HOST, () => {
   console.log(`PAGE_CDP batch lab: http://${HOST}:${PORT}/`);
   console.log(`waitAndObserve case: http://${HOST}:${PORT}/?case=wait`);
   console.log(`Browser UI tabs: http://${HOST}:${PORT}/?tab=alpha | ?tab=beta | ?tab=disposable`);
+  console.log('Opaque discovery challenge: Discovery Alpha/Beta/Gamma → DISCOVERY PASS');
   console.log('Nested frame gate: TOP → /frame-level1 → /frame-level2 → Nested Frame Action Target');
   console.log('Stop with Ctrl+C. Keep this fixed port for all batch gates.');
 });
