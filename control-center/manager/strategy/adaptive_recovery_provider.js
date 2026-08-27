@@ -11,11 +11,31 @@ const {
   recoveryOutcomeStats
 } = require('./recovery_outcome_memory.js');
 
-const ADAPTIVE_RECOVERY_VERSION = '0.1.0';
+const ADAPTIVE_RECOVERY_VERSION = '0.2.0';
 
 function clamp01(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : fallback;
+}
+
+function recoverySelectionHistory(history = []) {
+  if (!Array.isArray(history) || !history.length) return [];
+  const last = history[history.length - 1];
+  const source = String(last?.decisionSource || '').trim();
+  const rootActionType = String(last?.recoveryTriggerActionType || '').trim();
+  if ((source !== 'recoveryPolicy' && source !== 'recoveryExploration') || !rootActionType) return history;
+  return [
+    ...history.slice(0, -1),
+    {
+      ...last,
+      actionType: rootActionType,
+      actionTargetLabel: last.recoveryTriggerTargetLabel || null,
+      controlStatus: 'failed',
+      reasonCode: last.recoveryTriggerReasonCode || 'action_no_observable_effect',
+      effectStatus: last.recoveryTriggerEffectStatus || 'no_effect',
+      effectCodes: Array.isArray(last.recoveryTriggerEffectCodes) ? [...last.recoveryTriggerEffectCodes] : []
+    }
+  ];
 }
 
 function createAdaptiveRecoveryProvider(options = {}) {
@@ -53,7 +73,8 @@ function createAdaptiveRecoveryProvider(options = {}) {
     version: ADAPTIVE_RECOVERY_VERSION,
 
     async decide({ task, observation, history = [] }) {
-      const recalled = selectRecovery(currentPolicyRecords(), task, history, minimumPolicyScore);
+      const selectionHistory = recoverySelectionHistory(history);
+      const recalled = selectRecovery(currentPolicyRecords(), task, selectionHistory, minimumPolicyScore);
       if (!recalled) return explorationProvider.decide({ task, observation, history });
 
       const historical = recoveryOutcomeStats(currentOutcomeRecords(), {
@@ -64,7 +85,7 @@ function createAdaptiveRecoveryProvider(options = {}) {
       const policyHealthy = historical.attempts === 0 || historical.confidence >= minimumOutcomeConfidence;
 
       if (policyHealthy) {
-        const decision = await policyProvider.decide({ task, observation, history });
+        const decision = await policyProvider.decide({ task, observation, history: selectionHistory });
         return {
           ...decision,
           confidence: historical.attempts
@@ -72,6 +93,11 @@ function createAdaptiveRecoveryProvider(options = {}) {
             : decision.confidence,
           metadata: {
             ...(decision.metadata || {}),
+            triggerActionType: recalled.trigger.actionType,
+            triggerTargetLabel: recalled.trigger.targetLabel,
+            triggerReasonCode: recalled.trigger.reasonCode,
+            triggerEffectStatus: recalled.trigger.effectStatus,
+            triggerEffectCodes: recalled.trigger.effectCodes,
             adaptiveRecovery: true,
             policyOutcomeAttempts: historical.attempts,
             policyOutcomeSuccesses: historical.successes,
@@ -107,5 +133,6 @@ function createAdaptiveRecoveryProvider(options = {}) {
 
 module.exports = {
   ADAPTIVE_RECOVERY_VERSION,
+  recoverySelectionHistory,
   createAdaptiveRecoveryProvider
 };
