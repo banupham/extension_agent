@@ -6,17 +6,17 @@ This file is the durable continuation point for future ChatGPT sessions. Read th
 
 - Active development branch: `feat/agent-tab-context`.
 - Do **not** promote or merge to `main` without explicit user approval after a verified PASS.
-- Every meaningful development/diagnostic action must be committed to GitHub, and this handoff must be updated when the current state or next step changes.
-- Preserve architecture boundaries: Strategy chooses WHAT, Behavior chooses HOW, executor does not choose strategy, Goal Checker does not choose the next action.
+- Every meaningful development/diagnostic action must be committed to GitHub, and this handoff must be updated whenever current state or next step changes.
+- Preserve boundaries: Strategy chooses WHAT, Behavior chooses HOW, executor does not choose strategy, Goal Checker does not choose the next action.
 - Do not persist selectors, coordinates, tab IDs, raw CDP methods, credentials, secrets, or private reasoning in Strategy/recovery/training memory.
-- Human demonstration data is never auto-promoted to Strategy training. Human review/verification remains required.
-- User prefers concise progress framing: state whether the agent is maturing / being taught and give the next action, without lengthy implementation explanations.
+- Human demonstrations never auto-promote to Strategy training; explicit human review remains required.
+- User wants concise progress framing: say whether the agent is maturing / being taught, then give the next action. Avoid long technical explanations.
 
 ## Agent maturity status
 
 - Behavior/HOW: learned from real human demonstrations and runtime-loadable.
-- Strategy/WHAT: still in supervised teaching, but now has a valid three-task approval-candidate batch spanning three distinct semantic task families.
-- Overall: agent is maturing, but it is still being taught.
+- Strategy/WHAT: still supervised, but now has its first explicit human-approved 3-family dataset.
+- Overall: agent is clearly maturing, but it is still being taught.
 
 ## Historical blocked data
 
@@ -24,70 +24,78 @@ This file is the durable continuation point for future ChatGPT sessions. Read th
 - 25 historical ambiguous click transitions.
 - 0/25 historical semantic targets recovered.
 - Historical blocker remains `element_refs_exist_but_page_identity_does_not_link`.
-- Do not guess or auto-approve those historical 25 transitions.
+- Never guess or auto-approve those historical 25 transitions.
 
-## Current replacement teaching batch
+## First approved Strategy teaching batch
 
-Three distinct successful episodes:
+Three successful demonstrations were explicitly confirmed by the user using digest:
 
-1. `ep-1787826569158` — Google -> Gmail — 5 captured transitions.
-2. `ep-1787826618214` — Google -> type `OpenAI` into Search -> submit — 10 captured transitions.
-3. `ep-1787826766003` — mission Atlas -> mission Orion — 2 captured transitions.
+`758b466357580ca3e9d5914c8f91712b10fcf543b2ac0979f4f21bf1a2a6c740`
 
-Batch review results reported by the user:
+Approval result:
 
-- episodeCount: 3
-- transitionCount: 17
-- fastLabelReviewCount: 7
-- ambiguousLabelReviewCount: 10
-- teaching resolver: PASS
-- resolvedSemanticActionCount: 2
-- captureNoiseCount: 12
-- unresolvedHumanReviewCount: 0
-- fullyResolvedEpisodeCount: 3
-- approval candidates: 3
-- blocked episodes: 0
-- ambiguity-aid candidate episodes: 2
-- exact candidate digest hash: `758b466357580ca3e9d5914c8f91712b10fcf543b2ac0979f4f21bf1a2a6c740`
-- autoTrainEligible remains false pending explicit human confirmation.
+- approvedEpisodeCount: 3
+- approvedTransitionCount: 17
+- approvedStrategyStepCount: 5
+- excludedCaptureNoiseCount: 12
+- blockedEpisodeCount: 0
+- explicitHumanConfirmationVerified: true
 
-The three semantic split groups are:
+The approved semantic groups are:
 
-- `semantic-sequence:click:gmail`
-- `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
-- `semantic-sequence:click:mission-atlas>click:mission-orion`
+1. `semantic-sequence:click:gmail`
+2. `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
+3. `semantic-sequence:click:mission-atlas>click:mission-orion`
 
-The approval digest proposes:
+Dataset build result:
 
-- Gmail task: 1 Strategy click, 4 capture-noise steps excluded.
-- Search task: 2 Strategy actions (`typeText`, `submit`), 8 capture-noise steps excluded.
-- Mission task: 2 Strategy clicks (`Mission Atlas`, `Mission Orion`), 0 excluded.
+- adaptedEpisodeCount: 3
+- distinctSplitGroupCount: 3
+- datasetBuilt: true
+- splitCounts: train=1, validation=1, test=1
+- baselineReady: false
+- readiness error: `test_action_types_unseen_in_train:submit,typeText`
 
-The user displayed the full approval-candidates markdown. Displaying it is not itself approval. The next command uses the exact digest hash and explicit confirmation phrase; running that command is the human confirmation boundary.
+This is an expected data-coverage limit, not a pipeline failure. Do not move held-out examples into train and do not change split policy to force a PASS.
 
-## Teaching-batch semantic resolver milestone
+## Second teaching-round coverage plan
 
-Commits:
+A six-group coverage contract was added to prove the next round can provide train coverage while preserving validation/test isolation.
 
-- `e80dea1b4cbc5bad80d285497bb347df7ca1b5ad` — add `training-collector/tools/resolve_strategy_teaching_batch.js`.
-- `0027e74519e9eb0bdeeadf900b5138f91a186410` — add `training-collector/tests/strategy_teaching_batch_resolver_contract.js`.
-- `067ba25f0976fb260e1f8211dd7b2c9cef3d138b` — add dedicated CI workflow `strategy-teaching-batch-resolver.yml`.
+New commits:
 
-GitHub Actions run `33064693398` completed successfully. `Strategy teaching batch resolver contract: PASS`.
+- `8f0107ba40a69b680cb5a7bb9c5a093873c7065f` — controlled Strategy teaching lab on `http://127.0.0.1:8092/`.
+- `ebffd7a15649bf1d4f84987b2c4672df52b7b942` — six-group Strategy teaching coverage contract.
+- `330f26a8eab85433cab5045b03f3634e535c230e` — dedicated CI gate.
+
+GitHub Actions run `33065356220` completed successfully.
+
+The controlled lab exposes three stable semantic targets:
+
+- `Topic Search` — text entry + submit via Enter.
+- `Message Composer` — text entry + submit via Enter.
+- `Teaching Confirm` — independent click.
+
+Together with the first 3 groups, these make 6 semantic groups: 3 carrying click and 3 carrying typeText+submit. With the current split policy this leaves 4 train groups plus 1 validation and 1 test group, and the coverage contract proves held-out action types are represented in train across 100 deterministic seeds.
 
 ## Immediate next action
 
-If the human reviewer agrees the displayed digest matches the three demonstrations, run:
+1. User pulls the latest feature branch and starts the teaching lab:
 
 ```bat
 cd /d C:\Users\duong\Downloads\extension_agent
 git pull
 git rev-parse --short HEAD
-set TEACH=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-batch-20260827
-
-node training-collector\tools\apply_strategy_approval_candidates.js --candidates "%TEACH%\approval-candidates-v01\approval-candidates.json" --confirm-digest 758b466357580ca3e9d5914c8f91712b10fcf543b2ac0979f4f21bf1a2a6c740 --confirm YES-I-REVIEWED-STRATEGY-APPROVAL-DIGEST --out "%TEACH%\strategy-approved-v01"
-
-node training-collector\tools\build_strategy_dataset_from_approvals.js --pack "%TEACH%\review-pack-v01\review-pack.json" --annotations "%TEACH%\strategy-approved-v01" --out "%TEACH%\strategy-human-dataset-v01"
+node training-collector\tests\strategy_teaching_coverage_contract.js
+node control-center\script\page_strategy_teaching_lab.js
 ```
 
-Expected target: explicit approval PASS, then dataset build sees 3 distinct semantic split groups. Only if the dataset reports both `datasetBuilt:true` and `baselineReady:true` should the next step run readiness check and fit Strategy TRAIN-only; validation/test remain held out. Do not promote `main`.
+2. In a separate browser/collector session, record and export exactly these three new tasks as separate successful episodes:
+
+- `Trên http://127.0.0.1:8092/, nhập Atlas vào ô Topic Search rồi bấm Enter.`
+- `Trên http://127.0.0.1:8092/, nhập Orion vào ô Message Composer rồi gửi bằng Enter.`
+- `Trên http://127.0.0.1:8092/, bấm Teaching Confirm.`
+
+3. After the user supplies the three new review exports, create a fresh combined local review folder containing the original 3 + new 3 episodes, then rerun human-learning batch -> review pack -> triage -> teaching resolver -> approval candidates -> explicit human confirmation -> dataset build.
+
+Target before fitting Strategy: `datasetBuilt:true`, `baselineReady:true`, train contains `click`, `typeText`, and `submit`, validation/test remain held out. Only then run readiness check and TRAIN-only Strategy fit. Do not promote `main`.
