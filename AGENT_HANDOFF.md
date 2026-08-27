@@ -26,9 +26,10 @@ Read this file before changing the repository.
 - Strategy v0.3.3 passes unchanged six-group regression exactly on validation/test.
 - Frozen v0.3.3 passed two fresh-unseen semantic decision families.
 - Frozen v0.3.3 passed a real fresh browser-native Cargo end-to-end family.
-- Mission/replan/recovery/world-model infrastructure exists and is integrated with the learned Strategy.
-- Real Signal Relay long-mission run proved recovery and multi-subgoal orchestration partly work, and exposed a controlled-lab form-design defect at subgoal 2.
-- Signal Relay form semantics are now repaired and CI-green; the next real run is regression/runtime validation only.
+- Mission/replan/recovery/world-model infrastructure is integrated with the learned Strategy.
+- Signal Relay long browser-native regression now passes all 3 subgoals with real recovery, progression guard, goal checks, privacy redaction, and frozen model invariants.
+- Signal Relay is regression evidence only because its first failure influenced diagnosis and page repair.
+- Next capability gate is a **different fresh long browser-native family** created after the Signal Relay regression PASS.
 - Agent is maturing but is not broadly autonomous.
 
 ## Historical teaching data — CLOSED
@@ -48,7 +49,7 @@ Approved digest:
 
 Exact human approval already received. Do not ask again.
 
-Dataset state:
+Dataset:
 
 - approvedEpisodeCount 6
 - approvedStrategyStepCount 10
@@ -71,7 +72,7 @@ VALIDATION:
 TEST:
 - typeText:t-m-ki-m>submit:t-m-ki-m
 
-Six-group reruns are regression evidence, not pristine unseen proof, because prior failures influenced v0.3.x redesign.
+Six-group reruns are regression evidence, not pristine unseen proof.
 
 ## Strategy v0.3.3
 
@@ -97,78 +98,45 @@ Frozen `baseline-v033/model.json`, no fit/mutation:
 - no literal trajectory replay
 - no selector/coordinate targeting
 
-## Runtime loading / transient execution
+## Browser-native Cargo — PASS / CLOSED
 
-Execution boundary:
+Real local PASS with frozen v0.3.3:
 
-`Strategy WHAT + target -> transient execution payload -> Behavior HOW -> browser execution`
-
-Properties:
-
-- typed text is execution-time only
-- public step/history/decision/action/plan are redacted
-- text actions require targetRef
-- `typeText` acquires semantic target before inserting text
-- button submit uses click semantics
-- editable submit uses native Enter semantics
-
-Important CI:
-
-- Strategy model loading `33083343691`: success
-- transient payload `33084021426`: success
-- full runtime after plumbing `33084676420`: success
-
-## Fresh browser-native Cargo family — PASS / CLOSED
-
-Gate:
-
-`control-center/script/offline_strategy_fresh_native_text_gate.js`
-
-Real local PASS at HEAD `bcec745` with frozen v0.3.3:
-
-- `ok:true`, `result:PASS`
-- exact actions `typeText -> submit`
-- exact targets `Cargo Instruction -> Cargo Instruction`
+- exact `typeText -> submit`
+- exact `Cargo Instruction -> Cargo Instruction`
 - final title `CARGO INSTRUCTION PASS`
-- model loaded from file and unchanged
-- transient text redacted and absent from public result
+- model file unchanged
+- transient text redacted
 - no selector targeting by Strategy
 - no literal trajectory replay
 - created tab closed
 
-Cargo is now closed evaluation evidence. Do not keep optimizing or training on Cargo.
+Cargo is closed evaluation evidence. Do not optimize/train on it.
 
 ## Mission stack upgrades
 
-### Transient payload and step hooks
+### Transient payload + step hooks
 
-- `4cec004bd51a01185f59e2b16f4f56f2252e45d6` — mission executor passes `resolveTransientActionArgs` + `onStep` to each subgoal episode and verifies cross-subgoal redaction
-- `32f6df2540f3e946491118f0c116669813ebf5d1` — mission transient payload contract
-- `6e2eab02a70c6e42ff4257fc7ac8de427461422c` — dedicated mission workflow
+- `4cec004bd51a01185f59e2b16f4f56f2252e45d6` — mission executor passes `resolveTransientActionArgs` + `onStep` into each subgoal and checks cross-subgoal redaction
+- `32f6df2540f3e946491118f0c116669813ebf5d1` — contract
+- `6e2eab02a70c6e42ff4257fc7ac8de427461422c` — mission CI
 
 ### Recovery planned-progression guard
 
-Problem:
+Generic rule:
 
-- privacy-safe observation does not persist typed values
-- successful `typeText` can therefore look like semantic `no_effect`
-- old recovery could hijack a correct `typeText -> submit` sequence
-
-Generic fix:
-
-- ask base Strategy for planned next semantic decision before recovery
+- ask base Strategy for its planned next semantic decision before recovery
 - if action type changes, preserve planned progression
-- if same action type but semantic target label changes, preserve planned progression
+- if same action type but semantic target changes, preserve planned progression
 - recovery explores only when base repeats the same failed action/semantic target or otherwise does not progress
-- no generic `failure => scroll` rule
+- no generic `failure => scroll`
 
 Commits:
 
-- `cc7acf88e2a559c9229c366a8c208cf4118ee587` — recovery exploration v0.5.0 progression guard
+- `cc7acf88e2a559c9229c366a8c208cf4118ee587` — recovery exploration v0.5.0
 - `f42a1f38f719c6c7c509b0f2aabf633f0a6dd5b4` — progression guard contract
-- `8324b0dfde0a66ba2c23d73c63cce4d91b203240` — mission CI includes recovery contract
 
-## Signal Relay long browser-native family — REGRESSION AFTER DIAGNOSIS
+## Signal Relay long browser-native — REGRESSION PASS / CLOSED
 
 Gate:
 
@@ -178,136 +146,84 @@ Mission:
 
 `Click Open Relay Console, then type the provided value into Relay Note and press Enter, then click Finalize Relay`
 
-Expected:
+First real run exposed a controlled-page defect: the form had two text inputs but no submit control, while page progression depended on the form `submit` event. Strategy/model were not changed.
 
-1. `click@Open Relay Console -> waitAndObserve`
-2. `typeText@Relay Note -> submit@Relay Note`
-3. `click@Finalize Relay`
+Repair:
 
-Initial gate commits:
+- real hidden native `type="submit"` control added to the form
+- no keydown handler, `requestSubmit()`, or direct `.submit()` bypass
+- gate version `0.1.1`
+- evidence class `regression-after-diagnosis`
 
-- `7260930f1278ec814faf1d8fc67f8d4bd564c05e` — browser-native long mission gate
-- `90ec4cb3fd084967cc1c6d6f99468ba6b4fbe79e` — gate contract
+Repair commits:
 
-Initial CI:
-
-- dedicated mission run `33090453237`: success
-- full runtime run `33090453289`: success
-
-### First real user run
-
-Real browser run returned FAIL:
-
-- `missionReasonCode:subgoal_failed`
-- progress `1/3`
-- model version `0.3.3`
-- frozen model invariant true
-- model file unchanged
-- transient payload redacted
-- no literal trajectory replay
-- created tab closed
-
-Subgoal 1 — **PASS and useful recovery evidence**:
-
-- action 0 `click@Open Relay Console`
-- control `failed`, reason `action_no_observable_effect`
-- effect `no_effect`; only incidental `focus_changed`
-- recovery action `waitAndObserve`
-- recovery source `recoveryExploration`
-- after wait: `elements_added/elements_removed`
-- subgoal goal satisfied
-
-This proves the generic recovery loop can observe a real no-effect state, choose a bounded semantic recovery action, reobserve, and complete the subgoal.
-
-Subgoal 2 — **Strategy/progression PASS, page submit FAIL**:
-
-- step 0 `typeText@Relay Note`
-- transient text was applied and redacted; user visibly saw text in the correct field
-- privacy-safe effect observer called it `no_effect`, as expected
-- step 1 base Strategy correctly progressed to `submit@Relay Note`
-- `recoveryDeferredForBaseProgression:true` proves the progression guard worked
-- submit produced `no_effect`, no DOM/state change
-- recovery then explored `waitAndObserve`, `scrollVertical`, `scrollHorizontal`, `scrollIntoView`
-- none could satisfy the goal; episode ended `budget_max_steps_reached`
-
-### Root cause
-
-The controlled Signal Relay page had a test-design defect, not a learned-Strategy failure:
-
-- `relayForm` contained two text `<input>` controls (`Relay Note`, `Operator Memo`)
-- its only button inside the form was `type="button"` (`Review Template`)
-- there was no submit control
-- page progression to stage 3 occurred only inside `relayForm.addEventListener('submit', ...)`
-- pressing Enter in `Relay Note` therefore did not produce the form submit event in the real browser
-
-Do **not** change Strategy v0.3.3, its weights, dataset, or heldout split because of this failure.
-
-Do **not** treat the recovery scroll attempts as evidence for adding a generic failure-to-scroll rule; they were bounded exploration after a genuine no-effect submit.
-
-Signal Relay is no longer pristine unseen evidence because this failure influenced diagnosis. It may be rerun only as regression/runtime validation. A different fresh family is required later for pristine long-mission generalization evidence.
-
-### Form semantics repair — CI PASS, real regression pending
-
-Generic controlled-page repair:
-
-- added a real default `type="submit"` control inside `relayForm`
-- submit control is hidden/aria-hidden/non-tabbable so it supplies native implicit Enter-submit semantics without becoming a visible Strategy target
-- did **not** add a target-specific `keydown` handler
-- did **not** use `requestSubmit()` or direct `.submit()` bypasses
-- gate version is now `0.1.1`
-- result explicitly reports `evidenceClass:"regression-after-diagnosis"`
-- mission metadata no longer claims `frozenEvaluationFamily:true`
-
-Commits:
-
-- `972b78c5d4ea20b0477f2910e7a1b2f5a2d5c83e` — repair Signal Relay form semantics and mark regression evidence
-- `3cba592894bc7b4e6373a36c570499eee0230e99` — align gate contract with regression evidence class
-- `9c2f94bf47afb963b337091edd08dd99d315bb3f` — Enter-submit semantics contract requiring a native submit control and forbidding keydown/requestSubmit/direct-submit hacks
-- `5edd70c875339ba2e64da0cbf9681199371ae3e1` — mission workflow gates the new form semantics contract
+- `972b78c5d4ea20b0477f2910e7a1b2f5a2d5c83e`
+- `3cba592894bc7b4e6373a36c570499eee0230e99`
+- `9c2f94bf47afb963b337091edd08dd99d315bb3f`
+- `5edd70c875339ba2e64da0cbf9681199371ae3e1`
 
 CI:
 
-- full runtime-syntax for the form repair commit `33091479720`: success
-- dedicated mission-long-native final run `33091577192`: success
-  - mission transient payload contract PASS
-  - recovery progression guard contract PASS
-  - Signal Relay Enter-submit semantics contract PASS
-  - Signal Relay regression gate contract PASS
+- full runtime `33091479720`: success
+- dedicated mission `33091577192`: success
 
-## Immediate next user action
+### Real browser regression PASS
 
-Rerun Signal Relay once with the frozen v0.3.3 model. This run is **regression/runtime validation**, not fresh-unseen evidence.
-
-Windows CMD:
-
-```bat
-cd /d C:\Users\duong\Downloads\extension_agent
-git pull
-git rev-parse --short HEAD
-
-set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
-node control-center\script\offline_strategy_fresh_long_mission_gate.js --model "%SIX%\strategy-approved-dataset-v03\baseline-v033\model.json"
-```
-
-Expected HEAD is this handoff commit.
-
-Desired regression result:
+User ran frozen v0.3.3 and received:
 
 - `ok:true`
 - `result:PASS`
 - `gateVersion:0.1.1`
 - `evidenceClass:regression-after-diagnosis`
 - `missionReasonCode:mission_satisfied`
-- actions exactly `[["click","waitAndObserve"],["typeText","submit"],["click"]]`
-- targets exactly `[["Open Relay Console",null],["Relay Note","Relay Note"],["Finalize Relay"]]`
-- all 3 subgoals done
-- model frozen/unchanged
-- transient text redacted
-- created tab closed
+- progress `3/3`, `missionDone:true`
+- exact actions:
+  1. `click -> waitAndObserve`
+  2. `typeText -> submit`
+  3. `click`
+- exact targets:
+  1. `Open Relay Console -> null`
+  2. `Relay Note -> Relay Note`
+  3. `Finalize Relay`
+- subgoal 1: click produced `no_effect`; recovery `waitAndObserve` came from `recoveryExploration`, observed elements added/removed, then goal satisfied
+- subgoal 2: `typeText` transient payload applied/redacted; base Strategy progressed to `submit` with `recoveryDeferredForBaseProgression:true`; submit produced target disappearance + elements added/removed and goal satisfied
+- subgoal 3: `click@Finalize Relay` produced target disappearance + elements added/removed and goal satisfied
+- `frozenModelOnly:true`
+- `modelLoadedFromFile:true`
+- `modelFileMutated:false`
+- `transientPayloadRedacted:true`
+- `publicResultContainsTransientText:false`
+- `orderedExecution:true`
+- `semanticSubgoalCountMatchesPlan:true`
+- `allCompletedSubgoalsGoalChecked:true`
+- `noLiteralTrajectoryReplay:true`
+- `errors:[]`
+- `createdTabClosed:true`
 
-If this regression passes, create a different fresh long native family for pristine multi-subgoal/recovery evidence before making broader generalization claims.
+Interpretation:
 
-## Continuous-learning phase
+- long mission orchestration, real recovery, planned progression, transient text privacy, observe-after, semantic goal checking, and multi-subgoal execution are now proven together in a real Chrome regression run
+- because Signal Relay was repaired after its first failure, it is **not** pristine fresh-unseen evidence
+- stop optimizing Signal Relay now
+
+## Immediate next development — fresh long family
+
+Create a different family after this regression PASS. Requirements:
+
+1. not Cargo/Signal Relay/Google/Topic/Message relabel
+2. frozen v0.3.3; no fit/mutation
+3. multiple ordered subgoals
+4. use supported learned actions first (`click`, `typeText`, `submit`)
+5. at least one real recoverable delayed/no-effect transition
+6. preserve planned `typeText -> submit` progression under privacy-safe observation
+7. semantic goals after each subgoal
+8. typed payload transient and redacted
+9. exact action/target sequences required for PASS
+10. if this new family fails and influences fixes, retire it from pristine status and create another new family later
+
+Only after a pristine fresh long family PASS should broader multi-subgoal generalization be claimed.
+
+## Continuous-learning phase after fresh long runtime proof
 
 Target pipeline:
 
