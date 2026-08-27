@@ -17,6 +17,8 @@ on:
       - 'control-center/manager/strategy/self_experience_memory.js'
       - 'control-center/manager/strategy/self_exploration_provider.js'
       - 'control-center/manager/strategy/index.js'
+      - 'control-center/manager/goal/semantic_effect_evaluator.js'
+      - 'control-center/manager/goal/outcome_controller.js'
       - 'control-center/manager/agent/one_action_bridge.js'
       - 'control-center/manager/agent/bounded_two_step_execution.js'
       - 'control-center/manager/agent/bounded_episode_loop.js'
@@ -31,6 +33,9 @@ on:
       - 'control-center/script/offline_strategy_self_experience_gate.js'
       - 'control-center/script/offline_strategy_self_exploration_gate.js'
       - 'control-center/script/checks/one_action_semantic_settle.js'
+      - 'control-center/script/checks/semantic_action_effect.js'
+      - 'control-center/script/checks/adaptive_outcome_feedback.js'
+      - 'control-center/script/checks/outcome_controller.js'
       - 'control-center/script/checks/offline_strategy_provider.js'
       - 'control-center/script/checks/offline_strategy_history_provider.js'
       - 'control-center/script/checks/offline_strategy_compositional_unseen.js'
@@ -66,11 +71,16 @@ jobs:
           node --check control-center/manager/strategy/offline_baseline_provider.js
           node --check control-center/manager/strategy/self_experience_memory.js
           node --check control-center/manager/strategy/self_exploration_provider.js
+          node --check control-center/manager/goal/semantic_effect_evaluator.js
+          node --check control-center/manager/goal/outcome_controller.js
           node --check control-center/manager/agent/one_action_bridge.js
           node --check control-center/manager/agent/bounded_two_step_execution.js
           node --check control-center/manager/agent/bounded_episode_loop.js
           node --check control-center/script/page_cdp_test_lab.js
           node --check control-center/script/checks/one_action_semantic_settle.js
+          node --check control-center/script/checks/semantic_action_effect.js
+          node --check control-center/script/checks/adaptive_outcome_feedback.js
+          node --check control-center/script/checks/outcome_controller.js
           node --check control-center/script/checks/offline_strategy_provider.js
           node --check control-center/script/checks/offline_strategy_history_provider.js
           node --check control-center/script/checks/offline_strategy_compositional_unseen.js
@@ -94,6 +104,12 @@ jobs:
           node --check control-center/script/offline_strategy_self_exploration_gate.js
       - name: Run semantic post-action settle contract
         run: node control-center/script/checks/one_action_semantic_settle.js
+      - name: Run semantic action effect contract
+        run: node control-center/script/checks/semantic_action_effect.js
+      - name: Run outcome controller contract
+        run: node control-center/script/checks/outcome_controller.js
+      - name: Run adaptive outcome feedback contract
+        run: node control-center/script/checks/adaptive_outcome_feedback.js
       - name: Run offline Strategy baseline contract
         run: node training-collector/tests/strategy_offline_baseline_contract.js
       - name: Run history-aware Strategy baseline contract
