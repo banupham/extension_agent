@@ -19,6 +19,7 @@
         "core/state_diff.js",
         "core/strategy_episode_view.js",
         "core/reliable_sender.js",
+        "core/episode_transition_order.js",
         "observer/element_registry.js",
         "observer/semantic_observer.js",
         "correlation/physical_semantic_correlator.js",
