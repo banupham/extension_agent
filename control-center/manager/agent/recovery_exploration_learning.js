@@ -17,7 +17,7 @@ const {
 } = require('../strategy/recovery_policy_memory.js');
 const { recordRecoveryOutcomes } = require('../strategy/recovery_outcome_memory.js');
 
-const RECOVERY_EXPLORATION_LEARNING_VERSION = '0.2.0';
+const RECOVERY_EXPLORATION_LEARNING_VERSION = '0.3.0';
 
 function firstUsefulRecoveryIndex(steps, triggerIndex) {
   for (let index = triggerIndex + 1; index < steps.length; index += 1) {
@@ -105,17 +105,42 @@ function learnExploratoryRecoveryFromSuccessfulEpisode({ file, task, result, lea
   };
 }
 
+function emptyOutcomeLearning(file = null) {
+  return {
+    file: file || null,
+    attempted: 0,
+    appended: 0,
+    records: [],
+    writes: []
+  };
+}
+
+function mergeOutcomeLearning(target, update) {
+  target.attempted += Number(update?.attempted || 0);
+  target.appended += Number(update?.appended || 0);
+  target.records.push(...(Array.isArray(update?.records) ? update.records : []));
+  target.writes.push(...(Array.isArray(update?.writes) ? update.writes : []));
+  return target;
+}
+
 async function executeRecoveryExplorationLearningEpisode(input = {}) {
   if (!input.recoveryMemoryFile) throw new Error('recovery_exploration_memory_file_required');
-  const result = await executeBoundedEpisodeLoop(input);
 
-  const recoveryOutcomeLearning = input.recoveryOutcomeMemoryFile
-    ? recordRecoveryOutcomes({
-      file: input.recoveryOutcomeMemoryFile,
-      task: result.task,
-      result
-    })
-    : { attempted: 0, appended: 0, records: [], writes: [], file: null };
+  const recoveryOutcomeLearning = emptyOutcomeLearning(input.recoveryOutcomeMemoryFile || null);
+  const callerOnStep = typeof input.onStep === 'function' ? input.onStep : null;
+  const result = await executeBoundedEpisodeLoop({
+    ...input,
+    onStep: async context => {
+      if (input.recoveryOutcomeMemoryFile) {
+        mergeOutcomeLearning(recoveryOutcomeLearning, recordRecoveryOutcomes({
+          file: input.recoveryOutcomeMemoryFile,
+          task: context.task,
+          result: { steps: [context.step] }
+        }));
+      }
+      if (callerOnStep) await callerOnStep(context);
+    }
+  });
 
   let recoveryLearning = {
     attempted: false,
@@ -159,5 +184,7 @@ module.exports = {
   firstUsefulRecoveryIndex,
   buildExploratoryRecoveryRecords,
   learnExploratoryRecoveryFromSuccessfulEpisode,
+  emptyOutcomeLearning,
+  mergeOutcomeLearning,
   executeRecoveryExplorationLearningEpisode
 };
