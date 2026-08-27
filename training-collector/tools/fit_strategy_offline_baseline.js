@@ -21,7 +21,7 @@ const {
   evaluateBaselineReadiness
 } = require('./check_strategy_baseline_readiness.js');
 
-const MODEL_VERSION = '0.3.1';
+const MODEL_VERSION = '0.3.2';
 
 function die(message) {
   throw new Error(message);
@@ -157,6 +157,7 @@ function fitBaseline(trainRecords) {
     historyAware: true,
     historyFeature: 'prior-semantic-action-types-and-local-target-continuity',
     semanticTargetFeatures: ['label', 'role', 'tag', 'editable'],
+    targetGroundingPolicy: 'current-task-dominant-with-action-affordance',
     localTargetRefsPersisted: false,
     trainingEpisodeIds: episodeIds.filter(Boolean).sort(),
     actionPrototypes: [...byType.values()]
@@ -307,7 +308,7 @@ function main(argv = process.argv.slice(2)) {
 
     const model = fitBaseline(splits.train);
     const evaluation = evaluateHeldOut(model, splits.validation, splits.test);
-    const outputDir = path.resolve(args.outputDir || path.join(datasetDir, 'baseline-v03'));
+    const outputDir = path.resolve(args.outputDir || path.join(datasetDir, 'baseline-v032'));
     fs.mkdirSync(outputDir, { recursive: true });
     const modelFile = path.join(outputDir, 'model.json');
     const evaluationFile = path.join(outputDir, 'evaluation.json');
