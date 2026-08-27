@@ -42,8 +42,16 @@ async function main() {
   });
   assert.deepEqual(retrieve.criteria, [
     { type: 'element', match: { labelIncludes: 'thành phố Hồ Chí Minh' }, expect: { exists: true, visible: true } },
+    { type: 'element', match: { labelIncludes: '3 ngày' }, expect: { exists: true, visible: true } }
+  ]);
+  assert.equal(retrieve.goalState.requestedTemporalWindowObserved, '3 ngày');
+  assert.equal(retrieve.unresolved.length, 0);
+
+  const fallbackRetrieve = semanticCriteriaFor({ goalKinds: ['retrieve_information'] });
+  assert.deepEqual(fallbackRetrieve.criteria, [
     { type: 'pageSignal', key: 'requestedInformationCaptured', operator: 'equals', value: true }
   ]);
+  assert(fallbackRetrieve.unresolved.includes('retrieval_semantic_evidence_missing'));
 
   let calls = 0;
   const resolver = createSemanticGoalResolver({
