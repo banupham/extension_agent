@@ -48,5 +48,6 @@ module.exports = {
   ...require('./execution_behavior_contract'),
   ...require('./offline_baseline_provider'),
   ...require('./self_experience_memory'),
-  ...require('./self_exploration_provider')
+  ...require('./self_exploration_provider'),
+  ...require('./recovery_policy_memory')
 };
