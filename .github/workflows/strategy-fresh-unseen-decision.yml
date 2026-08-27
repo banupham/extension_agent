@@ -1,0 +1,28 @@
+name: strategy-fresh-unseen-decision
+
+on:
+  push:
+    branches:
+      - feat/agent-tab-context
+    paths:
+      - 'control-center/script/offline_strategy_fresh_unseen_decision_gate.js'
+      - 'control-center/manager/strategy/**'
+      - 'training-collector/tools/fit_strategy_offline_baseline.js'
+      - 'training-collector/tests/strategy_fresh_unseen_decision_contract.js'
+      - '.github/workflows/strategy-fresh-unseen-decision.yml'
+  workflow_dispatch:
+
+jobs:
+  fresh-unseen-decision-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check syntax
+        run: |
+          node --check control-center/script/offline_strategy_fresh_unseen_decision_gate.js
+          node --check training-collector/tests/strategy_fresh_unseen_decision_contract.js
+      - name: Run fresh unseen decision contract
+        run: node training-collector/tests/strategy_fresh_unseen_decision_contract.js
