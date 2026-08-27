@@ -17,10 +17,11 @@ const {
   activeAnchorTab
 } = require('./offline_strategy_fresh_native_text_gate.js');
 
-const GATE_VERSION = '0.1.0';
+const GATE_VERSION = '0.1.1';
 const HOST = '127.0.0.1';
 const INITIAL_TITLE = 'Signal Relay Lab';
 const FINAL_LABEL = 'Relay Complete';
+const EVIDENCE_CLASS = 'regression-after-diagnosis';
 const EXPECTED_SUBGOAL_ACTIONS = Object.freeze([
   ['click', 'waitAndObserve'],
   ['typeText', 'submit'],
@@ -50,7 +51,7 @@ function labHtml() {
 </head>
 <body>
   <h1>Signal Relay Lab</h1>
-  <p>Fresh long mission with dynamic state and recoverable delayed transition.</p>
+  <p>Long-mission regression with dynamic state and recoverable delayed transition.</p>
 
   <section id="stage1">
     <strong>Relay Access</strong>
@@ -70,6 +71,7 @@ function labHtml() {
       <label>Operator Memo
         <input aria-label="Operator Memo" autocomplete="off">
       </label>
+      <button id="relaySubmit" type="submit" hidden aria-hidden="true" tabindex="-1">Submit Relay</button>
       <button type="button">Review Template</button>
     </form>
   </section>
@@ -161,7 +163,8 @@ function missionPlan() {
     instruction: 'Click Open Relay Console, then type the provided value into Relay Note and press Enter, then click Finalize Relay',
     metadata: {
       gate: 'offline-strategy-fresh-long-mission',
-      frozenEvaluationFamily: true
+      frozenEvaluationFamily: false,
+      evidenceClass: EVIDENCE_CLASS
     }
   });
 }
@@ -190,7 +193,8 @@ function resolveSubgoalTask({ subgoal, subgoalIndex }) {
     metadata: {
       gate: 'offline-strategy-fresh-long-mission',
       subgoalIndex,
-      titlePassCriterionRequired: false
+      titlePassCriterionRequired: false,
+      evidenceClass: EVIDENCE_CLASS
     }
   };
 }
@@ -282,6 +286,7 @@ function evaluateResult(result, baseStrategy, modelHashBefore, modelHashAfter, t
     result: errors.length === 0 ? 'PASS' : 'FAIL',
     gate: 'offline-strategy-fresh-long-mission',
     gateVersion: GATE_VERSION,
+    evidenceClass: EVIDENCE_CLASS,
     modelVersion: baseStrategy?.provider?.version || null,
     missionReasonCode: result?.reasonCode || null,
     missionProgress: result?.progress || null,
@@ -431,6 +436,7 @@ module.exports = {
   HOST,
   INITIAL_TITLE,
   FINAL_LABEL,
+  EVIDENCE_CLASS,
   EXPECTED_SUBGOAL_ACTIONS,
   EXPECTED_SUBGOAL_TARGETS,
   labHtml,
