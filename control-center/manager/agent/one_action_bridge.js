@@ -8,14 +8,9 @@ const { buildFormCdpPlan } = require('../execution/form_plan.js');
 const { buildMediaCdpPlan } = require('../execution/media_plan.js');
 const { buildWaitAndObservePlan } = require('../execution/wait_plan.js');
 
-const BRIDGE_VERSION = '0.3.0';
+const BRIDGE_VERSION = '0.2.1';
 const BROWSER_ACTION_VERSION = '0.1.0';
 const TAB_LIFECYCLE_ACTION_TYPES = new Set(['switchTab', 'openNewTab', 'closeTab']);
-const TARGET_ACQUISITION_ACTION_TYPES = new Set([
-  'click', 'doubleClick', 'hover', 'hoverAndObserve', 'moveTo', 'focus',
-  'toggle', 'submit', 'play', 'pause', 'mute', 'unmute', 'dismiss',
-  'setChecked', 'selectOption', 'setVolume', 'seek', 'changePlaybackRate'
-]);
 const DEFAULT_POST_ACTION_SETTLE = Object.freeze({
   pollMs: 80,
   minWindowMs: 400,
@@ -52,104 +47,6 @@ function pointerStartFor(observation, previousPointer = null) {
     return { x: width / 2, y: height / 2 };
   }
   return { x: 400, y: 300 };
-}
-
-function normalizeIdentityText(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
-}
-
-function targetCenterInViewport(target, observation, marginPx = 4) {
-  const rect = target?.rect || null;
-  const viewport = observation?.viewport || {};
-  const x = Number(rect?.x), y = Number(rect?.y), width = Number(rect?.width), height = Number(rect?.height);
-  const viewportWidth = Number(viewport.width), viewportHeight = Number(viewport.height);
-  if (![x, y, width, height, viewportWidth, viewportHeight].every(Number.isFinite)) return true;
-  if (width <= 0 || height <= 0 || viewportWidth <= 0 || viewportHeight <= 0) return true;
-  const centerX = x + width / 2;
-  const centerY = y + height / 2;
-  const margin = Math.max(0, Number(marginPx) || 0);
-  return centerX >= margin && centerX <= viewportWidth - margin && centerY >= margin && centerY <= viewportHeight - margin;
-}
-
-function targetNeedsAcquisition(mappedAction, target, observation) {
-  if (!target || !TARGET_ACQUISITION_ACTION_TYPES.has(mappedAction?.type)) return false;
-  return !targetCenterInViewport(target, observation);
-}
-
-function sameSemanticTarget(a, b) {
-  if (!a || !b) return false;
-  return normalizeIdentityText(a.label) === normalizeIdentityText(b.label) &&
-    normalizeIdentityText(a.tag) === normalizeIdentityText(b.tag) &&
-    normalizeIdentityText(a.role) === normalizeIdentityText(b.role) &&
-    !!a.editable === !!b.editable;
-}
-
-function findEquivalentTarget(observation, previousTarget) {
-  if (!previousTarget) return null;
-  const exactRef = findTarget(observation, previousTarget.ref);
-  if (exactRef && sameSemanticTarget(exactRef, previousTarget)) return exactRef;
-  const targets = Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : [];
-  const candidates = targets.filter(target =>
-    target?.visible !== false && target?.enabled !== false && sameSemanticTarget(target, previousTarget)
-  );
-  return candidates.length === 1 ? candidates[0] : null;
-}
-
-async function acquireTargetIfNeeded(runtime, before, mappedAction, target, behavior, options = {}) {
-  if (!targetNeedsAcquisition(mappedAction, target, before)) {
-    return {
-      used: false,
-      observation: before,
-      target,
-      execution: null,
-      observationIdBefore: before?.observationId || null,
-      observationIdAfter: before?.observationId || null,
-      originalTargetRef: target?.ref || null,
-      resolvedTargetRef: target?.ref || null
-    };
-  }
-
-  const context = {
-    pointerStart: pointerStartFor(before, options.previousPointer || before.agentPointer || null),
-    viewportCenter: pointerStartFor(before, null),
-    rng: options.rng || Math.random
-  };
-  const acquisitionAction = {
-    type: 'scrollIntoView',
-    targetRef: target.ref,
-    args: {},
-    behaviorFamily: 'scroll-vertical'
-  };
-  const acquisitionPlan = buildCdpPlan({
-    mappedAction: acquisitionAction,
-    behavior,
-    target,
-    context
-  });
-  const execution = await runtime.executePlan({
-    observationId: before.observationId,
-    plan: acquisitionPlan
-  });
-  if (execution?.ok !== true) throw new Error('target_acquisition_execution_failed');
-
-  const observation = await runtime.observe();
-  if (!observation?.observationId) throw new Error('target_acquisition_observation_missing');
-  const refreshedTarget = findEquivalentTarget(observation, target);
-  if (!refreshedTarget) throw new Error('target_acquisition_target_not_found');
-  if (targetNeedsAcquisition(mappedAction, refreshedTarget, observation)) {
-    throw new Error('target_acquisition_incomplete');
-  }
-
-  return {
-    used: true,
-    observation,
-    target: refreshedTarget,
-    execution,
-    observationIdBefore: before.observationId,
-    observationIdAfter: observation.observationId,
-    originalTargetRef: target.ref,
-    resolvedTargetRef: refreshedTarget.ref
-  };
 }
 
 function semanticObservationFingerprint(observation) {
@@ -323,7 +220,6 @@ async function runOneAction(options) {
       cdpPlan: null,
       browserAction: null,
       execution: null,
-      targetAcquisition: null,
       before,
       after: null,
       beforeBrowserContext: null,
@@ -376,7 +272,6 @@ async function runOneAction(options) {
       cdpPlan: null,
       browserAction,
       execution,
-      targetAcquisition: null,
       before,
       after: null,
       beforeBrowserContext: { capturedAt: Date.now(), tabs: beforeTabs },
@@ -399,41 +294,23 @@ async function runOneAction(options) {
     };
   }
 
-  const acquired = mappedAction.type === 'drag'
-    ? {
-        used: false,
-        observation: before,
-        target,
-        execution: null,
-        observationIdBefore: before.observationId,
-        observationIdAfter: before.observationId,
-        originalTargetRef: target?.ref || null,
-        resolvedTargetRef: target?.ref || null
-      }
-    : await acquireTargetIfNeeded(runtime, before, mappedAction, target, behavior, options);
-
-  const actionObservation = acquired.observation || before;
-  const actionTarget = acquired.target || target;
-  const executionMappedAction = actionTarget && mappedAction.targetRef && actionTarget.ref !== mappedAction.targetRef
-    ? { ...mappedAction, targetRef: actionTarget.ref }
-    : mappedAction;
   const context = {
-    pointerStart: pointerStartFor(actionObservation, options.previousPointer || actionObservation.agentPointer || before.agentPointer || null),
-    viewportCenter: pointerStartFor(actionObservation, null),
+    pointerStart: pointerStartFor(before, options.previousPointer || before.agentPointer || null),
+    viewportCenter: pointerStartFor(before, null),
     rng: options.rng || Math.random
   };
-  const cdpPlan = executionMappedAction.type === 'drag'
-    ? buildDragCdpPlan({ mappedAction: executionMappedAction, behavior, source: actionTarget, destination, context })
-    : ['setChecked', 'selectOption'].includes(executionMappedAction.type)
-      ? buildFormCdpPlan({ mappedAction: executionMappedAction, behavior, target: actionTarget, context })
-      : ['setVolume', 'seek', 'changePlaybackRate'].includes(executionMappedAction.type)
-        ? buildMediaCdpPlan({ mappedAction: executionMappedAction, behavior, target: actionTarget, context })
-        : executionMappedAction.type === 'waitAndObserve'
-          ? buildWaitAndObservePlan({ mappedAction: executionMappedAction, behavior })
-          : buildCdpPlan({ mappedAction: executionMappedAction, behavior, target: actionTarget, context });
+  const cdpPlan = mappedAction.type === 'drag'
+    ? buildDragCdpPlan({ mappedAction, behavior, source: target, destination, context })
+    : ['setChecked', 'selectOption'].includes(mappedAction.type)
+      ? buildFormCdpPlan({ mappedAction, behavior, target, context })
+      : ['setVolume', 'seek', 'changePlaybackRate'].includes(mappedAction.type)
+        ? buildMediaCdpPlan({ mappedAction, behavior, target, context })
+        : mappedAction.type === 'waitAndObserve'
+          ? buildWaitAndObservePlan({ mappedAction, behavior })
+          : buildCdpPlan({ mappedAction, behavior, target, context });
 
   const execution = await runtime.executePlan({
-    observationId: actionObservation.observationId,
+    observationId: before.observationId,
     plan: cdpPlan
   });
 
@@ -450,14 +327,6 @@ async function runOneAction(options) {
     cdpPlan,
     browserAction: null,
     execution,
-    targetAcquisition: {
-      used: acquired.used === true,
-      observationIdBefore: acquired.observationIdBefore,
-      observationIdAfter: acquired.observationIdAfter,
-      originalTargetRef: acquired.originalTargetRef,
-      resolvedTargetRef: acquired.resolvedTargetRef,
-      execution: acquired.execution
-    },
     before,
     after,
     beforeBrowserContext: null,
@@ -468,9 +337,6 @@ async function runOneAction(options) {
       actionExecuted: true,
       reObservedAfterExecution: !!after?.observationId,
       reObservedSurface: 'page',
-      targetAcquisitionUsed: acquired.used === true,
-      targetAcquisitionPlanCount: acquired.used === true ? 1 : 0,
-      targetAcquisitionStayedWithinOneSemanticAction: true,
       selectorUsedByStrategy: false,
       literalTrajectoryReplay: false
     }
@@ -481,18 +347,11 @@ module.exports = {
   BRIDGE_VERSION,
   BROWSER_ACTION_VERSION,
   TAB_LIFECYCLE_ACTION_TYPES,
-  TARGET_ACQUISITION_ACTION_TYPES,
   DEFAULT_POST_ACTION_SETTLE,
   DEFAULT_WAIT_AND_OBSERVE_SETTLE,
   SETTLE_ACTION_TYPES,
   findTarget,
   pointerStartFor,
-  normalizeIdentityText,
-  targetCenterInViewport,
-  targetNeedsAcquisition,
-  sameSemanticTarget,
-  findEquivalentTarget,
-  acquireTargetIfNeeded,
   semanticObservationFingerprint,
   browserContextFingerprint,
   buildBrowserAction,
