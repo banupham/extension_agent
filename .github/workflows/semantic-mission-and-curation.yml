@@ -16,8 +16,12 @@ on:
       - 'control-center/script/checks/offline_strategy_semantic_mission.js'
       - 'training-collector/tools/curate_random_human_data.js'
       - 'training-collector/tools/prepare_human_learning_batch.js'
+      - 'training-collector/tools/build_behavior_batch_baseline.js'
+      - 'training-collector/tools/prepare_strategy_review_pack.js'
       - 'training-collector/tests/random_human_data_curator_contract.js'
       - 'training-collector/tests/human_learning_batch_contract.js'
+      - 'training-collector/tests/quarantine_diagnostic_contract.js'
+      - 'training-collector/tests/human_learning_next_stage_contract.js'
       - '.github/workflows/semantic-mission-and-curation.yml'
   workflow_dispatch:
 
@@ -37,8 +41,12 @@ jobs:
           node --check control-center/script/checks/offline_strategy_semantic_mission.js
           node --check training-collector/tools/curate_random_human_data.js
           node --check training-collector/tools/prepare_human_learning_batch.js
+          node --check training-collector/tools/build_behavior_batch_baseline.js
+          node --check training-collector/tools/prepare_strategy_review_pack.js
           node --check training-collector/tests/random_human_data_curator_contract.js
           node --check training-collector/tests/human_learning_batch_contract.js
+          node --check training-collector/tests/quarantine_diagnostic_contract.js
+          node --check training-collector/tests/human_learning_next_stage_contract.js
       - name: Run semantic goal resolver contract
         run: node control-center/script/checks/semantic_goal_resolver.js
       - name: Run semantic mission execution contract
@@ -49,3 +57,7 @@ jobs:
         run: node training-collector/tests/random_human_data_curator_contract.js
       - name: Run human learning batch contract
         run: node training-collector/tests/human_learning_batch_contract.js
+      - name: Run safe quarantine diagnostic contract
+        run: node training-collector/tests/quarantine_diagnostic_contract.js
+      - name: Run human learning next-stage contract
+        run: node training-collector/tests/human_learning_next_stage_contract.js
