@@ -36,6 +36,7 @@ on:
       - 'control-center/script/offline_strategy_compositional_unseen_gate.js'
       - 'control-center/script/offline_strategy_self_experience_gate.js'
       - 'control-center/script/offline_strategy_self_exploration_gate.js'
+      - 'control-center/script/offline_strategy_recovery_self_learning_gate.js'
       - 'control-center/script/checks/one_action_semantic_settle.js'
       - 'control-center/script/checks/semantic_action_effect.js'
       - 'control-center/script/checks/adaptive_outcome_feedback.js'
@@ -116,6 +117,7 @@ jobs:
           node --check control-center/script/offline_strategy_compositional_unseen_gate.js
           node --check control-center/script/offline_strategy_self_experience_gate.js
           node --check control-center/script/offline_strategy_self_exploration_gate.js
+          node --check control-center/script/offline_strategy_recovery_self_learning_gate.js
       - name: Run semantic post-action settle contract
         run: node control-center/script/checks/one_action_semantic_settle.js
       - name: Run semantic action effect contract
