@@ -51,5 +51,6 @@ module.exports = {
   ...require('./self_exploration_provider'),
   ...require('./recovery_policy_memory'),
   ...require('./recovery_exploration_provider'),
-  ...require('./recovery_outcome_memory')
+  ...require('./recovery_outcome_memory'),
+  ...require('./adaptive_recovery_provider')
 };
