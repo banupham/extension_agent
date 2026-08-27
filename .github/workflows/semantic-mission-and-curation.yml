@@ -129,14 +129,6 @@ jobs:
       - name: Run strategy ambiguity profiler contract
         run: node training-collector/tests/strategy_ambiguity_profiler_contract.js
       - name: Run strategy target backfill contract
-        run: |
-          set -o pipefail
-          node training-collector/tests/strategy_target_backfill_contract.js 2>&1 | tee target-backfill.log
-      - name: Upload target backfill diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: target-backfill-diagnostics
-          path: target-backfill.log
+        run: node training-collector/tests/strategy_target_backfill_contract.js
       - name: Run explicit strategy approval pipeline contract
         run: node training-collector/tests/strategy_approval_pipeline_contract.js
