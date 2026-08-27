@@ -124,7 +124,8 @@ assert.strictEqual(fallbackScroll.scroll.constraints.correctionRatio, null);
 
 const typing = sampledBehavior({
   baseline,
-  mappedAction: mapAgentAction({ type: 'typeText' }),
+  mappedAction: mapAgentAction({ type: 'typeText', targetRef: 'typing-target' }),
+  target: { rect: { width: 220, height: 42 } },
   rng: fixedRng
 });
 assert.ok(Number.isFinite(typing.keyboard.constraints.interKeyMedianMs));
