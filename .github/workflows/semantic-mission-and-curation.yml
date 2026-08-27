@@ -29,6 +29,7 @@ on:
       - 'training-collector/tools/prepare_strategy_review_pack.js'
       - 'training-collector/tools/score_strategy_review_pack.js'
       - 'training-collector/tools/prepare_strategy_review_drafts.js'
+      - 'training-collector/tools/resolve_strategy_review_ambiguity.js'
       - 'training-collector/tools/prepare_strategy_approval_candidates.js'
       - 'training-collector/tools/apply_strategy_approval_candidates.js'
       - 'training-collector/tools/build_strategy_dataset_from_approvals.js'
@@ -39,6 +40,7 @@ on:
       - 'training-collector/tests/behavior_batch_heldout_contract.js'
       - 'training-collector/tests/strategy_review_triage_contract.js'
       - 'training-collector/tests/strategy_review_draft_contract.js'
+      - 'training-collector/tests/strategy_ambiguity_resolver_contract.js'
       - 'training-collector/tests/strategy_approval_pipeline_contract.js'
       - '.github/workflows/semantic-mission-and-curation.yml'
   workflow_dispatch:
@@ -73,6 +75,7 @@ jobs:
           node --check training-collector/tools/prepare_strategy_review_pack.js
           node --check training-collector/tools/score_strategy_review_pack.js
           node --check training-collector/tools/prepare_strategy_review_drafts.js
+          node --check training-collector/tools/resolve_strategy_review_ambiguity.js
           node --check training-collector/tools/prepare_strategy_approval_candidates.js
           node --check training-collector/tools/apply_strategy_approval_candidates.js
           node --check training-collector/tools/build_strategy_dataset_from_approvals.js
@@ -83,6 +86,7 @@ jobs:
           node --check training-collector/tests/behavior_batch_heldout_contract.js
           node --check training-collector/tests/strategy_review_triage_contract.js
           node --check training-collector/tests/strategy_review_draft_contract.js
+          node --check training-collector/tests/strategy_ambiguity_resolver_contract.js
           node --check training-collector/tests/strategy_approval_pipeline_contract.js
       - name: Run semantic goal resolver contract
         run: node control-center/script/checks/semantic_goal_resolver.js
@@ -110,5 +114,7 @@ jobs:
         run: node training-collector/tests/strategy_review_triage_contract.js
       - name: Run strategy review draft contract
         run: node training-collector/tests/strategy_review_draft_contract.js
+      - name: Run strategy ambiguity resolver contract
+        run: node training-collector/tests/strategy_ambiguity_resolver_contract.js
       - name: Run explicit strategy approval pipeline contract
         run: node training-collector/tests/strategy_approval_pipeline_contract.js
