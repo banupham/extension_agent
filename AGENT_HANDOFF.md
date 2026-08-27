@@ -10,7 +10,7 @@ This file is the durable continuation point for future ChatGPT sessions. Read th
 - User works in Windows CMD and wants exact sequential commands.
 - User does not want long technical explanations; say whether the agent is maturing / being taught, then give the next action.
 - Preserve boundaries: Strategy chooses WHAT, Behavior chooses HOW, executor does not choose strategy, Goal Checker does not choose the next action.
-- Do not persist selectors, coordinates, tab IDs, raw CDP methods, credentials, secrets, or private reasoning in Strategy/recovery/training memory.
+- Do not persist selectors, coordinates, tab IDs, raw CDP methods, credentials, secrets, passwords, typed sensitive values, or private reasoning in Strategy/recovery/training memory.
 - Human demonstrations never auto-promote to Strategy training; explicit human review remains required.
 - Recovery/learning must remain semantic and evidence-based; do not hard-code site-specific PASS titles or generic `failure => scroll` rules.
 
@@ -40,142 +40,109 @@ Approved semantic groups:
 
 Do not move held-out examples into train and do not alter split policy to force readiness.
 
-## Collector bug that is now closed
+## Collector bug is closed
 
-Second-round task 2 (`Message Composer` + Enter) previously reproduced `episode_success_has_pending_transition`.
+The previous `episode_success_has_pending_transition` problem on Message Composer + Enter was fixed by serialized episode-state mutation queue.
 
-The collector was fixed by serializing episode-state mutations. Relevant commits before this handoff include:
+Native proof already exists:
 
-- `89fce567c76a5793f656722cde8d23a7ba912a60` — serialized episode-state queue.
-- `f49399b044fd2824836d0325b8f1a624421e23da` — queue START/END/STOP/start-episode state mutations and diagnostic endpoint.
-- `857369f37c2f2bade414f462e57b2500e78bc81c` — episode-state queue contract.
-- `c1d8148735d2db9b477be4a9a97b7c48ee030257` — popup pending-transition diagnostic.
-- `fd273ef91ba1cdefa2c1a09cbe411202c98c6829` — CI gate.
-- `b99e1bb0276da52fbdc3c386af593b970bebb8d3` — handoff before native retry.
-
-GitHub Actions run `33068893125` passed the collector contracts.
-
-Native proof after the fix:
-
-- task 2 export: `training-collector-ep-1787831377719.task-episode-review.json`
+- task export: `training-collector-ep-1787831377719.task-episode-review.json`
 - final outcome: `success`
 - `strategyReady: true`
 - no pending transitions
-- Enter on `Message Composer` is present as a completed transition
+- Enter is a completed transition
 
-Therefore **do not ask the user to repeat task 2 again**. The remaining blocker is semantic Strategy review, not capture reliability.
+Therefore **do not ask the user to recollect Message Composer or the six-task set**. Collector is not the blocker.
 
 ## Current six-demonstration teaching set
 
-Combined review set contains these six episodes:
-
-First round:
-
-- `ep-1787826569158` — Google Gmail click
-- `ep-1787826618214` — Google search: type OpenAI + submit
-- `ep-1787826766003` — Mission Atlas + Mission Orion clicks
-
-Second round:
-
-- `ep-1787828642619` — Topic Search: type Atlas + Enter
-- `ep-1787831377719` — Message Composer: type Orion + Enter
-- `ep-1787828809498` — Teaching Confirm click
-
-Local combined folder used by user:
+Local folder:
 
 `%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827`
 
-Latest user pipeline results:
+Episodes:
 
-### Human learning batch
+1. `ep-1787826569158` — Google -> Gmail click
+2. `ep-1787826618214` — Google -> type OpenAI -> submit search
+3. `ep-1787826766003` — Mission Atlas -> Mission Orion
+4. `ep-1787828642619` — Topic Search -> type Atlas -> Enter
+5. `ep-1787831377719` — Message Composer -> type Orion -> Enter
+6. `ep-1787828809498` — Teaching Confirm click
+
+Latest pre-fix pipeline results:
 
 - reviewFileCount: 6
 - readyForHumanReviewCount: 6
-- autoTrainEligibleCount: 0
-
-### Review pack / triage
-
-- episodeCount: 6
 - transitionCount: 51
 - fastLabelReviewCount: 15
 - ambiguousLabelReviewCount: 36
-- fastLabelReviewCoverage: `0.29411764705882354`
-- episodeFastLabelReviewCount: 2
-
-### Teaching resolver
-
-- ambiguousTransitionCount: 36
-- resolvedSemanticActionCount: 5
-- captureNoiseCount: 22
-- unresolvedHumanReviewCount: 19
-- fullyResolvedEpisodeCount: 4
-
-### Approval candidates
-
-- candidateEpisodeCount: 4
-- blockedEpisodeCount: 2
-- ambiguityAidCandidateEpisodeCount: 3
-- digestHash: `004521d14db9c11d78a41f9f1e043d8c7e5a30302e6063aa2a5e70e3cb4dff9b`
+- resolver resolvedSemanticActionCount: 5
+- resolver captureNoiseCount: 22
+- resolver unresolvedHumanReviewCount: 19
+- resolver fullyResolvedEpisodeCount: 4
+- approval candidateEpisodeCount: 4
+- approval blockedEpisodeCount: 2
+- previous digestHash: `004521d14db9c11d78a41f9f1e043d8c7e5a30302e6063aa2a5e70e3cb4dff9b`
 - autoTrainEligible: false
 
-Eligible semantic groups are currently:
+Do **not** approve the previous digest.
 
-1. `semantic-sequence:click:gmail`
-2. `semantic-sequence:typeText:t-m-ki-m>submit:t-m-ki-m`
-3. `semantic-sequence:click:mission-atlas>click:mission-orion`
-4. `semantic-sequence:click:teaching-confirm`
-
-Blocked episodes:
+The two previously blocked episodes were:
 
 - `ep-1787828642619`: `unresolved_ambiguous_transition, suggested_action_missing`
 - `ep-1787831377719`: `unresolved_ambiguous_transition, suggested_action_missing`
 
-Do **not** apply/confirm digest `004521d...` yet. The two new form/text demonstrations are the important coverage examples; approving only the four currently eligible episodes does not solve the Strategy coverage goal.
+## Generic semantic text/form resolver milestone — implemented and CI PASS
 
-## Immediate next development task
+The Strategy teaching resolver bottleneck has now been addressed generically.
 
-The current bottleneck is the Strategy teaching resolver, not the collector.
+Important commits on `feat/agent-tab-context`:
 
-Inspect:
+- `74cb9a2c721a0fe9b201b8ecac0a02837ba6c558` — `feat(strategy): resolve generic semantic text submit sequences`
+- `d89e1ac3e3cf9978f6372d0bf8ee8c8e1dfffb7b` — `test(strategy): add generic text form sequence resolver contract`
+- `d4cf192ca27e6e8ba83f19c777a56e961f0803d5` — `ci(strategy): gate generic text form resolver contract`
 
-- `training-collector/tools/resolve_strategy_teaching_batch.js`
-- `training-collector/tools/score_strategy_review_pack.js`
-- `training-collector/tools/prepare_strategy_approval_candidates.js`
-- `training-collector/core/action_normalizer.js`
-- `training-collector/core/strategy_episode_view.js`
-- the synthetic contracts around Strategy teaching / ambiguity resolution
+Resolver version is now `0.2.0`.
 
-Then implement a **generic semantic form/text sequence resolver** for the two blocked episodes. It must not be hard-coded to Atlas/Orion or to the teaching lab URL.
+Implemented semantics:
 
-Expected semantic interpretation when evidence supports it:
+- task-declared non-sensitive text is the only text allowed into proposed `typeText`
+- focus/click used to acquire an editable field are HOW/capture noise
+- per-character `text-key/type-char` transitions on one continuous semantic editable target collapse into one Strategy `typeText`
+- intermediate `text-change` capture is provenance/HOW noise
+- Enter on the same semantic editable target becomes Strategy `submit` only when task wording requests submit/search/send/Enter and successful task outcome evidence is present
+- target continuity can use semantic editable target identity, not site-specific names
+- insufficient target/task/outcome evidence remains `needs-human-review`
+- human confirmation is still required; `autoTrainEligible:false`
+- no literal trajectory replay was added
 
-- focus/click used only to acquire an editable field => HOW/capture noise
-- per-character keyboard transitions on one editable semantic target => collapse into one Strategy `typeText`
-- Enter on that same field when the task requests sending/submitting and the page outcome supports it => Strategy `submit`
-- progress should be semantic: `0.5` after typeText, `1` after submit for a two-step task
-- all unrelated extra key/focus/click capture stays excluded as provenance/noise
-- if task/target/outcome evidence is insufficient, keep the transition blocked; never guess
+New contract:
 
-Privacy/invariants:
+`training-collector/tests/strategy_text_form_sequence_resolver_contract.js`
 
-- no selectors, coordinates, tabId, raw CDP, private reasoning, or typed secret values in Strategy labels
-- no literal trajectory replay
-- no automatic human verification
-- `autoTrainEligible:false` remains true until explicit human confirmation
+It proves:
 
-Add a contract that proves at least:
+1. search-like text + Enter -> `typeText -> submit`
+2. composer-like text + Enter -> `typeText -> submit`
+3. semantic progress is `0.5` then `1`
+4. focus/click/text-change/extra per-character capture is excluded as HOW/capture noise
+5. Enter on a different editable target remains blocked
+6. failed final outcome does not resolve the sequence
+7. resolver source does not hard-code Atlas, Orion, Topic Search, Message Composer, or localhost:8092
+8. sensitive task text is not extracted
 
-1. Topic Search-like typeText + Enter becomes `typeText -> submit`.
-2. Message Composer-like typeText + Enter becomes `typeText -> submit`.
-3. incidental focus/click/per-character keys are excluded as HOW/capture noise.
-4. unsupported ambiguous sequences remain blocked.
-5. solution is semantic/generic, not site-specific.
+CI integration:
 
-Integrate the contract into CI and commit every meaningful change on `feat/agent-tab-context`. Update this handoff again.
+- workflow: `.github/workflows/strategy-teaching-batch-resolver.yml`
+- GitHub Actions run: `33070246090`
+- head SHA: `d4cf192ca27e6e8ba83f19c777a56e961f0803d5`
+- conclusion: `success`
 
-## What to ask the user to run after the resolver fix
+## Immediate next step — local six-group validation only
 
-Do not ask the user to recollect demonstrations. Reuse `%SIX%` and rebuild from resolver onward:
+Do not recollect anything. User should pull and rerun only from resolver onward using the existing six-group folder.
+
+Run in Windows CMD exactly:
 
 ```bat
 cd /d C:\Users\duong\Downloads\extension_agent
@@ -184,7 +151,7 @@ git rev-parse --short HEAD
 
 set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
 
-node training-collector\tests\<new-resolver-contract>.js
+node training-collector\tests\strategy_text_form_sequence_resolver_contract.js
 
 node training-collector\tools\resolve_strategy_teaching_batch.js --pack "%SIX%\review-pack-v01\review-pack.json" --triage "%SIX%\review-pack-v01\triage.v01.json" --out "%SIX%\teaching-resolution-v02"
 
@@ -195,17 +162,38 @@ type "%SIX%\approval-candidates-v02\approval-candidates.md"
 
 Expected target before any approval:
 
-- candidateEpisodeCount: 6
-- blockedEpisodeCount: 0
+- contract PASS
+- `candidateEpisodeCount = 6`
+- `blockedEpisodeCount = 0`
 - six genuinely distinct semantic split groups
-- second-round Topic Search and Message Composer both represented as `typeText -> submit`
+- Topic Search represented as `typeText -> submit`
+- Message Composer represented as `typeText -> submit`
+- first semantic progress `0.5`, terminal submit progress `1`
+- `autoTrainEligible:false`
 
-Only after reviewing the new digest should the user explicitly confirm it. Then build the Strategy dataset. Target before Strategy fit:
+When the user sends the output, read it and continue immediately. Do not repeat already-passed collection steps.
 
-- `distinctSplitGroupCount >= 6`
-- `datasetBuilt:true`
-- `baselineReady:true`
-- TRAIN covers `click`, `typeText`, `submit`
-- validation/test remain held out
+If the target is met, show the new digest hash and wait for the user's explicit human confirmation. **Do not auto-approve.**
 
-Only then fit Strategy from TRAIN only, run heldout evaluation, load learned Strategy alongside learned Behavior in runtime, and proceed to native longer-mission testing with replan/recovery. Do not promote `main` without explicit user approval.
+Only after explicit human confirmation:
+
+1. apply approvals
+2. build Strategy dataset
+3. require `distinctSplitGroupCount >= 6`
+4. require `datasetBuilt:true`
+5. require `baselineReady:true`
+6. require TRAIN contains `click`, `typeText`, `submit`
+7. keep validation/test held out
+
+Only when `baselineReady=true`:
+
+- fit Strategy model from TRAIN only
+- heldout evaluation
+- load learned Strategy with learned Behavior at runtime
+- native long-mission test
+- multi-subgoal
+- replan
+- recovery
+- semantic memory
+
+Never promote to `main` without explicit user approval after verified PASS.
