@@ -19,6 +19,7 @@ on:
       - 'control-center/manager/strategy/recovery_policy_memory.js'
       - 'control-center/manager/strategy/recovery_exploration_provider.js'
       - 'control-center/manager/strategy/recovery_outcome_memory.js'
+      - 'control-center/manager/strategy/adaptive_recovery_provider.js'
       - 'control-center/manager/strategy/index.js'
       - 'control-center/manager/goal/semantic_effect_evaluator.js'
       - 'control-center/manager/goal/outcome_controller.js'
@@ -45,6 +46,7 @@ on:
       - 'control-center/script/checks/persistent_recovery_memory.js'
       - 'control-center/script/checks/recovery_self_exploration_learning.js'
       - 'control-center/script/checks/recovery_outcome_confidence.js'
+      - 'control-center/script/checks/adaptive_recovery_drift.js'
       - 'control-center/script/checks/outcome_controller.js'
       - 'control-center/script/checks/offline_strategy_provider.js'
       - 'control-center/script/checks/offline_strategy_history_provider.js'
@@ -84,6 +86,7 @@ jobs:
           node --check control-center/manager/strategy/recovery_policy_memory.js
           node --check control-center/manager/strategy/recovery_exploration_provider.js
           node --check control-center/manager/strategy/recovery_outcome_memory.js
+          node --check control-center/manager/strategy/adaptive_recovery_provider.js
           node --check control-center/manager/goal/semantic_effect_evaluator.js
           node --check control-center/manager/goal/outcome_controller.js
           node --check control-center/manager/agent/one_action_bridge.js
@@ -99,6 +102,7 @@ jobs:
           node --check control-center/script/checks/persistent_recovery_memory.js
           node --check control-center/script/checks/recovery_self_exploration_learning.js
           node --check control-center/script/checks/recovery_outcome_confidence.js
+          node --check control-center/script/checks/adaptive_recovery_drift.js
           node --check control-center/script/checks/outcome_controller.js
           node --check control-center/script/checks/offline_strategy_provider.js
           node --check control-center/script/checks/offline_strategy_history_provider.js
@@ -138,6 +142,8 @@ jobs:
         run: node control-center/script/checks/recovery_self_exploration_learning.js
       - name: Run recovery outcome confidence contract
         run: node control-center/script/checks/recovery_outcome_confidence.js
+      - name: Run adaptive recovery drift contract
+        run: node control-center/script/checks/adaptive_recovery_drift.js
       - name: Run offline Strategy baseline contract
         run: node training-collector/tests/strategy_offline_baseline_contract.js
       - name: Run history-aware Strategy baseline contract
