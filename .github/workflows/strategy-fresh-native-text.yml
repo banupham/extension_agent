@@ -10,6 +10,7 @@ on:
       - 'control-center/manager/execution/text_plan.js'
       - 'control-center/manager/execution/submit_plan.js'
       - 'training-collector/tests/strategy_fresh_native_text_gate_contract.js'
+      - 'training-collector/tests/submit_native_key_semantics_contract.js'
       - '.github/workflows/strategy-fresh-native-text.yml'
   pull_request:
     paths:
@@ -19,6 +20,7 @@ on:
       - 'control-center/manager/execution/text_plan.js'
       - 'control-center/manager/execution/submit_plan.js'
       - 'training-collector/tests/strategy_fresh_native_text_gate_contract.js'
+      - 'training-collector/tests/submit_native_key_semantics_contract.js'
       - '.github/workflows/strategy-fresh-native-text.yml'
 
 jobs:
@@ -31,3 +33,5 @@ jobs:
           node-version: '20'
       - name: Run fresh native text gate contract
         run: node training-collector/tests/strategy_fresh_native_text_gate_contract.js
+      - name: Run native submit key semantics contract
+        run: node training-collector/tests/submit_native_key_semantics_contract.js
