@@ -16,6 +16,7 @@ const {
   readRecoveryMemory
 } = require('../manager/strategy/recovery_policy_memory.js');
 const { readRecoveryOutcomeMemory } = require('../manager/strategy/recovery_outcome_memory.js');
+const { createAdaptiveRecoveryProvider } = require('../manager/strategy/adaptive_recovery_provider.js');
 const { parseArgs, discoverRuntimeAgent, resolveCommandTabId } = require('./agent_one_action.js');
 
 const DEFAULT_MEMORY_FILE = path.join('training-collector', 'strategy-data', 'recovery-self-learning-v01', 'memory.jsonl');
@@ -23,6 +24,8 @@ const DEFAULT_OUTCOME_MEMORY_FILE = path.join('training-collector', 'strategy-da
 const LEARN_SEQUENCE = ['click', 'waitAndObserve', 'scrollVertical', 'click'];
 const RECALL_SEQUENCE = ['click', 'scrollVertical', 'click'];
 const RELEARN_SEQUENCE = ['click', 'scrollVertical', 'click'];
+const ADAPT_DRIFT_SEQUENCE = ['click', 'scrollVertical', 'scrollHorizontal', 'click'];
+const ADAPT_STABLE_SEQUENCE = ['click', 'scrollHorizontal', 'click'];
 
 function makeTask(instruction = 'Complete the recovery self-learning challenge') {
   return {
@@ -94,6 +97,15 @@ function budgets() {
   };
 }
 
+function settlePolicy() {
+  return {
+    pollMs: 80,
+    minWindowMs: 320,
+    maxWindowMs: 1000,
+    stableSamples: 2
+  };
+}
+
 function commonErrors(result) {
   const errors = [];
   if (result?.finalOutcome?.taskSucceeded !== true) errors.push('final_goal_not_satisfied');
@@ -107,10 +119,16 @@ function commonErrors(result) {
   return errors;
 }
 
+function hasHorizontalRootPolicy(records) {
+  return (Array.isArray(records) ? records : []).some(record =>
+    record?.trigger?.actionType === 'click' && record?.recovery?.type === 'scrollHorizontal'
+  );
+}
+
 async function runGate(options = {}) {
   if (!options.runtime) throw new Error('runtime_required');
   const mode = String(options.mode || 'learn').trim().toLowerCase();
-  if (!['learn', 'recall', 'relearn'].includes(mode)) throw new Error('mode must be learn, recall, or relearn');
+  if (!['learn', 'recall', 'relearn', 'adapt'].includes(mode)) throw new Error('mode must be learn, recall, relearn, or adapt');
   const memoryFile = path.resolve(options.memoryFile || DEFAULT_MEMORY_FILE);
   const outcomeMemoryFile = path.resolve(options.outcomeMemoryFile || DEFAULT_OUTCOME_MEMORY_FILE);
   if (options.resetMemory === true) {
@@ -121,6 +139,7 @@ async function runGate(options = {}) {
   const task = makeTask(options.instruction);
   const baseProvider = createBaseProvider();
   let result;
+  let adaptivePhase = null;
 
   if (mode === 'learn') {
     const provider = createRecoveryExplorationProvider({
@@ -135,12 +154,7 @@ async function runGate(options = {}) {
       recoveryMemoryFile: memoryFile,
       recoveryOutcomeMemoryFile: outcomeMemoryFile,
       budgets: budgets(),
-      postActionSettle: {
-        pollMs: 80,
-        minWindowMs: 320,
-        maxWindowMs: 1000,
-        stableSamples: 2
-      }
+      postActionSettle: settlePolicy()
     });
   } else if (mode === 'recall') {
     const records = readRecoveryMemory(memoryFile);
@@ -156,7 +170,7 @@ async function runGate(options = {}) {
       task,
       budgets: budgets()
     });
-  } else {
+  } else if (mode === 'relearn') {
     const outcomes = readRecoveryOutcomeMemory(outcomeMemoryFile);
     if (!outcomes.length) throw new Error(`recovery_outcome_memory_empty:${outcomeMemoryFile}`);
     const provider = createRecoveryExplorationProvider({
@@ -170,11 +184,46 @@ async function runGate(options = {}) {
       task,
       budgets: budgets()
     });
+  } else {
+    const policyRecords = readRecoveryMemory(memoryFile);
+    const outcomes = readRecoveryOutcomeMemory(outcomeMemoryFile);
+    if (!policyRecords.length) throw new Error(`recovery_memory_empty:${memoryFile}`);
+    if (!outcomes.length) throw new Error(`recovery_outcome_memory_empty:${outcomeMemoryFile}`);
+    adaptivePhase = hasHorizontalRootPolicy(policyRecords) ? 'stabilized' : 'drift-relearn';
+    const explorationProvider = createRecoveryExplorationProvider({
+      baseProvider,
+      actionTypes: ['waitAndObserve', 'scrollVertical', 'scrollHorizontal'],
+      outcomeMemoryFile
+    });
+    const provider = createAdaptiveRecoveryProvider({
+      explorationProvider,
+      policyMemoryFile: memoryFile,
+      outcomeMemoryFile,
+      minimumPolicyScore: options.minimumScore ?? 0.55,
+      minimumOutcomeConfidence: options.minimumOutcomeConfidence ?? 0.55
+    });
+    result = await executeRecoveryExplorationLearningEpisode({
+      runtime: options.runtime,
+      strategy: createStrategy({ provider }),
+      task,
+      recoveryMemoryFile: memoryFile,
+      recoveryOutcomeMemoryFile: outcomeMemoryFile,
+      budgets: budgets(),
+      postActionSettle: settlePolicy()
+    });
   }
 
   const errors = commonErrors(result);
   const actualSequence = (result.steps || []).map(step => step?.action?.type || null);
-  const expectedSequence = mode === 'learn' ? LEARN_SEQUENCE : (mode === 'recall' ? RECALL_SEQUENCE : RELEARN_SEQUENCE);
+  const expectedSequence = mode === 'learn'
+    ? LEARN_SEQUENCE
+    : mode === 'recall'
+      ? RECALL_SEQUENCE
+      : mode === 'relearn'
+        ? RELEARN_SEQUENCE
+        : adaptivePhase === 'stabilized'
+          ? ADAPT_STABLE_SEQUENCE
+          : ADAPT_DRIFT_SEQUENCE;
   if (JSON.stringify(actualSequence) !== JSON.stringify(expectedSequence)) {
     errors.push(`sequence:${actualSequence.join(',')}`);
   }
@@ -194,7 +243,7 @@ async function runGate(options = {}) {
     if (!scrollOutcome || scrollOutcome?.outcome?.usefulEffect !== true) errors.push('positive_scroll_outcome_missing');
   } else if (mode === 'recall') {
     if (sources[1] !== 'recoveryPolicy') errors.push(`recall_source:${sources[1] || '<missing>'}`);
-  } else {
+  } else if (mode === 'relearn') {
     if (sources[1] !== 'recoveryExploration') errors.push(`relearn_source:${sources[1] || '<missing>'}`);
     const metadata = result?.steps?.[1]?.decision?.metadata || {};
     if (metadata.explorationActionType !== 'scrollVertical') errors.push(`relearn_action:${metadata.explorationActionType || '<missing>'}`);
@@ -203,6 +252,25 @@ async function runGate(options = {}) {
     if (!failedWait || failedWait.attempts < 1 || failedWait.failures < 1 || !(failedWait.confidence < 0.5)) {
       errors.push('relearn_negative_wait_history_missing');
     }
+  } else if (adaptivePhase === 'drift-relearn') {
+    if (sources[1] !== 'recoveryPolicy' || sources[2] !== 'recoveryExploration') {
+      errors.push(`adapt_drift_sources:${sources.join(',')}`);
+    }
+    if (result?.steps?.[1]?.effect?.status !== 'no_effect') errors.push('stale_vertical_policy_not_failed');
+    if (result?.steps?.[2]?.action?.type !== 'scrollHorizontal') errors.push('horizontal_recovery_not_discovered');
+    if (result?.steps?.[2]?.decision?.metadata?.policyRejectedByOutcomeHistory !== true) {
+      errors.push('stale_policy_not_rejected_online');
+    }
+    const learnedHorizontal = (result?.recoveryLearning?.records || []).some(record =>
+      record?.trigger?.actionType === 'click' && record?.recovery?.type === 'scrollHorizontal'
+    );
+    if (!learnedHorizontal) errors.push('horizontal_policy_not_learned');
+  } else {
+    if (sources[1] !== 'recoveryPolicy') errors.push(`adapt_stable_source:${sources[1] || '<missing>'}`);
+    if (result?.steps?.[1]?.action?.type !== 'scrollHorizontal') errors.push('stabilized_policy_not_horizontal');
+    if (result?.steps?.[1]?.decision?.metadata?.policyRejectedByOutcomeHistory !== false) {
+      errors.push('healthy_horizontal_policy_rejected');
+    }
   }
 
   return {
@@ -210,6 +278,7 @@ async function runGate(options = {}) {
     result: errors.length === 0 ? 'PASS' : 'FAIL',
     gate: 'offline-strategy-recovery-self-learning',
     mode,
+    adaptivePhase,
     task: task.instruction,
     memoryFile,
     outcomeMemoryFile,
@@ -229,6 +298,11 @@ async function runGate(options = {}) {
       historicalSuccesses: step?.decision?.metadata?.historicalSuccesses ?? null,
       historicalFailures: step?.decision?.metadata?.historicalFailures ?? null,
       historicalConfidence: step?.decision?.metadata?.historicalConfidence ?? null,
+      policyOutcomeAttempts: step?.decision?.metadata?.policyOutcomeAttempts ?? null,
+      policyOutcomeSuccesses: step?.decision?.metadata?.policyOutcomeSuccesses ?? null,
+      policyOutcomeFailures: step?.decision?.metadata?.policyOutcomeFailures ?? null,
+      policyOutcomeConfidence: step?.decision?.metadata?.policyOutcomeConfidence ?? null,
+      policyRejectedByOutcomeHistory: step?.decision?.metadata?.policyRejectedByOutcomeHistory ?? null,
       candidateHistory: step?.decision?.metadata?.candidateHistory || null
     })),
     finalOutcome: result.finalOutcome,
@@ -271,7 +345,8 @@ async function main(argv = process.argv.slice(2)) {
       memoryFile: args.memory || DEFAULT_MEMORY_FILE,
       outcomeMemoryFile: args['outcome-memory'] || DEFAULT_OUTCOME_MEMORY_FILE,
       resetMemory: args['reset-memory'] === true,
-      minimumScore: args['minimum-score'] == null ? 0.55 : Number(args['minimum-score'])
+      minimumScore: args['minimum-score'] == null ? 0.55 : Number(args['minimum-score']),
+      minimumOutcomeConfidence: args['minimum-outcome-confidence'] == null ? 0.55 : Number(args['minimum-outcome-confidence'])
     });
     console.log(JSON.stringify({ agentId, tabId, ...result }, null, 2));
     if (!result.ok) process.exitCode = 2;
@@ -298,11 +373,15 @@ module.exports = {
   LEARN_SEQUENCE,
   RECALL_SEQUENCE,
   RELEARN_SEQUENCE,
+  ADAPT_DRIFT_SEQUENCE,
+  ADAPT_STABLE_SEQUENCE,
   makeTask,
   findVisible,
   createBaseProvider,
   budgets,
+  settlePolicy,
   commonErrors,
+  hasHorizontalRootPolicy,
   runGate,
   main
 };
