@@ -30,6 +30,7 @@ Read this file before changing the repository.
 - Signal Relay long browser-native regression passes all 3 subgoals with real recovery, progression guard, goal checks, privacy redaction, and frozen model invariants.
 - **Frozen v0.3.3 now also passes a pristine fresh-unseen long browser-native Harbor Dispatch mission on the first real user run.**
 - Current primary phase is now **continuous learning from approved new user interactions**, not more controlled lab tuning.
+- Incremental Strategy ingestion is now wired through a review-only orchestrator that stops before approval/dataset/fit and is CI-gated.
 - Agent is maturing but is not broadly autonomous.
 
 ## Historical teaching data — CLOSED
@@ -231,19 +232,87 @@ Required properties:
 8. every new model must be evaluated on old regression gates plus new fresh-unseen families
 9. recovery experience may be learned only from successful, privacy-safe episodes; no literal trajectory replay
 
-### Immediate engineering task
+## Incremental Strategy ingestion — REVIEW-ONLY GATE PASS
 
-Audit and connect the already-existing collector/resolver/approval/dataset tools into a repeatable **incremental ingestion** path for post-v0.3.3 interactions. Prefer reusing:
+New orchestrator:
 
-- collector raw/session exports
-- Strategy ambiguity resolver
-- approval candidate digest flow
-- `apply_strategy_approval_candidates.js`
-- `build_strategy_dataset_from_approvals.js`
-- readiness checks
+`training-collector/tools/prepare_incremental_strategy_learning.js`
 
-Do not ask the user to recollect the historical six tasks. New collection must be genuinely new interaction data.
+Version `0.1.0`.
 
-First goal of this phase: produce an incremental candidate bundle from new interaction episodes that is privacy/noise filtered and reviewable, but **not trainable until explicit human digest approval**.
+Purpose:
+
+- consume genuinely new `*.task-episode-review.json` exports, optionally alongside raw session data
+- reuse the existing privacy-safe learning batch, review pack, triage, review-draft, teaching resolver, and digest-candidate tools
+- deduplicate previously processed episode IDs and duplicate current exports before the review pack
+- produce one reviewable digest-bound candidate bundle
+- **stop before approval, dataset construction, or model fitting**
+
+Pipeline:
+
+`new reviews/raw -> privacy batch -> incremental episode filter -> review pack -> triage -> review drafts -> teaching resolver -> approval candidate digest -> STOP`
+
+CLI options:
+
+- `--reviews <task-episode-review-dir>` required
+- `--raw <raw-session-dir>` optional
+- `--exclude-approved <approved-annotations-dir>` optional
+- `--exclude-episodes <episode-id-file>` optional
+- `--out <output-dir>` optional
+
+Hard boundaries:
+
+- candidate digest must verify before output
+- candidate policy must remain `autoTrainEligible:false`
+- process throws if `apply_strategy_approval_candidates.js` is imported
+- process throws if `build_strategy_dataset_from_approvals.js` is imported
+- process throws if `fit_strategy_offline_baseline.js` is imported
+- manifest records `approvalApplied:false`, `datasetBuilt:false`, `trainingPerformed:false`
+- previously approved episode IDs can be excluded by scanning `.strategy-review.approved.json` annotations
+- duplicate current exports with the same episode ID are reduced to one review-queue entry
+- privacy-unsafe review exports remain blocked before candidate generation
+
+Default output layout:
+
+- `01-learning-batch/`
+- `02-incremental-filter/incremental-manifest.json`
+- `03-review-pack/`
+- `04-triage/triage.json`
+- `05-review-drafts/`
+- `06-resolution/`
+- `07-approval-candidates/`
+- `incremental-strategy-learning-manifest.json`
+- `incremental-strategy-learning-review.md`
+
+Commits:
+
+- `caff7ad78949bac6b9a81ddc603b52465f428a5f` — incremental review-only orchestrator
+- `ae4dac8bac4742bd6ee6aeee7dea32ce5189f882` — synthetic incremental boundary contract
+- `fca2f20d49143deb44c7eb66b7490e5794559b84` — dedicated incremental-learning CI workflow
+
+Synthetic contract proves in one batch:
+
+- one previously approved episode is excluded
+- one duplicate current export is deduplicated
+- one privacy-unsafe review stays blocked before review pack/candidate
+- one genuinely new safe successful click review becomes exactly one digest candidate
+- digest integrity verifies
+- no approved annotation, approval receipt, train/validation/test dataset, or model is created
+- approval applicator/dataset builder/fitter modules are not imported by the orchestrator process
+
+CI:
+
+- full runtime-syntax on orchestrator + boundary contract `33093032281`: success
+- dedicated `strategy-incremental-learning` run `33093059221`: success
+  - incremental Strategy learning boundary PASS
+  - privacy-safe human learning batch PASS
+  - Strategy teaching resolver PASS
+  - explicit approval/dataset boundary PASS
+
+### Immediate next step
+
+Use genuinely new post-v0.3.3 user interaction episodes as the first real incremental input. Do not reuse the historical six teaching tasks, Cargo, Signal Relay, or Harbor as training additions.
+
+The first real incremental run should stop at a candidate digest. Inspect its candidate count, blocked count, unresolved count, privacy invariants, semantic sequences, and digest hash. Only after the user explicitly reviews and confirms that exact digest may approval annotations be created. Dataset merge/versioning and retraining come after that separate approval milestone.
 
 Never promote to `main` without explicit user approval after verified PASS.
