@@ -16,11 +16,16 @@ const {
   readRecoveryMemory
 } = require('../manager/strategy/recovery_policy_memory.js');
 const { readRecoveryOutcomeMemory } = require('../manager/strategy/recovery_outcome_memory.js');
+const {
+  DEFAULT_RECOVERY_HALF_LIFE_MS,
+  readRecoverySummaryMemory
+} = require('../manager/strategy/recovery_memory_consolidation.js');
 const { createAdaptiveRecoveryProvider } = require('../manager/strategy/adaptive_recovery_provider.js');
 const { parseArgs, discoverRuntimeAgent, resolveCommandTabId } = require('./agent_one_action.js');
 
 const DEFAULT_MEMORY_FILE = path.join('training-collector', 'strategy-data', 'recovery-self-learning-v01', 'memory.jsonl');
 const DEFAULT_OUTCOME_MEMORY_FILE = path.join('training-collector', 'strategy-data', 'recovery-self-learning-v01', 'outcomes.jsonl');
+const DEFAULT_OUTCOME_SUMMARY_FILE = path.join('training-collector', 'strategy-data', 'recovery-self-learning-v01', 'outcomes.summary.jsonl');
 const LEARN_SEQUENCE = ['click', 'waitAndObserve', 'scrollVertical', 'click'];
 const RECALL_SEQUENCE = ['click', 'scrollVertical', 'click'];
 const RELEARN_SEQUENCE = ['click', 'scrollVertical', 'click'];
@@ -125,15 +130,24 @@ function hasHorizontalRootPolicy(records) {
   );
 }
 
+function hasOutcomeKnowledge(outcomes, summaries) {
+  return (Array.isArray(outcomes) && outcomes.length > 0) || (Array.isArray(summaries) && summaries.length > 0);
+}
+
 async function runGate(options = {}) {
   if (!options.runtime) throw new Error('runtime_required');
   const mode = String(options.mode || 'learn').trim().toLowerCase();
   if (!['learn', 'recall', 'relearn', 'adapt'].includes(mode)) throw new Error('mode must be learn, recall, relearn, or adapt');
   const memoryFile = path.resolve(options.memoryFile || DEFAULT_MEMORY_FILE);
   const outcomeMemoryFile = path.resolve(options.outcomeMemoryFile || DEFAULT_OUTCOME_MEMORY_FILE);
+  const outcomeSummaryFile = path.resolve(options.outcomeSummaryFile || `${outcomeMemoryFile}.summary.jsonl`);
+  const outcomeHalfLifeMs = Number.isFinite(Number(options.outcomeHalfLifeMs)) && Number(options.outcomeHalfLifeMs) > 0
+    ? Number(options.outcomeHalfLifeMs)
+    : DEFAULT_RECOVERY_HALF_LIFE_MS;
   if (options.resetMemory === true) {
     if (fs.existsSync(memoryFile)) fs.rmSync(memoryFile, { force: true });
     if (fs.existsSync(outcomeMemoryFile)) fs.rmSync(outcomeMemoryFile, { force: true });
+    if (fs.existsSync(outcomeSummaryFile)) fs.rmSync(outcomeSummaryFile, { force: true });
   }
 
   const task = makeTask(options.instruction);
@@ -145,7 +159,9 @@ async function runGate(options = {}) {
     const provider = createRecoveryExplorationProvider({
       baseProvider,
       actionTypes: ['waitAndObserve', 'scrollVertical', 'scrollHorizontal'],
-      outcomeMemoryFile
+      outcomeMemoryFile,
+      outcomeSummaryFile,
+      outcomeHalfLifeMs
     });
     result = await executeRecoveryExplorationLearningEpisode({
       runtime: options.runtime,
@@ -153,6 +169,8 @@ async function runGate(options = {}) {
       task,
       recoveryMemoryFile: memoryFile,
       recoveryOutcomeMemoryFile: outcomeMemoryFile,
+      recoveryOutcomeSummaryFile: outcomeSummaryFile,
+      recoveryOutcomeHalfLifeMs: outcomeHalfLifeMs,
       budgets: budgets(),
       postActionSettle: settlePolicy()
     });
@@ -172,11 +190,14 @@ async function runGate(options = {}) {
     });
   } else if (mode === 'relearn') {
     const outcomes = readRecoveryOutcomeMemory(outcomeMemoryFile);
-    if (!outcomes.length) throw new Error(`recovery_outcome_memory_empty:${outcomeMemoryFile}`);
+    const summaries = readRecoverySummaryMemory(outcomeSummaryFile);
+    if (!hasOutcomeKnowledge(outcomes, summaries)) throw new Error(`recovery_outcome_memory_empty:${outcomeMemoryFile}`);
     const provider = createRecoveryExplorationProvider({
       baseProvider,
       actionTypes: ['waitAndObserve', 'scrollVertical', 'scrollHorizontal'],
-      outcomeMemoryFile
+      outcomeMemoryFile,
+      outcomeSummaryFile,
+      outcomeHalfLifeMs
     });
     result = await executeBoundedEpisodeLoop({
       runtime: options.runtime,
@@ -187,18 +208,23 @@ async function runGate(options = {}) {
   } else {
     const policyRecords = readRecoveryMemory(memoryFile);
     const outcomes = readRecoveryOutcomeMemory(outcomeMemoryFile);
+    const summaries = readRecoverySummaryMemory(outcomeSummaryFile);
     if (!policyRecords.length) throw new Error(`recovery_memory_empty:${memoryFile}`);
-    if (!outcomes.length) throw new Error(`recovery_outcome_memory_empty:${outcomeMemoryFile}`);
+    if (!hasOutcomeKnowledge(outcomes, summaries)) throw new Error(`recovery_outcome_memory_empty:${outcomeMemoryFile}`);
     adaptivePhase = hasHorizontalRootPolicy(policyRecords) ? 'stabilized' : 'drift-relearn';
     const explorationProvider = createRecoveryExplorationProvider({
       baseProvider,
       actionTypes: ['waitAndObserve', 'scrollVertical', 'scrollHorizontal'],
-      outcomeMemoryFile
+      outcomeMemoryFile,
+      outcomeSummaryFile,
+      outcomeHalfLifeMs
     });
     const provider = createAdaptiveRecoveryProvider({
       explorationProvider,
       policyMemoryFile: memoryFile,
       outcomeMemoryFile,
+      outcomeSummaryFile,
+      outcomeHalfLifeMs,
       minimumPolicyScore: options.minimumScore ?? 0.55,
       minimumOutcomeConfidence: options.minimumOutcomeConfidence ?? 0.55
     });
@@ -208,6 +234,8 @@ async function runGate(options = {}) {
       task,
       recoveryMemoryFile: memoryFile,
       recoveryOutcomeMemoryFile: outcomeMemoryFile,
+      recoveryOutcomeSummaryFile: outcomeSummaryFile,
+      recoveryOutcomeHalfLifeMs: outcomeHalfLifeMs,
       budgets: budgets(),
       postActionSettle: settlePolicy()
     });
@@ -241,6 +269,7 @@ async function runGate(options = {}) {
     const scrollOutcome = outcomeRecords.find(record => record?.recovery?.type === 'scrollVertical');
     if (!waitOutcome || waitOutcome?.outcome?.usefulEffect !== false) errors.push('negative_wait_outcome_missing');
     if (!scrollOutcome || scrollOutcome?.outcome?.usefulEffect !== true) errors.push('positive_scroll_outcome_missing');
+    if (!result?.recoveryMemoryMaintenance || result.recoveryMemoryMaintenance.consumedRaw !== true) errors.push('recovery_memory_not_consolidated');
   } else if (mode === 'recall') {
     if (sources[1] !== 'recoveryPolicy') errors.push(`recall_source:${sources[1] || '<missing>'}`);
   } else if (mode === 'relearn') {
@@ -271,6 +300,9 @@ async function runGate(options = {}) {
     if (result?.steps?.[1]?.decision?.metadata?.policyRejectedByOutcomeHistory !== false) {
       errors.push('healthy_horizontal_policy_rejected');
     }
+    if (result?.recoveryLearning?.newlyLearned !== false || result?.recoveryLearning?.reinforced !== true) {
+      errors.push('stabilized_policy_reinforcement_semantics_invalid');
+    }
   }
 
   return {
@@ -282,11 +314,14 @@ async function runGate(options = {}) {
     task: task.instruction,
     memoryFile,
     outcomeMemoryFile,
+    outcomeSummaryFile,
+    outcomeHalfLifeMs,
     actualSequence,
     expectedSequence,
     decisionSources: sources,
     recoveryLearning: result.recoveryLearning || null,
     recoveryOutcomeLearning: result.recoveryOutcomeLearning || null,
+    recoveryMemoryMaintenance: result.recoveryMemoryMaintenance || null,
     effects: (result.steps || []).map((step, index) => ({
       index,
       actionType: step?.action?.type || null,
@@ -298,10 +333,15 @@ async function runGate(options = {}) {
       historicalSuccesses: step?.decision?.metadata?.historicalSuccesses ?? null,
       historicalFailures: step?.decision?.metadata?.historicalFailures ?? null,
       historicalConfidence: step?.decision?.metadata?.historicalConfidence ?? null,
+      historicalWeightedSuccessRate: step?.decision?.metadata?.historicalWeightedSuccessRate ?? null,
+      historicalEffectiveEvidence: step?.decision?.metadata?.historicalEffectiveEvidence ?? null,
       policyOutcomeAttempts: step?.decision?.metadata?.policyOutcomeAttempts ?? null,
       policyOutcomeSuccesses: step?.decision?.metadata?.policyOutcomeSuccesses ?? null,
       policyOutcomeFailures: step?.decision?.metadata?.policyOutcomeFailures ?? null,
       policyOutcomeConfidence: step?.decision?.metadata?.policyOutcomeConfidence ?? null,
+      policyOutcomeWeightedSuccessRate: step?.decision?.metadata?.policyOutcomeWeightedSuccessRate ?? null,
+      policyOutcomeEffectiveEvidence: step?.decision?.metadata?.policyOutcomeEffectiveEvidence ?? null,
+      policyOutcomeSummaryBacked: step?.decision?.metadata?.policyOutcomeSummaryBacked ?? null,
       policyRejectedByOutcomeHistory: step?.decision?.metadata?.policyRejectedByOutcomeHistory ?? null,
       candidateHistory: step?.decision?.metadata?.candidateHistory || null
     })),
@@ -344,6 +384,8 @@ async function main(argv = process.argv.slice(2)) {
       instruction: args.task || 'Complete the recovery self-learning challenge',
       memoryFile: args.memory || DEFAULT_MEMORY_FILE,
       outcomeMemoryFile: args['outcome-memory'] || DEFAULT_OUTCOME_MEMORY_FILE,
+      outcomeSummaryFile: args['outcome-summary'] || DEFAULT_OUTCOME_SUMMARY_FILE,
+      outcomeHalfLifeMs: args['outcome-half-life-ms'] == null ? DEFAULT_RECOVERY_HALF_LIFE_MS : Number(args['outcome-half-life-ms']),
       resetMemory: args['reset-memory'] === true,
       minimumScore: args['minimum-score'] == null ? 0.55 : Number(args['minimum-score']),
       minimumOutcomeConfidence: args['minimum-outcome-confidence'] == null ? 0.55 : Number(args['minimum-outcome-confidence'])
@@ -370,6 +412,7 @@ if (require.main === module) {
 module.exports = {
   DEFAULT_MEMORY_FILE,
   DEFAULT_OUTCOME_MEMORY_FILE,
+  DEFAULT_OUTCOME_SUMMARY_FILE,
   LEARN_SEQUENCE,
   RECALL_SEQUENCE,
   RELEARN_SEQUENCE,
@@ -382,6 +425,7 @@ module.exports = {
   settlePolicy,
   commonErrors,
   hasHorizontalRootPolicy,
+  hasOutcomeKnowledge,
   runGate,
   main
 };
