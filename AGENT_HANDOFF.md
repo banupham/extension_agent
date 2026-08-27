@@ -334,3 +334,26 @@ Verification completed locally:
 - `node --check` on `background.js` and `content.js`: PASS
 
 Real Chrome navigation retest is still required after reloading Training Collector and reopening/refreshing the target tab. Do not treat this milestone as browser-native PASS yet.
+
+## First incremental Batch 1–2 — CAPTURE VALID / RESOLUTION BLOCKED
+
+Eight new successful review exports were collected and copied into `extension_agent-local-data/incremental-strategy-01`. Every file passes the task-episode review checker and privacy boundary (`selectorsExported:false`, `tabIdExported:false`, `rawActionCoordinatesExported:false`, zero forbidden fields).
+
+The review-only orchestrator stopped safely with:
+
+- source/retained/ready review files: 8 / 8 / 8
+- candidate episodes: 0
+- blocked episodes: 8
+- unresolved human-review transitions: 226
+- digest: `4895a7f4295e0e0ffe661dc6eb11157f7b7c7af43362a3f44fc49d03a4492bec`
+- approval/dataset/training all remain false
+
+Historical audit finding:
+
+- per-key `text-key/type-char` Task Episode capture has existed since the initial semantic collector commit `7624157`; this is not a new `0.8.2` regression
+- previous text episodes resolved because their task instructions explicitly declared the typed payload and submit mechanic (`nhập/gõ ... rồi nhấn Enter`)
+- the newly proposed task wording used broad goals such as `Tìm bài viết ...`, which does not satisfy the privacy-safe declared-text resolver contract
+- all eight new episodes are blocked, not only the earliest files
+- click-only episodes have a small number of unresolved public-site targets with missing semantic labels; text/search episodes contribute most unresolved items because per-key mechanics cannot yet be safely collapsed from the broad task wording
+
+Do not approve the zero-candidate digest. Preserve all eight reviews; diagnose/re-resolve from existing evidence before asking the user to recollect.
