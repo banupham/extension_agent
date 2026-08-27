@@ -43,8 +43,10 @@ function record(id, instruction) {
 
 const train = [record('train-sequence', 'Start media playback, then mute it')];
 const model = fitBaseline(train);
-assert.strictEqual(model.modelVersion, '0.3.2');
+assert.strictEqual(model.modelVersion, '0.3.3');
 assert.strictEqual(model.historyAware, true);
+assert.strictEqual(model.actionSelectionPolicy, 'task-history-decoupled-from-current-target-ranking');
+assert.strictEqual(model.actionSelectionUsesCurrentTargetRanking, false);
 assert.strictEqual(model.actionPrototypes.length, 2);
 assert.strictEqual(model.historyPrototypes.length, 2);
 
@@ -57,6 +59,7 @@ const first = predictAction(
 assert.strictEqual(first.action.type, 'play');
 assert.strictEqual(first.action.targetRef, 'e6');
 assert.strictEqual(first.evidence.historyMatched, true);
+assert.strictEqual(first.evidence.actionSelectionTargetIndependent, true);
 assert.deepStrictEqual(first.evidence.priorActionTypes, []);
 
 const second = predictAction(
