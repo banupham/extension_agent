@@ -11,6 +11,21 @@ const {
   safeCandidateSummary
 } = require('../tools/diagnose_strategy_target_grounding.js');
 
+// The collector observer is browser-oriented, but its text-entry semantic classifier is pure.
+delete globalThis.TrainingCollectorV02;
+delete globalThis.TrainingCollectorV04;
+require('../observer/semantic_observer.js');
+const { textEntryEditableFromSemantics } = globalThis.TrainingCollectorV02.SemanticObserver;
+
+assert.strictEqual(textEntryEditableFromSemantics({ tag: 'input', inputType: 'text' }), true);
+assert.strictEqual(textEntryEditableFromSemantics({ tag: 'input', inputType: 'search' }), true);
+assert.strictEqual(textEntryEditableFromSemantics({ tag: 'textarea' }), true);
+assert.strictEqual(textEntryEditableFromSemantics({ tag: 'div', isContentEditable: true }), true);
+assert.strictEqual(textEntryEditableFromSemantics({ tag: 'select' }), false);
+assert.strictEqual(textEntryEditableFromSemantics({ tag: 'input', inputType: 'button' }), false);
+assert.strictEqual(textEntryEditableFromSemantics({ tag: 'input', inputType: 'submit' }), false);
+assert.strictEqual(textEntryEditableFromSemantics({ tag: 'input', inputType: 'checkbox' }), false);
+
 function observation() {
   return {
     observationId: 'obs-1',
@@ -100,10 +115,11 @@ const train = [
 ];
 
 const model = fitBaseline(train);
-assert.strictEqual(model.modelVersion, '0.3.1');
+assert.strictEqual(model.modelVersion, '0.3.2');
 assert.strictEqual(model.fitSource, 'train-only');
 assert.strictEqual(model.heldOutUsedForFit, false);
 assert.strictEqual(model.localTargetRefsPersisted, false);
+assert.strictEqual(model.targetGroundingPolicy, 'current-task-dominant-with-action-affordance');
 assert.strictEqual(model.actionPrototypes.length, 8);
 
 const playPrediction = predictAction(model, { instruction: 'Play Media' }, observation());
@@ -157,6 +173,63 @@ assert.strictEqual(chooseTargetRef(
   },
   []
 ), null);
+
+// Old collector snapshots may have stale editable=true on input controls that are semantically buttons.
+// Role/input semantics must veto that stale boolean rather than letting text actions target the control.
+const staleEditableButtonObservation = {
+  observationId: 'stale-editable-button',
+  interactiveElements: [
+    { ref: 'lookup-field', label: 'Lookup Box', role: 'combobox', tag: 'textarea', editable: true, visible: true, enabled: true },
+    { ref: 'stale-button', label: 'Lookup Box Action', role: 'button', tag: 'input', editable: true, visible: true, enabled: true },
+    { ref: 'weak-input', label: 'Account Preference', role: null, tag: 'input', editable: true, visible: true, enabled: true }
+  ],
+  privacy: { redacted: true }
+};
+const staleButtonPrediction = predictAction(
+  model,
+  { instruction: 'Type a value into Lookup Box and press Enter' },
+  staleEditableButtonObservation,
+  []
+);
+assert.strictEqual(staleButtonPrediction.action.type, 'typeText');
+assert.strictEqual(staleButtonPrediction.action.targetRef, 'lookup-field');
+
+// A target whose label matches TRAIN exactly must not beat a different editable target named by the current task.
+const learnedLabelDistractorObservation = {
+  observationId: 'learned-label-distractor',
+  interactiveElements: [
+    { ref: 'current-task-field', label: 'Topic Entry', role: null, tag: 'input', editable: true, visible: true, enabled: true },
+    { ref: 'train-label-field', label: 'Message Field', role: null, tag: 'input', editable: true, visible: true, enabled: true }
+  ],
+  privacy: { redacted: true }
+};
+const learnedLabelPrediction = predictAction(
+  model,
+  { instruction: 'Type a value into Topic Entry and press Enter' },
+  learnedLabelDistractorObservation,
+  []
+);
+assert.strictEqual(learnedLabelPrediction.action.type, 'typeText');
+assert.strictEqual(learnedLabelPrediction.action.targetRef, 'current-task-field');
+
+// Exact TRAIN tag/role shape is only supporting evidence. A textarea/combobox named by the task
+// must be able to beat a generic input whose structural traits happen to match TRAIN better.
+const crossShapeObservation = {
+  observationId: 'cross-shape-transfer',
+  interactiveElements: [
+    { ref: 'cross-shape-field', label: 'Lookup Destination', role: 'combobox', tag: 'textarea', editable: true, visible: true, enabled: true },
+    { ref: 'shape-match-distractor', label: 'Lookup History', role: null, tag: 'input', editable: true, visible: true, enabled: true }
+  ],
+  privacy: { redacted: true }
+};
+const crossShapePrediction = predictAction(
+  model,
+  { instruction: 'Type a value into Lookup Destination and press Enter' },
+  crossShapeObservation,
+  []
+);
+assert.strictEqual(crossShapePrediction.action.type, 'typeText');
+assert.strictEqual(crossShapePrediction.action.targetRef, 'cross-shape-field');
 
 const privacyDiagnostic = safeCandidateSummary({
   element: {
