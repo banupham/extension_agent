@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { readInputFile } = require('./analyze_raw.js');
 
-const CURATOR_VERSION = '0.1.0';
+const CURATOR_VERSION = '0.1.1';
 const DIAGNOSTIC_TYPES = new Set([
   'frame-context',
   'collector-stream-start',
@@ -32,18 +32,27 @@ function isNonEmptySensitiveValue(value) {
   return value !== null && value !== undefined && value !== '' && value !== false;
 }
 
-function scanSensitive(value, depth = 0, findings = []) {
+function safeStructuralRawTextKey(pathParts, object, key) {
+  if (key !== 'value') return false;
+  const parent = pathParts[pathParts.length - 1] || '';
+  if (parent !== 'selectorCandidates') return false;
+  return typeof object?.type === 'string' && Number.isFinite(Number(object?.score));
+}
+
+function scanSensitive(value, depth = 0, findings = [], pathParts = []) {
   if (!value || depth > 7) return findings;
   if (Array.isArray(value)) {
-    for (const item of value) scanSensitive(item, depth + 1, findings);
+    for (const item of value) scanSensitive(item, depth + 1, findings, pathParts);
     return findings;
   }
   if (typeof value !== 'object') return findings;
   for (const [key, child] of Object.entries(value)) {
-    if ((FORBIDDEN_KEY.test(key) || RAW_TEXT_KEY.test(key)) && isNonEmptySensitiveValue(child)) {
+    const forbidden = FORBIDDEN_KEY.test(key);
+    const rawText = RAW_TEXT_KEY.test(key) && !safeStructuralRawTextKey(pathParts, value, key);
+    if ((forbidden || rawText) && isNonEmptySensitiveValue(child)) {
       findings.push(String(key));
     }
-    scanSensitive(child, depth + 1, findings);
+    scanSensitive(child, depth + 1, findings, [...pathParts, key]);
   }
   return findings;
 }
@@ -96,6 +105,16 @@ function classifyEvent(event, index) {
   return { ...base, reasonCode: 'unsupported_or_low_value_event' };
 }
 
+function sensitiveKeyCounts(items) {
+  const counts = {};
+  for (const item of items) {
+    for (const key of Array.isArray(item?.sensitiveKeyNames) ? item.sensitiveKeyNames : []) {
+      counts[key] = (counts[key] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
 function curateSession(data, options = {}) {
   const events = Array.isArray(data?.events) ? data.events : [];
   const classified = events.map(classifyEvent);
@@ -115,6 +134,7 @@ function curateSession(data, options = {}) {
     privacy: {
       safeForDerivedBehaviorProcessing: quarantined.length === 0,
       quarantinedEventCount: quarantined.length,
+      quarantineSensitiveKeyCounts: sensitiveKeyCounts(quarantined),
       rawSensitivePayloadCopiedToManifest: false
     },
     behavior: {
@@ -187,6 +207,12 @@ function main(argv = process.argv.slice(2)) {
       outcomeVerified: args['outcome-verified'] === true
     })
   }));
+  const quarantineSensitiveKeyCounts = {};
+  for (const session of sessions) {
+    for (const [key, count] of Object.entries(session?.privacy?.quarantineSensitiveKeyCounts || {})) {
+      quarantineSensitiveKeyCounts[key] = (quarantineSensitiveKeyCounts[key] || 0) + Number(count || 0);
+    }
+  }
   const report = {
     curatorVersion: CURATOR_VERSION,
     generatedAt: new Date().toISOString(),
@@ -197,6 +223,7 @@ function main(argv = process.argv.slice(2)) {
       behaviorCandidates: sessions.reduce((sum, item) => sum + item.behavior.candidateEventCount, 0),
       actionAnchors: sessions.reduce((sum, item) => sum + item.behavior.semanticActionAnchorCount, 0),
       quarantined: sessions.reduce((sum, item) => sum + item.privacy.quarantinedEventCount, 0),
+      quarantineSensitiveKeyCounts,
       strategyReviewCandidates: sessions.filter(item => item.strategy.reviewCandidate).length,
       strategyAutoTrainEligible: 0
     }
@@ -213,9 +240,11 @@ module.exports = {
   DIAGNOSTIC_TYPES,
   BEHAVIOR_TYPES,
   ACTION_ANCHOR_TYPES,
+  safeStructuralRawTextKey,
   scanSensitive,
   semanticAnchorPresent,
   classifyEvent,
+  sensitiveKeyCounts,
   curateSession,
   collectFiles,
   parseArgs,
