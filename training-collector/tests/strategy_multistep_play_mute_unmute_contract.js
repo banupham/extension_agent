@@ -4,7 +4,8 @@ const assert = require('assert');
 const {
   TASKS,
   findSequence,
-  applyAnnotation
+  applyAnnotation,
+  transitionSummary
 } = require('../tools/process_strategy_multistep_play_mute_unmute.js');
 
 function obs() {
@@ -22,14 +23,17 @@ const review = {
   task: { instruction: 'Start media playback, mute it, then unmute it' },
   transitions: [
     { transitionId: 'noise', status: 'complete', rawAction: { kind: 'click', targetRef: 'e9' }, strategyObservationBefore: obs() },
-    { transitionId: 'play', status: 'complete', rawAction: { kind: 'click', targetRef: 'e6' }, strategyObservationBefore: obs() },
+    { transitionId: 'play', status: 'complete', rawAction: { kind: 'pointer-click', targetRef: 'e6' }, strategyObservationBefore: obs() },
     { transitionId: 'mute', status: 'complete', rawAction: { kind: 'click', targetRef: 'e8' }, strategyObservationBefore: obs() },
-    { transitionId: 'unmute', status: 'complete', rawAction: { kind: 'click', targetRef: 'e10' }, strategyObservationBefore: obs() }
+    { transitionId: 'unmute', status: 'complete', rawAction: { kind: 'semantic-click', targetRef: 'e10' }, strategyObservationBefore: obs() }
   ]
 };
 
 const hits = findSequence(review);
 assert.deepStrictEqual(hits.map(hit => hit.transitionId), ['play', 'mute', 'unmute']);
+assert.ok(transitionSummary(review).includes('Media Play'));
+assert.ok(transitionSummary(review).includes('Media Mute'));
+assert.ok(transitionSummary(review).includes('Media Unmute'));
 
 const annotation = {
   steps: review.transitions.map(transition => ({
