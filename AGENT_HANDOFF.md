@@ -20,13 +20,14 @@ Read this file before changing the repository.
 ## Agent maturity
 
 - Behavior/HOW: learned from real human demonstrations and runtime-loadable.
-- Strategy/WHAT: supervised and now has its first human-approved, leakage-safe six-group dataset.
+- Strategy/WHAT: supervised and has its first human-approved, leakage-safe six-group dataset.
 - Agent is maturing but not fully autonomous.
 - Recovery/replan/semantic memory already exist.
 - Dataset gate is `baselineReady:true`.
-- First real offline Strategy baseline v0.2.0 failed heldout evaluation; this exposed genuine model weaknesses rather than a dataset/collector problem.
-- Strategy baseline v0.3.0 has now been implemented generically and its repository contracts + runtime syntax CI pass.
-- Immediate next gate: rerun the six-group dataset as a **regression check** with v0.3.0. Do not call this rerun pristine heldout proof because the prior validation/test failures have already been observed and influenced the model redesign.
+- Baseline v0.2.0 exposed both action-sequence and target-grounding weaknesses.
+- Baseline v0.3.0 fixed the action-sequence transfer: both validation and test reached actionTypeAccuracy=1.0, but target grounding still failed.
+- Baseline v0.3.1 now adds generic action-aware editable affordance gating for text actions; repository Strategy contracts and runtime syntax CI pass.
+- Immediate next gate: rerun the same six-group regression with v0.3.1. This remains a regression check, not pristine unseen proof.
 
 ## Collector state
 
@@ -164,77 +165,103 @@ Observed result:
 
 Failure details:
 
-- Topic Search validation: correctly predicted `typeText -> submit`, but selected the wrong semantic target for both steps (`e3` instead of expected `e1`).
-- Google Search test: first step predicted `click` instead of `typeText`; submit type was correct on step two; both target selections were wrong.
+- Topic Search validation: correctly predicted `typeText -> submit`, but selected `e3` instead of expected `e1`.
+- Google Search test: first step predicted `click` instead of `typeText`; submit type was correct; targets were wrong.
 
-This is not a collector or split failure. It demonstrated that baseline v0.2.0 was too weak to transfer from Message Composer training to unseen editable/search-like targets.
+This was not a collector or split failure. It exposed weak action transfer and lexical target grounding.
 
-## v0.2.0 diagnosis
+## Strategy baseline v0.3.0 — action transfer fixed, target grounding still FAIL
 
-Generic model limitations identified from repository code and the real FAIL:
+Commits that introduced v0.3.0:
 
-1. fitter tokenization used ASCII-only `[a-z0-9]`, degrading Vietnamese task semantics
-2. action prototype scoring relied mostly on instruction/target-label lexical overlap
-3. target selection relied on target-label similarity and ignored semantic role/tag/editable traits
-4. offline fitter and runtime provider had diverged decision logic
-5. evaluation history previously used expected action types rather than model predictions, making sequential evaluation partially teacher-forced
+- `42fa9d70b2449fdbadbca0a7eb8493bb24c07e1d` — semantic target traits at runtime
+- `bfb274d199568d605af47c05a5702e3f8c1ef18f` — fit semantic target-aware baseline
+- `478d57511fa82a5992fe62721494c2a2c37481bd` — unseen editable transfer contract
+- `07cb9f362f78d1b5a6683c6bf2ef3c0b0cbe18fa` — history baseline alignment
 
-No site-specific hardcode was introduced to address this.
+CI for v0.3.0:
 
-## Strategy baseline v0.3.0 — implemented generically, CI PASS
+- strategy-offline-baseline run `33073634874`: success
+- runtime-syntax run `33073634892`: success
 
-Commits:
+User reran the real six-group regression on HEAD `6a640f8`.
 
-- `42fa9d70b2449fdbadbca0a7eb8493bb24c07e1d` — `feat(strategy): learn semantic target traits at runtime`
-- `bfb274d199568d605af47c05a5702e3f8c1ef18f` — `feat(strategy): fit semantic target-aware baseline v0.3`
-- `478d57511fa82a5992fe62721494c2a2c37481bd` — `test(strategy): prove unseen editable target transfer`
-- `07cb9f362f78d1b5a6683c6bf2ef3c0b0cbe18fa` — `test(strategy): align history baseline with v0.3 model`
+Observed v0.3.0 result:
 
-Model version: `0.3.0`.
+- overall: FAIL
+- modelVersion: `0.3.0`
+- validation: actionTypeAccuracy=1.0, targetRefAccuracy=0.0, exactSemanticAccuracy=0.0
+- test: actionTypeAccuracy=1.0, targetRefAccuracy=0.0, exactSemanticAccuracy=0.0
+- evaluationHistoryUsesModelPredictions: true
 
-Generic improvements:
+Exact regression details:
 
-- Unicode/camel-aware semantic tokenization, including Vietnamese text
-- task-level semantic intent features for text entry / submit / Enter / click
-- learned target semantic traits from TRAIN: role, tag, editable state plus labels
-- target selection scores semantic compatibility rather than label overlap alone
-- learned local target-continuity relation, allowing a later semantic action such as `submit` to remain on the same current-observation target when TRAIN evidence supports it
-- target refs are transient observation references and are **not persisted in the learned model**
-- fitter and runtime provider use the same prototype/target-selection engine
-- heldout evaluation history now advances from the model's own predicted actions/targets rather than expected labels
-- no selector/coordinate/tabId/raw-CDP persistence
-- no website/task-name hardcode
-- no heldout split moved into TRAIN
+- Topic Search step 0: expected `typeText@e1`, predicted `typeText@e3`
+- Topic Search step 1: expected `submit@e1`, predicted `submit@e3`
+- Google Search step 0: expected `typeText@e1`, predicted `typeText@e15`
+- Google Search step 1: expected `submit@e1`, predicted `submit@e15`
 
-Synthetic generic transfer contract proves:
+Interpretation:
 
-- model trains on one editable form family
-- prediction transfers `typeText -> submit` to different unseen field labels/refs
-- distractor button/link targets are rejected in favor of semantic editable target
-- second action reuses the predicted current target when learned continuity supports it
-- model serialization contains no heldout IDs/refs, no `targetRef`, selector, rawCdp, or tabId
+- Strategy action sequencing matured successfully from v0.2.0 to v0.3.0.
+- The remaining failure is target grounding only.
+- The first wrong `typeText` target propagates through learned submit target continuity.
+- v0.3.0 treated editable/role/tag evidence as weighted evidence, allowing a non-editable high-label-overlap distractor to beat the editable field.
 
-CI on HEAD `07cb9f362f78d1b5a6683c6bf2ef3c0b0cbe18fa`:
+Do not weaken exact target evaluation to force PASS.
 
-- strategy-offline-baseline run `33073634874`: completed success
-- runtime-syntax run `33073634892`: completed success
+## Strategy baseline v0.3.1 — generic editable-affordance grounding, CI PASS
 
-## Evaluation methodology after observing v0.2.0 heldout failures
+Important commits:
 
-The Topic Search validation record and Google Search test record were originally held out correctly and revealed the v0.2.0 weaknesses. Their failure details have now been inspected and used to motivate a **generic** model redesign.
+- `fe4dc1b0462108681710cb3fe5847e271e1e6967` — initial editable-affordance implementation; immediately superseded by validation correction
+- `539e1cfb6b76fd5da64e7322a531e5d7b7cf7646` — corrected generic editable-affordance provider
+- `04359b288833e1cc046fd371b2ba083402086872` — model version `0.3.1`
+- `1b213f60da3537b55b6a95593345b32ace9f307e` — adversarial target-grounding contract
+- `bda0010d42fca64a386b37fdec1782546394089b` — history contract alignment
+
+Generic rule:
+
+- `typeText`, `replaceText`, and `clear` require an editable semantic target.
+- Editable evidence is generic: `editable=true`, role `textbox/searchbox/combobox`, or tag `input/textarea`.
+- Non-editable button/link elements cannot win a text-target decision merely because their labels overlap the task strongly.
+- Submit continuity remains learned from TRAIN and is unchanged; once the correct text field is grounded, later submit can reuse it when TRAIN continuity supports that.
+- No e1/e3/e15, Google, Topic Search, Message Composer, site URL, selector, coordinates, tabId, or raw CDP is hardcoded.
+- If no semantic editable candidate exists, the target chooser returns no target rather than selecting a non-editable distractor.
+
+Adversarial contract proves:
+
+- train on one editable form family
+- evaluate a different field family
+- a non-editable button whose label is the entire task sentence still cannot beat the editable field for `typeText`
+- a button-only observation returns no `typeText` target
+- sequential `typeText -> submit` target continuity still works
+- model serialization still contains no heldout target refs/selectors/raw CDP/tabId
+
+CI on HEAD `bda0010d42fca64a386b37fdec1782546394089b`:
+
+- strategy-offline-baseline run `33074632606`: completed success
+  - offline Strategy baseline contract: success
+  - history-aware Strategy baseline contract: success
+  - provider/runtime Strategy contracts: success
+- runtime-syntax run `33074632620`: completed success
+
+## Evaluation methodology
+
+Topic Search validation and Google Search test were originally held out correctly and revealed real weaknesses. Their failures have since influenced generic redesigns.
 
 Therefore:
 
-- rerunning these same two records with v0.3.0 is useful and required as a regression check
-- a PASS on this rerun must **not** be described as pristine final unseen heldout generalization proof
-- after regression PASS, obtain a fresh unseen controlled/native mission or fresh evaluation family for the stronger generalization claim
+- rerunning these same records with v0.3.1 is a required regression check
+- a PASS is not pristine unseen generalization proof
+- after regression PASS, use a fresh unseen controlled/native mission or fresh evaluation family before claiming broader Strategy generalization
 - do not recollect or relabel the existing six merely to create an artificial new heldout claim
 
-## Immediate next step — v0.3.0 six-group regression check
+## Immediate next step — v0.3.1 six-group regression
 
 Do not rerun collector, resolver, approval, or dataset builder.
 
-Windows CMD after pulling latest handoff commit:
+Windows CMD:
 
 ```bat
 cd /d C:\Users\duong\Downloads\extension_agent
@@ -243,20 +270,20 @@ git rev-parse --short HEAD
 
 set SIX=%USERPROFILE%\Downloads\extension_agent-local-data\teaching-six-20260827
 
-node training-collector\tools\fit_strategy_offline_baseline.js "%SIX%\strategy-approved-dataset-v03\dataset" --output "%SIX%\strategy-approved-dataset-v03\baseline-v03"
+node training-collector\tools\fit_strategy_offline_baseline.js "%SIX%\strategy-approved-dataset-v03\dataset" --output "%SIX%\strategy-approved-dataset-v03\baseline-v031"
 
-type "%SIX%\strategy-approved-dataset-v03\baseline-v03\evaluation.json"
+type "%SIX%\strategy-approved-dataset-v03\baseline-v031\evaluation.json"
 ```
 
 Desired regression target, without forcing it:
 
-- modelVersion: `0.3.0`
+- modelVersion: `0.3.1`
 - result: PASS
-- validation total=2, actionTypeAccuracy=1, exactSemanticAccuracy=1
-- test total=2, actionTypeAccuracy=1, exactSemanticAccuracy=1
+- validation total=2, actionTypeAccuracy=1, targetRefAccuracy=1, exactSemanticAccuracy=1
+- test total=2, actionTypeAccuracy=1, targetRefAccuracy=1, exactSemanticAccuracy=1
 
-If this regression still fails, diagnose the actual output and improve the generic Strategy model; do not change split policy or recollect the six tasks.
+If v0.3.1 still fails target grounding, inspect the actual target result and improve the generic semantic grounding model; do not change split policy or recollect the six tasks.
 
-If regression passes, the next gate is a fresh unseen proof before claiming broad generalization, followed by learned Strategy + learned Behavior runtime integration, native long mission, multi-subgoal, replan, recovery, and semantic memory validation.
+If v0.3.1 regression passes, the next gate is a fresh unseen proof before claiming broader generalization, followed by learned Strategy + learned Behavior runtime integration, native long mission, multi-subgoal, replan, recovery, and semantic memory validation.
 
 Never promote to `main` without explicit user approval after verified PASS.
