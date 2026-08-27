@@ -135,7 +135,7 @@ function validateModel(model) {
       if (!Array.isArray(proto.priorActionTypes)) throw new Error(`historyPrototypes[${index}].priorActionTypes must be an array`);
       for (const [historyIndex, actionType] of proto.priorActionTypes.entries()) {
         if (typeof actionType !== 'string' || !actionType.trim()) {
-          throw new Error(`${name}.priorActionTypes[${historyIndex}] required`);
+          throw new Error(`historyPrototypes[${index}].priorActionTypes[${historyIndex}] required`);
         }
       }
     }
