@@ -78,24 +78,39 @@ The controlled lab exposes three stable semantic targets:
 
 Together with the first 3 groups, these make 6 semantic groups: 3 carrying click and 3 carrying typeText+submit. With the current split policy this leaves 4 train groups plus 1 validation and 1 test group, and the coverage contract proves held-out action types are represented in train across 100 deterministic seeds.
 
+## Pending-transition fix during second teaching round
+
+The user successfully exported task 1 (`Atlas` in `Topic Search`) and task 3 (`Teaching Confirm`), but task 2 hit `episode_success_has_pending_transition` immediately after the Enter action when Mark Success was pressed.
+
+This was treated as a collector timing problem, not as failed teaching data. The collector now waits for a short bounded settlement window before sending a successful episode stop, so a just-finished keyboard/Enter transition can complete before the success gate is evaluated. A truly stuck pending transition still remains blocked after the timeout.
+
+Fix commits:
+
+- `4d44a8ede30574e02dd28a73751d51fa518302fa` — add bounded episode-stop settlement helper.
+- `0b7a9f6c11376b0d8e2d05779ef7fa6ac692c85d` — load helper in the collector popup.
+- `9017873b258bc537abb5550c5bb4c77eead8899b` — wait for pending transitions before Mark Success stops the episode.
+- `9748994daa1cc337aae001f90b2d7722b1e65aa0` — add settlement contract test.
+- `91424442c414f9b34fe0710091da3b908019ea94` — CI gate for the fix.
+
+GitHub Actions run `33066420836` completed successfully.
+
+The already exported task 1 and task 3 review files do not need to be repeated. Only task 2 should be recorded again after reloading the updated Training Collector extension.
+
 ## Immediate next action
 
-1. User pulls the latest feature branch and starts the teaching lab:
+On the user's machine:
 
 ```bat
 cd /d C:\Users\duong\Downloads\extension_agent
 git pull
 git rev-parse --short HEAD
-node training-collector\tests\strategy_teaching_coverage_contract.js
-node control-center\script\page_strategy_teaching_lab.js
+node training-collector\tests\episode_stop_settlement_contract.js
 ```
 
-2. In a separate browser/collector session, record and export exactly these three new tasks as separate successful episodes:
+Then open `chrome://extensions/`, reload the Training Collector extension, keep the teaching lab on `http://127.0.0.1:8092/`, and record only:
 
-- `Trên http://127.0.0.1:8092/, nhập Atlas vào ô Topic Search rồi bấm Enter.`
-- `Trên http://127.0.0.1:8092/, nhập Orion vào ô Message Composer rồi gửi bằng Enter.`
-- `Trên http://127.0.0.1:8092/, bấm Teaching Confirm.`
+`Trên http://127.0.0.1:8092/, nhập Orion vào ô Message Composer rồi gửi bằng Enter.`
 
-3. After the user supplies the three new review exports, create a fresh combined local review folder containing the original 3 + new 3 episodes, then rerun human-learning batch -> review pack -> triage -> teaching resolver -> approval candidates -> explicit human confirmation -> dataset build.
+After pressing Enter, Mark Success can be pressed normally; the popup now waits for the transition to settle. Export that task episode for review and send the single new review file.
 
-Target before fitting Strategy: `datasetBuilt:true`, `baselineReady:true`, train contains `click`, `typeText`, and `submit`, validation/test remain held out. Only then run readiness check and TRAIN-only Strategy fit. Do not promote `main`.
+Once task 2 is received, combine the existing task 1 + task 3 exports with this replacement task 2 and continue the six-group Strategy teaching pipeline. Target before fitting Strategy remains `datasetBuilt:true`, `baselineReady:true`, with train covering `click`, `typeText`, and `submit`, while validation/test remain held out. Do not promote `main`.
