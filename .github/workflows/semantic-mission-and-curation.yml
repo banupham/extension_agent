@@ -21,6 +21,8 @@ on:
       - 'control-center/script/checks/empirical_behavior_policy.js'
       - 'control-center/script/checks/agent_action_contract.js'
       - 'control-center/script/checks/behavior_baseline_runtime_loading.js'
+      - 'training-collector/manifest.json'
+      - 'training-collector/capture/episode_provenance_capture.js'
       - 'training-collector/tools/build_behavior_baseline.js'
       - 'training-collector/tools/curate_random_human_data.js'
       - 'training-collector/tools/prepare_human_learning_batch.js'
@@ -33,6 +35,7 @@ on:
       - 'training-collector/tools/profile_strategy_ambiguity_evidence.js'
       - 'training-collector/tools/backfill_strategy_target_evidence.js'
       - 'training-collector/tools/diagnose_strategy_target_backfill.js'
+      - 'training-collector/tools/backfill_strategy_episode_provenance.js'
       - 'training-collector/tools/resolve_strategy_review_ambiguity_with_targets.js'
       - 'training-collector/tools/prepare_strategy_approval_candidates.js'
       - 'training-collector/tools/apply_strategy_approval_candidates.js'
@@ -48,6 +51,7 @@ on:
       - 'training-collector/tests/strategy_ambiguity_profiler_contract.js'
       - 'training-collector/tests/strategy_target_backfill_contract.js'
       - 'training-collector/tests/strategy_target_backfill_diagnostic_contract.js'
+      - 'training-collector/tests/strategy_episode_provenance_contract.js'
       - 'training-collector/tests/strategy_approval_pipeline_contract.js'
       - '.github/workflows/semantic-mission-and-curation.yml'
   workflow_dispatch:
@@ -74,6 +78,7 @@ jobs:
           node --check control-center/script/checks/empirical_behavior_policy.js
           node --check control-center/script/checks/agent_action_contract.js
           node --check control-center/script/checks/behavior_baseline_runtime_loading.js
+          node --check training-collector/capture/episode_provenance_capture.js
           node --check training-collector/tools/build_behavior_baseline.js
           node --check training-collector/tools/curate_random_human_data.js
           node --check training-collector/tools/prepare_human_learning_batch.js
@@ -86,6 +91,7 @@ jobs:
           node --check training-collector/tools/profile_strategy_ambiguity_evidence.js
           node --check training-collector/tools/backfill_strategy_target_evidence.js
           node --check training-collector/tools/diagnose_strategy_target_backfill.js
+          node --check training-collector/tools/backfill_strategy_episode_provenance.js
           node --check training-collector/tools/resolve_strategy_review_ambiguity_with_targets.js
           node --check training-collector/tools/prepare_strategy_approval_candidates.js
           node --check training-collector/tools/apply_strategy_approval_candidates.js
@@ -101,6 +107,7 @@ jobs:
           node --check training-collector/tests/strategy_ambiguity_profiler_contract.js
           node --check training-collector/tests/strategy_target_backfill_contract.js
           node --check training-collector/tests/strategy_target_backfill_diagnostic_contract.js
+          node --check training-collector/tests/strategy_episode_provenance_contract.js
           node --check training-collector/tests/strategy_approval_pipeline_contract.js
       - name: Run semantic goal resolver contract
         run: node control-center/script/checks/semantic_goal_resolver.js
@@ -136,5 +143,7 @@ jobs:
         run: node training-collector/tests/strategy_target_backfill_contract.js
       - name: Run strategy target backfill diagnostic contract
         run: node training-collector/tests/strategy_target_backfill_diagnostic_contract.js
+      - name: Run Strategy episode provenance contract
+        run: node training-collector/tests/strategy_episode_provenance_contract.js
       - name: Run explicit strategy approval pipeline contract
         run: node training-collector/tests/strategy_approval_pipeline_contract.js
