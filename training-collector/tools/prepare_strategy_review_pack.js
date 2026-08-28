@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const REVIEW_CONTRACT = require('../../control-center/HUMAN_STRATEGY_REVIEW_CONTRACT.json');
 
-const REVIEW_PACK_VERSION = '0.1.2';
+const REVIEW_PACK_VERSION = '0.1.3';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -71,8 +71,15 @@ function isRange(target) {
 
 function isMediaRange(target) {
   if (!isRange(target)) return false;
-  const words = lowerWords(target?.label);
-  return words.has('volume') || words.has('seek') || words.has('timeline') || words.has('position');
+  const labelWords = lowerWords(target?.label);
+  return labelWords.has('volume') || labelWords.has('seek') || labelWords.has('timeline') || labelWords.has('position');
+}
+
+function isSubmissionTarget(target) {
+  const labelWords = lowerWords(target?.label);
+  const type = String(target?.inputType || '').toLowerCase();
+  if (type === 'submit') return true;
+  return ['submit', 'send', 'search'].some(word => labelWords.has(word));
 }
 
 function actionTypeHint(rawAction = {}, targetBefore = null, targetAfter = null) {
@@ -83,6 +90,7 @@ function actionTypeHint(rawAction = {}, targetBefore = null, targetAfter = null)
   if (kind === 'hover') return 'hover-review-required';
   if (kind === 'dom-click' || kind === 'click') {
     if (isCheckable(target) || isSelect(target) || isRange(target)) return 'form-control-click-review-required';
+    if (isSubmissionTarget(target)) return 'submit-review-required';
     return 'click';
   }
   if (kind === 'dom-focus' || kind === 'focus') return 'focus';
@@ -96,6 +104,8 @@ function actionTypeHint(rawAction = {}, targetBefore = null, targetAfter = null)
   if (kind === 'dom-input' || kind === 'text-change') return 'text-action-review-required';
   if (kind === 'keyboard' || kind === 'key' || kind === 'text-key') return 'keyboard-action-review-required';
   if (kind === 'wheel' || kind.includes('scroll')) return 'scroll-direction-review-required';
+  if (kind === 'wait-observe') return 'waitAndObserve-review-required';
+  if (kind.startsWith('tab-')) return 'tab-lifecycle-review-required';
   return null;
 }
 
@@ -257,6 +267,7 @@ module.exports = {
   semanticElements,
   semanticTarget,
   actionTypeHint,
+  isSubmissionTarget,
   transitionProposal,
   splitGroupHint,
   annotationTemplate,
