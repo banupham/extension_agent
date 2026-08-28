@@ -5,6 +5,7 @@ const { createStrategy } = require('../../manager/strategy/index.js');
 const { heuristicResolveSubgoalTask } = require('../../manager/mission/semantic_goal_resolver.js');
 const { createTabContext } = require('../../extension/agent-runtime-extension/tab_context.js');
 const { validateAgentAction } = require('../../manager/strategy/agent_action_contract.js');
+const { executeBoundedEpisodeLoop } = require('../../manager/agent/bounded_episode_loop.js');
 
 function observation() {
   return {
@@ -17,15 +18,18 @@ function observation() {
   };
 }
 
-async function strategyChecks() {
-  const fallback = {
+function fallbackProvider() {
+  return {
     name: 'fallback-test',
     version: '1',
     async decide() {
       return { status: 'blocked', confidence: 0.1, reasonCode: 'fallback_called' };
     }
   };
-  const strategy = createStrategy({ provider: fallback });
+}
+
+async function strategyChecks() {
+  const strategy = createStrategy({ provider: fallbackProvider() });
 
   const switched = await strategy.decide({
     task: { instruction: 'Chuyển sang tab Google' },
@@ -167,10 +171,113 @@ async function runtimeChecks() {
   assert.strictEqual(opened.tab.url, 'https://example.com/docs');
 }
 
+function publicTab(tab) {
+  return {
+    tabId: tab.tabId,
+    windowId: tab.windowId,
+    active: tab.active,
+    title: tab.title,
+    url: tab.url
+  };
+}
+
+function tabMatches(tab, match) {
+  if (match.title != null && tab.title !== match.title) return false;
+  if (match.titleIncludes != null && !tab.title.toLowerCase().includes(match.titleIncludes.toLowerCase())) return false;
+  if (match.url != null && tab.url !== match.url) return false;
+  if (match.urlIncludes != null && !tab.url.toLowerCase().includes(match.urlIncludes.toLowerCase())) return false;
+  return true;
+}
+
+function episodeRuntime(initialTabs) {
+  let tabs = initialTabs.map(tab => ({ ...tab }));
+  let observationCounter = 0;
+  return {
+    async observe() {
+      observationCounter += 1;
+      const active = tabs.find(tab => tab.active) || tabs[0] || { title: '', url: '' };
+      return {
+        observationId: `episode-tab-obs-${observationCounter}`,
+        url: active.url,
+        title: active.title,
+        viewport: { width: 1000, height: 700 },
+        scroll: { x: 0, y: 0 },
+        interactiveElements: []
+      };
+    },
+    async listTabs() {
+      return tabs.map(publicTab);
+    },
+    async executePlan() {
+      throw new Error('tab lifecycle must not use PAGE_CDP');
+    },
+    async executeBrowserAction({ action }) {
+      if (action.actionType === 'openNewTab') {
+        for (const tab of tabs) tab.active = false;
+        const created = {
+          tabId: Math.max(0, ...tabs.map(tab => tab.tabId)) + 1,
+          windowId: 10,
+          active: true,
+          title: 'Opened',
+          url: action.args.url
+        };
+        tabs.push(created);
+        return { ok: true, actionType: action.actionType, tab: publicTab(created) };
+      }
+      const matches = tabs.filter(tab => tabMatches(tab, action.args.match));
+      if (matches.length !== 1) throw new Error('semantic tab target must be unique');
+      const target = matches[0];
+      if (action.actionType === 'switchTab') {
+        for (const tab of tabs) if (tab.windowId === target.windowId) tab.active = false;
+        target.active = true;
+        return { ok: true, actionType: action.actionType, tab: publicTab(target) };
+      }
+      if (action.actionType === 'closeTab') {
+        tabs = tabs.filter(tab => tab !== target);
+        if (!tabs.some(tab => tab.active) && tabs[0]) tabs[0].active = true;
+        return { ok: true, actionType: action.actionType, closedTab: publicTab(target) };
+      }
+      throw new Error(`unsupported:${action.actionType}`);
+    }
+  };
+}
+
+async function runTabEpisode(instruction, initialTabs, expectedAction) {
+  const task = heuristicResolveSubgoalTask({
+    subgoal: { subgoalId: `episode-${expectedAction}`, instruction },
+    semantic: { goalKinds: [] }
+  });
+  const result = await executeBoundedEpisodeLoop({
+    runtime: episodeRuntime(initialTabs),
+    strategy: createStrategy({ provider: fallbackProvider() }),
+    task,
+    postActionSettle: false
+  });
+  assert.strictEqual(result.steps.length, 1);
+  assert.strictEqual(result.steps[0].action.type, expectedAction);
+  assert.strictEqual(result.steps[0].effect.status, 'meaningful');
+  assert.strictEqual(result.finalOutcome.taskSucceeded, true);
+  assert.strictEqual(result.finalBudget.reasonCode, 'goal_satisfied');
+  assert.strictEqual(result.finalBudget.terminal, true);
+  return result;
+}
+
+async function endToEndChecks() {
+  const base = [
+    { tabId: 1, windowId: 10, active: true, title: 'Alpha', url: 'https://alpha.example/' },
+    { tabId: 2, windowId: 10, active: false, title: 'Google Search', url: 'https://www.google.com/' },
+    { tabId: 3, windowId: 10, active: false, title: 'Disposable', url: 'https://disposable.example/' }
+  ];
+  await runTabEpisode('Chuyển sang tab Google', base, 'switchTab');
+  await runTabEpisode('Mở tab mới https://example.com/docs', base, 'openNewTab');
+  await runTabEpisode('Đóng tab Disposable', base, 'closeTab');
+}
+
 async function main() {
   await strategyChecks();
   goalChecks();
   await runtimeChecks();
+  await endToEndChecks();
   console.log('Tab lifecycle Agent integration: PASS');
 }
 
