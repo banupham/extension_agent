@@ -29,6 +29,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   const IS_TOP_FRAME = window === window.top;
   const HEALTH_INTERVAL_MS = 10000;
   const AUTO_CAPTURE_KEY = 'trainingCollectorAutoCaptureEnabledV1';
+  const STRATEGY_HOVER_DWELL_MS = 350;
 
   const S = {
     rawActive: false,
@@ -45,6 +46,10 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     lastEpisodeState: null,
     scrollTimer: null,
     healthTimer: null,
+    strategyHoverTimer: null,
+    strategyHoverRef: null,
+    strategyHoverBefore: null,
+    dragState: null,
     browserSessionId: null,
     physical: null,
     domCapture: null,
@@ -169,7 +174,24 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
 
   function targetElement(event) {
     if (!(event.target instanceof Element)) return null;
-    return event.target.closest('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex],video,audio') || event.target;
+    return event.target.closest('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex],[draggable="true"],video,audio') || event.target;
+  }
+
+  function semanticForEvent(event) {
+    const el = targetElement(event);
+    if (!el || Observer.isSensitive(el)) return { el: null, semantic: null, resolved: null };
+    const semantic = Observer.semanticElement(el);
+    if (!semantic) return { el, semantic: null, resolved: null };
+    let resolved = null;
+    try { resolved = S.targetResolver?.resolve?.(event) || null; } catch {}
+    return { el, semantic, resolved };
+  }
+
+  function clearStrategyHover() {
+    if (S.strategyHoverTimer) clearTimeout(S.strategyHoverTimer);
+    S.strategyHoverTimer = null;
+    S.strategyHoverRef = null;
+    S.strategyHoverBefore = null;
   }
 
   function startRawCapture() {
@@ -261,11 +283,8 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   }
 
   addEventListener('click', event => {
-    const el = targetElement(event);
-    if (!el || Observer.isSensitive(el)) return;
-    const semantic = Observer.semanticElement(el);
+    const { semantic, resolved } = semanticForEvent(event);
     if (!semantic) return;
-    const resolved = S.targetResolver?.resolve?.(event);
     const id = begin({
       kind: 'click',
       targetRef: resolved?.resolvedTargetRef || semantic.ref,
@@ -275,6 +294,81 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       point: { x: Math.round(event.clientX), y: Math.round(event.clientY) }
     });
     finish(id, 40);
+  }, true);
+
+  addEventListener('dblclick', event => {
+    if (!S.episodeActive || !IS_TOP_FRAME) return;
+    const { semantic, resolved } = semanticForEvent(event);
+    if (!semantic) return;
+    const id = begin({
+      kind: 'double-click',
+      targetRef: resolved?.resolvedTargetRef || semantic.ref,
+      rawTargetRef: resolved?.rawTargetRef || semantic.ref,
+      resolutionConfidence: resolved?.resolution?.confidence ?? null,
+      button: event.button,
+      point: { x: Math.round(event.clientX), y: Math.round(event.clientY) }
+    });
+    finish(id, 60);
+  }, true);
+
+  addEventListener('pointerover', event => {
+    if (!S.episodeActive || !IS_TOP_FRAME) return;
+    const { semantic } = semanticForEvent(event);
+    if (!semantic || semantic.ref === S.strategyHoverRef) return;
+    clearStrategyHover();
+    S.strategyHoverRef = semantic.ref;
+    S.strategyHoverBefore = Observer.snapshot();
+    const ref = semantic.ref;
+    S.strategyHoverTimer = setTimeout(() => {
+      if (!S.episodeActive || S.strategyHoverRef !== ref) return;
+      const before = S.strategyHoverBefore;
+      const id = begin({ kind: 'hover', targetRef: ref, dwellMs: STRATEGY_HOVER_DWELL_MS }, before);
+      finish(id, 20);
+      S.strategyHoverTimer = null;
+    }, STRATEGY_HOVER_DWELL_MS);
+  }, true);
+
+  addEventListener('pointerout', event => {
+    if (!S.strategyHoverRef) return;
+    const currentRef = S.strategyHoverRef;
+    const related = event.relatedTarget instanceof Element
+      ? (event.relatedTarget.closest('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex],[draggable="true"],video,audio') || event.relatedTarget)
+      : null;
+    if (related && !Observer.isSensitive(related)) {
+      const relatedSemantic = Observer.semanticElement(related);
+      if (relatedSemantic?.ref === currentRef) return;
+    }
+    clearStrategyHover();
+  }, true);
+
+  addEventListener('dragstart', event => {
+    if (!S.episodeActive || !IS_TOP_FRAME) return;
+    const { semantic } = semanticForEvent(event);
+    if (!semantic) return;
+    S.dragState = {
+      sourceRef: semantic.ref,
+      before: Observer.snapshot(),
+      startedAt: performance.now()
+    };
+  }, true);
+
+  addEventListener('drop', event => {
+    if (!S.episodeActive || !IS_TOP_FRAME || !S.dragState?.sourceRef) return;
+    const { semantic } = semanticForEvent(event);
+    if (!semantic || semantic.ref === S.dragState.sourceRef) return;
+    const drag = S.dragState;
+    S.dragState = null;
+    const id = begin({
+      kind: 'drag',
+      targetRef: drag.sourceRef,
+      destinationRef: semantic.ref,
+      button: 0
+    }, drag.before);
+    finish(id, 80);
+  }, true);
+
+  addEventListener('dragend', () => {
+    setTimeout(() => { S.dragState = null; }, 120);
   }, true);
 
   addEventListener('keydown', event => {
@@ -338,6 +432,8 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   }, { capture: true, passive: true });
 
   addEventListener('pagehide', () => {
+    clearStrategyHover();
+    S.dragState = null;
     stopRawCapture();
   }, true);
 
@@ -349,6 +445,8 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       S.lastEpisodeState = Observer.snapshot();
       S.transitionBefore.clear();
       S.transitionOrder?.clear?.();
+      clearStrategyHover();
+      S.dragState = null;
       sendResponse({ ok: true, pageInstanceId: NS2.pageInstanceId });
       return false;
     }
@@ -357,6 +455,8 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       S.lastEpisodeState = null;
       S.transitionBefore.clear();
       S.transitionOrder?.clear?.();
+      clearStrategyHover();
+      S.dragState = null;
       sendResponse({ ok: true });
       return false;
     }
