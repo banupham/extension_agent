@@ -2,11 +2,11 @@
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "name": "Training Collector V0.8 Socket Mirror",
-  "version": "0.8.3",
-  "description": "Privacy-first continuous physical and semantic DOM capture with frame-aware telemetry, IndexedDB safety buffering, reliable localhost WebSocket mirroring, and Strategy-safe optional task episode snapshots.",
+  "version": "0.8.4",
+  "description": "Privacy-first continuous physical and semantic DOM capture with frame-aware telemetry, frame-aware optional Task Episodes, IndexedDB safety buffering, reliable localhost WebSocket mirroring, and Strategy-safe snapshots.",
   "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage"],
   "host_permissions": ["http://*/*", "https://*/*"],
-  "background": {"service_worker": "background.js"},
+  "background": {"service_worker": "background_entry.js"},
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
@@ -30,6 +30,7 @@
         "observer/hover_trace.js",
         "observer/route_trace.js",
         "content.js",
+        "capture/subframe_episode_capture.js",
         "capture/episode_provenance_capture.js"
       ],
       "run_at": "document_idle"
