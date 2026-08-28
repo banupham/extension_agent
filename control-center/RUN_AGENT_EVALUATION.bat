@@ -108,15 +108,17 @@ echo       The Strategy model is loaded by the evaluation runner; Agent Runtime 
 exit /b 0
 
 :run
+set "DESC=%~1"
+shift
 set /a TOTAL+=1
 echo.
 echo ------------------------------------------------------------
-echo [!TOTAL!] %~1
+echo [!TOTAL!] !DESC!
 echo ------------------------------------------------------------
-shift
-call %*
-if errorlevel 1 (
-  echo [FAIL] %*
+call %1 %2 %3 %4 %5 %6 %7 %8 %9
+set "RC=!ERRORLEVEL!"
+if not "!RC!"=="0" (
+  echo [FAIL] %1 %2 %3 %4 %5 %6 %7 %8 %9
   set /a FAIL+=1
 ) else (
   echo [PASS]
