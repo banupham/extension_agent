@@ -22,6 +22,7 @@ on:
       - 'training-collector/tests/human_learning_batch_contract.js'
       - 'training-collector/tests/strategy_teaching_batch_resolver_contract.js'
       - 'training-collector/tests/strategy_approval_pipeline_contract.js'
+      - 'control-center/manager/training/human_strategy_episode_adapter.js'
       - 'control-center/script/teaching_lab_server.js'
       - 'control-center/script/native_regression_model_compat.js'
       - 'control-center/script/agent_intelligence_benchmark.js'
@@ -46,6 +47,7 @@ on:
       - 'training-collector/tests/human_learning_batch_contract.js'
       - 'training-collector/tests/strategy_teaching_batch_resolver_contract.js'
       - 'training-collector/tests/strategy_approval_pipeline_contract.js'
+      - 'control-center/manager/training/human_strategy_episode_adapter.js'
       - 'control-center/script/teaching_lab_server.js'
       - 'control-center/script/native_regression_model_compat.js'
       - 'control-center/script/agent_intelligence_benchmark.js'
@@ -63,6 +65,10 @@ jobs:
         run: |
           node --check training-collector/tools/prepare_incremental_strategy_learning.js
           node --check training-collector/tools/evaluate_machine_training_eligibility.js
+          node --check training-collector/tools/apply_strategy_approval_candidates.js
+          node --check training-collector/tools/build_strategy_dataset_from_approvals.js
+          node --check training-collector/tools/build_incremental_strategy_dataset.js
+          node --check control-center/manager/training/human_strategy_episode_adapter.js
           node --check control-center/script/native_regression_model_compat.js
           node control-center/script/teaching_lab_server.js --self-test
       - name: Run incremental Strategy learning boundary contract
