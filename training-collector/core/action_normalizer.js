@@ -3,6 +3,21 @@
 (function initActionNormalizer(root) {
   const NS = root.TrainingCollectorV02 = root.TrainingCollectorV02 || {};
 
+  function finiteOrNull(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function modifiers(raw = {}) {
+    const source = raw.modifiers && typeof raw.modifiers === 'object' ? raw.modifiers : raw;
+    return {
+      alt: !!(source.alt ?? source.altKey),
+      ctrl: !!(source.ctrl ?? source.ctrlKey),
+      meta: !!(source.meta ?? source.metaKey),
+      shift: !!(source.shift ?? source.shiftKey)
+    };
+  }
+
   function normalize(raw = {}) {
     const base = {
       actionVersion: '0.3.0',
@@ -30,7 +45,10 @@
         controlType: raw.controlType || null,
         checked: typeof raw.checked === 'boolean' ? raw.checked : null,
         selectedIndex: Number.isInteger(Number(raw.selectedIndex)) ? Number(raw.selectedIndex) : null,
-        rangeValue: Number.isFinite(Number(raw.rangeValue)) ? Number(raw.rangeValue) : null
+        rangeValue: finiteOrNull(raw.rangeValue),
+        rangeMin: finiteOrNull(raw.rangeMin),
+        rangeMax: finiteOrNull(raw.rangeMax),
+        rangeStep: finiteOrNull(raw.rangeStep)
       };
     }
     if (raw.kind === 'media') {
@@ -38,14 +56,31 @@
         ...base,
         operation: raw.operation || null,
         muted: typeof raw.muted === 'boolean' ? raw.muted : null,
-        volume: Number.isFinite(Number(raw.volume)) ? Number(raw.volume) : null,
-        currentTime: Number.isFinite(Number(raw.currentTime)) ? Number(raw.currentTime) : null,
-        duration: Number.isFinite(Number(raw.duration)) ? Number(raw.duration) : null,
-        playbackRate: Number.isFinite(Number(raw.playbackRate)) ? Number(raw.playbackRate) : null
+        volume: finiteOrNull(raw.volume),
+        currentTime: finiteOrNull(raw.currentTime),
+        duration: finiteOrNull(raw.duration),
+        playbackRate: finiteOrNull(raw.playbackRate)
       };
     }
-    if (raw.kind === 'key') return { ...base, keyClass: raw.keyClass || null, code: raw.code || null, repeat: !!raw.repeat, operation: raw.operation || null };
-    if (raw.kind === 'text-key') return { ...base, operation: raw.operation || 'other-key', code: raw.code || null, repeat: !!raw.repeat };
+    if (raw.kind === 'key') {
+      return {
+        ...base,
+        keyClass: raw.keyClass || null,
+        code: raw.code || null,
+        repeat: !!raw.repeat,
+        operation: raw.operation || null,
+        modifiers: modifiers(raw)
+      };
+    }
+    if (raw.kind === 'text-key') {
+      return {
+        ...base,
+        operation: raw.operation || 'other-key',
+        code: raw.code || null,
+        repeat: !!raw.repeat,
+        modifiers: modifiers(raw)
+      };
+    }
     if (raw.kind === 'text-change') return { ...base, inputType: raw.inputType || null, length: Math.max(0, Number(raw.length || 0)) };
     if (raw.kind === 'scroll') return { ...base, scroll: raw.scroll || { x: 0, y: 0 } };
     if (raw.kind === 'focus') return { ...base, focused: !!raw.focused };
