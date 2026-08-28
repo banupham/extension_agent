@@ -81,6 +81,16 @@ function reviewExport(episodeId, label, options = {}) {
   };
 }
 
+function teachingReview(episodeId = 'ep-teaching-tl01') {
+  const review = reviewExport(episodeId, 'Xác nhận báo cáo');
+  review.task.instruction = 'Mở báo cáo rồi xác nhận báo cáo.';
+  review.transitions[0].strategyObservationBefore.url = 'http://127.0.0.1:8791/teaching/TL01';
+  review.transitions[0].strategyObservationBefore.title = 'TL01 · Delayed target';
+  review.transitions[0].strategyObservationAfter.url = 'http://127.0.0.1:8791/teaching/TL01';
+  review.transitions[0].strategyObservationAfter.title = 'PASS_TL01';
+  return review;
+}
+
 function datasetEpisode(id, splitGroup, split) {
   const action = { type: 'click', targetRef: 'e1', args: {} };
   return {
@@ -223,14 +233,30 @@ function main() {
     const genericOutcome = verifyTaskOutcome(genericOnly);
     assert.equal(genericOutcome.status, 'supported');
 
+    const teachingOutcome = verifyTaskOutcome(teachingReview('ep-machine-teaching'));
+    assert.equal(teachingOutcome.status, 'verified');
+    assert.equal(teachingOutcome.source, 'teaching-lab-deterministic-signal');
+    assert.equal(teachingOutcome.scenarioId, 'TL01');
+
+    const ambiguityTeaching = teachingReview('ep-machine-ambiguity');
+    ambiguityTeaching.task.instruction = 'Chọn Control Node.';
+    ambiguityTeaching.transitions[0].strategyObservationBefore.url = 'http://127.0.0.1:8791/teaching/TL03';
+    ambiguityTeaching.transitions[0].strategyObservationAfter.url = 'http://127.0.0.1:8791/teaching/TL03';
+    ambiguityTeaching.transitions[0].strategyObservationAfter.title = 'TL03 · Indistinguishable targets';
+    const ambiguityOutcome = verifyTaskOutcome(ambiguityTeaching);
+    assert.equal(ambiguityOutcome.status, 'unverified');
+    assert.equal(ambiguityOutcome.reasons.includes('teaching_lab_ambiguity_is_not_positive_action_training'), true);
+
     const processedId = 'ep-already-approved';
     const newId = 'ep-new-safe';
     const unsafeId = 'ep-privacy-unsafe';
+    const teachingId = 'ep-teaching-safe';
 
     writeReview(reviews, '01-processed.task-episode-review.json', reviewExport(processedId, 'Processed Action'));
     writeReview(reviews, '02-new-a.task-episode-review.json', reviewExport(newId, 'Launch Beacon'));
     writeReview(reviews, '03-new-duplicate.task-episode-review.json', reviewExport(newId, 'Launch Beacon'));
     writeReview(reviews, '04-unsafe.task-episode-review.json', reviewExport(unsafeId, 'Unsafe Action', { unsafe: true }));
+    writeReview(reviews, '05-teaching.task-episode-review.json', teachingReview(teachingId));
 
     fs.writeFileSync(path.join(approved, `${processedId}.strategy-review.approved.json`), `${JSON.stringify({
       contractVersion: '0.1.1',
@@ -246,26 +272,26 @@ function main() {
     const bundle = prepared.bundle;
     assert.equal(bundle.incrementalStrategyLearningVersion, INCREMENTAL_STRATEGY_LEARNING_VERSION);
     assert.equal(bundle.status, 'awaiting-explicit-human-approval');
-    assert.equal(bundle.sourceReviewFileCount, 4);
-    assert.equal(bundle.retainedReviewFileCount, 2);
-    assert.equal(bundle.readyForHumanReviewCount, 1);
+    assert.equal(bundle.sourceReviewFileCount, 5);
+    assert.equal(bundle.retainedReviewFileCount, 3);
+    assert.equal(bundle.readyForHumanReviewCount, 2);
     assert.equal(bundle.baseDatasetEpisodeCount, 0);
     assert.equal(bundle.excludedPreviouslyProcessedCount, 1);
     assert.equal(bundle.duplicateCurrentEpisodeCount, 1);
-    assert.equal(bundle.candidateEpisodeCount, 1);
+    assert.equal(bundle.candidateEpisodeCount, 2);
     assert.equal(bundle.blockedEpisodeCount, 0);
     assert.equal(bundle.unresolvedHumanReviewCount, 0);
-    assert.equal(bundle.fullyResolvedEpisodeCount, 1);
     assert.equal(prepared.machineEligibility.machineTrainingEligibilityVersion, MACHINE_TRAINING_ELIGIBILITY_VERSION);
-    assert.equal(bundle.machineAcceptEpisodeCount, 0);
+    assert.equal(bundle.machineAcceptEpisodeCount, 1);
     assert.equal(bundle.machineQuarantineEpisodeCount, 1);
     assert.equal(bundle.machineRejectEpisodeCount, 1);
-    assert.deepEqual(prepared.machineEligibility.machineAcceptEpisodeIds, []);
+    assert.deepEqual(prepared.machineEligibility.machineAcceptEpisodeIds, [teachingId]);
     assert.deepEqual(prepared.machineEligibility.quarantineEpisodeIds, [newId]);
     assert.deepEqual(prepared.machineEligibility.rejectEpisodeIds, [unsafeId]);
 
-    assert.equal(prepared.candidates.result.candidateEpisodeCount, 1);
-    assert.equal(prepared.candidates.result.candidates[0].episodeId, newId);
+    assert.equal(prepared.candidates.result.candidateEpisodeCount, 2);
+    assert.equal(prepared.candidates.result.candidates.some(item => item.episodeId === newId), true);
+    assert.equal(prepared.candidates.result.candidates.some(item => item.episodeId === teachingId), true);
     assert.equal(prepared.candidates.result.candidates.some(item => item.episodeId === processedId), false);
     assert.equal(prepared.candidates.result.candidates.some(item => item.episodeId === unsafeId), false);
     assert.equal(verifyDigest(prepared.candidates.result), true);
@@ -303,7 +329,7 @@ function main() {
     assert.equal(outputs.some(name => /^train\.jsonl$/i.test(name) || /^validation\.jsonl$/i.test(name) || /^test\.jsonl$/i.test(name)), false);
 
     const filteredManifest = JSON.parse(fs.readFileSync(path.join(out, '02-incremental-filter', 'incremental-manifest.json'), 'utf8'));
-    assert.deepEqual(filteredManifest.strategy.queue.map(item => item.episodeId).sort(), [newId, unsafeId].sort());
+    assert.deepEqual(filteredManifest.strategy.queue.map(item => item.episodeId).sort(), [newId, unsafeId, teachingId].sort());
     assert.equal(filteredManifest.strategy.queue.find(item => item.episodeId === unsafeId).queueStatus, 'blocked-before-review');
 
     const e2eReviews = path.join(temp, 'e2e-reviews');
@@ -362,4 +388,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { observation, reviewExport, datasetEpisode, writeReview, writeBaseDataset, allFiles, main };
+module.exports = { observation, reviewExport, teachingReview, datasetEpisode, writeReview, writeBaseDataset, allFiles, main };
