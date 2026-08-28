@@ -10,9 +10,9 @@ const {
   evaluateBaselineReadiness
 } = require('../tools/check_strategy_baseline_readiness.js');
 const {
-  teachingHtml,
-  PORT
-} = require('../../control-center/script/page_strategy_teaching_lab.js');
+  strategyTeachingFixtureHtml,
+  DEFAULT_PORT
+} = require('../../control-center/script/teaching_lab_server.js');
 
 const GROUPS = [
   { splitGroup: 'semantic-sequence:click:gmail', actionTypes: ['click'] },
@@ -46,8 +46,8 @@ function readinessRecords(groups) {
 }
 
 function main() {
-  const html = teachingHtml();
-  assert.equal(PORT, 8092);
+  const html = strategyTeachingFixtureHtml();
+  assert.equal(DEFAULT_PORT, 8791);
   assert.ok(html.includes('aria-label="Topic Search"'));
   assert.ok(html.includes('aria-label="Message Composer"'));
   assert.ok(html.includes('aria-label="Teaching Confirm"'));
