@@ -310,6 +310,10 @@ document.getElementById('start').addEventListener('click', async () => {
   const instruction = taskEl.value.trim();
   const res = await send('START_EPISODE', { task: { instruction, type: 'unspecified', args: {} } });
   showEpisode(res?.state, res?.error);
+  if (res?.ok && res?.state?.active === true) {
+    window.close();
+    return;
+  }
   const raw = await send('GET_RAW_STATUS');
   showRaw(raw?.session, raw?.error);
 });
