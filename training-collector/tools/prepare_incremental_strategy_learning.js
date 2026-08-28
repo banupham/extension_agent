@@ -18,7 +18,7 @@ const {
   HUMAN_CONFIRMATION_PHRASE
 } = require('./prepare_strategy_approval_candidates.js');
 
-const INCREMENTAL_STRATEGY_LEARNING_VERSION = '0.4.0';
+const INCREMENTAL_STRATEGY_LEARNING_VERSION = '0.4.1';
 const BASE_DATASET_SPLITS = Object.freeze(['train.jsonl', 'validation.jsonl', 'test.jsonl']);
 
 function readJson(file) {
@@ -167,8 +167,9 @@ function filterLearningManifest(manifest, excludedEpisodeIds = new Set()) {
   };
 }
 
-function forbiddenTrainingModulesImported() {
-  const files = Object.keys(require.cache);
+function forbiddenTrainingModulesImported(importBaseline = null) {
+  const baseline = importBaseline instanceof Set ? importBaseline : null;
+  const files = Object.keys(require.cache).filter(file => !baseline || !baseline.has(file));
   return {
     approvalApplicator: files.some(file => /apply_strategy_approval_candidates\.js$/i.test(file)),
     datasetBuilder: files.some(file => /build_(?:incremental_)?strategy_dataset.*\.js$/i.test(file)),
@@ -299,6 +300,7 @@ function markdownForBundle(bundle) {
 
 function prepareIncrementalStrategyLearning(options = {}) {
   if (!options.reviewRoot) throw new Error('incremental_review_root_required');
+  const importBaseline = new Set(Object.keys(require.cache));
   const reviewRoot = path.resolve(options.reviewRoot);
   if (!fs.existsSync(reviewRoot)) throw new Error(`incremental_review_root_missing:${reviewRoot}`);
   const rawRoot = options.rawRoot ? path.resolve(options.rawRoot) : null;
@@ -344,7 +346,7 @@ function prepareIncrementalStrategyLearning(options = {}) {
     machineEligibility
   );
 
-  const imported = forbiddenTrainingModulesImported();
+  const imported = forbiddenTrainingModulesImported(importBaseline);
   if (imported.approvalApplicator) throw new Error('incremental_approval_applicator_must_not_be_imported');
   if (imported.datasetBuilder) throw new Error('incremental_dataset_builder_must_not_be_imported');
   if (imported.fitter) throw new Error('incremental_fitter_must_not_be_imported');
