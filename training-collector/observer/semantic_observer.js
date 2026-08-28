@@ -11,16 +11,7 @@
   let fallbackNextRef = 1;
 
   const NON_TEXT_INPUT_TYPES = new Set([
-    'button',
-    'checkbox',
-    'color',
-    'file',
-    'hidden',
-    'image',
-    'radio',
-    'range',
-    'reset',
-    'submit'
+    'button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit'
   ]);
 
   function normalizedInputType(value) {
@@ -109,9 +100,7 @@
     return out.sort((a, b) => b.score - a.score).slice(0, 5);
   }
 
-  function cssSelector(el) {
-    return selectorCandidates(el)[0]?.value || null;
-  }
+  function cssSelector(el) { return selectorCandidates(el)[0]?.value || null; }
 
   function rawMeta(el) {
     return {
@@ -131,6 +120,38 @@
   }
   function isSensitive(el) { return !!privacyFor(el).sensitive; }
 
+  function finiteMedia(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.round(n * 1000) / 1000 : null;
+  }
+
+  function privacySafeControlState(el, tag, inputType) {
+    const state = {
+      draggable: el.draggable === true,
+      checked: null,
+      selectedIndex: null,
+      rangeValue: null,
+      mediaState: null
+    };
+    if (tag === 'input' && ['checkbox', 'radio'].includes(inputType)) state.checked = !!el.checked;
+    if (tag === 'select' && el instanceof HTMLSelectElement) state.selectedIndex = Number(el.selectedIndex);
+    if (tag === 'input' && inputType === 'range') {
+      const value = Number(el.value);
+      state.rangeValue = Number.isFinite(value) ? value : null;
+    }
+    if ((tag === 'audio' || tag === 'video') && el instanceof HTMLMediaElement) {
+      state.mediaState = {
+        paused: !!el.paused,
+        muted: !!el.muted,
+        volume: finiteMedia(el.volume),
+        currentTime: finiteMedia(el.currentTime),
+        duration: finiteMedia(el.duration),
+        playbackRate: finiteMedia(el.playbackRate)
+      };
+    }
+    return state;
+  }
+
   function semanticElement(el) {
     if (!(el instanceof Element)) return null;
     const meta = rawMeta(el);
@@ -142,6 +163,7 @@
     const tag = el.tagName.toLowerCase();
     const inputType = tag === 'input' ? normalizedInputType(meta.type) : null;
     const candidates = selectorCandidates(el);
+    const controlState = privacySafeControlState(el, tag, inputType);
     return {
       ref: getRef(el),
       tag,
@@ -153,6 +175,11 @@
         isContentEditable: el.isContentEditable === true
       }),
       inputType,
+      draggable: controlState.draggable,
+      checked: controlState.checked,
+      selectedIndex: controlState.selectedIndex,
+      rangeValue: controlState.rangeValue,
+      mediaState: controlState.mediaState,
       enabled: state.enabled,
       rendered: state.rendered,
       inViewport: state.inViewport,
@@ -168,11 +195,11 @@
   }
 
   function snapshot() {
-    const candidates = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex]'))
+    const candidates = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role],[contenteditable="true"],[tabindex],[draggable="true"],video,audio'))
       .filter(el => renderState(el).rendered).slice(0, 500);
     const active = document.activeElement && document.activeElement !== document.body && !isSensitive(document.activeElement) ? document.activeElement : null;
     return {
-      schemaVersion: '0.5.1',
+      schemaVersion: '0.5.2',
       pageInstanceId: NS2.pageInstanceId,
       page: Privacy.sanitizeUrl(location.href),
       titleMetrics: Privacy.safePageTitle(document.title),
@@ -196,7 +223,8 @@
     textEntryEditableFromSemantics,
     normalizeAccessibleText,
     labelFromParts,
-    semanticAccessibleLabel
+    semanticAccessibleLabel,
+    privacySafeControlState
   };
 
   if (typeof module !== 'undefined' && module.exports) {
