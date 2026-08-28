@@ -30,6 +30,8 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   const HEALTH_INTERVAL_MS = 10000;
   const AUTO_CAPTURE_KEY = 'trainingCollectorAutoCaptureEnabledV1';
   const STRATEGY_HOVER_DWELL_MS = 350;
+  const STRATEGY_WAIT_MIN_MS = 500;
+  const STRATEGY_WAIT_COOLDOWN_MS = 350;
 
   const S = {
     rawActive: false,
@@ -45,6 +47,9 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     controlBeforeByRef: new Map(),
     transitionBefore: new Map(),
     lastEpisodeState: null,
+    lastHumanActionAt: 0,
+    lastWaitObservationAt: 0,
+    waitObservationInFlight: false,
     scrollTimer: null,
     healthTimer: null,
     strategyHoverTimer: null,
@@ -74,6 +79,24 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       observationId: `${transitionIdValue}-${phase}`,
       capturedAt: new Date().toISOString()
     });
+  }
+
+  function strategySemanticFingerprint(snapshot) {
+    const view = strategyObservation(snapshot, 'fingerprint', 'state');
+    if (!view) return '';
+    const elements = (view.interactiveElements || []).map(element => ({
+      ref: element.ref || null,
+      label: element.label || '',
+      role: element.role || null,
+      tag: element.tag || null,
+      editable: element.editable === true,
+      checked: typeof element.checked === 'boolean' ? element.checked : null,
+      selectedIndex: Number.isInteger(Number(element.selectedIndex)) ? Number(element.selectedIndex) : null,
+      rangeValue: Number.isFinite(Number(element.rangeValue)) ? Number(element.rangeValue) : null,
+      visible: element.visible !== false,
+      enabled: element.enabled !== false
+    })).sort((a, b) => String(a.ref).localeCompare(String(b.ref)));
+    return JSON.stringify({ url: view.url || '', elements });
   }
 
   function decorateEvent(event, source = 'unknown') {
@@ -108,7 +131,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     return {
       physical: !!S.physical?.running,
       dom: !!S.rawActive,
-      mutation: !!S.rawActive,
+      mutation: !!S.mutationTrace,
       hover: !!S.rawActive,
       navigation: !!S.routeTrace?.running
     };
@@ -132,6 +155,9 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   function transitionId() { S.transitionSeq += 1; return `${NS2.pageInstanceId}-t${S.transitionSeq}`; }
   function begin(rawAction, stateBefore) {
     if (!S.episodeActive || !IS_TOP_FRAME) return null;
+    if (!(rawAction?.kind === 'observe' && rawAction?.operation === 'wait')) {
+      S.lastHumanActionAt = performance.now();
+    }
     const id = transitionId();
     const currentBefore = stateBefore || Observer.snapshot();
     const action = Normalizer.normalize({ ...rawAction, t: Math.round(relTime()) });
@@ -210,6 +236,42 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     S.strategyHoverBefore = null;
   }
 
+  function handleEpisodeMutationBurst(burst) {
+    if (!S.episodeActive || !IS_TOP_FRAME || S.waitObservationInFlight || !S.lastEpisodeState || !S.lastHumanActionAt) return;
+    const now = performance.now();
+    const waitedMs = now - S.lastHumanActionAt;
+    if (waitedMs < STRATEGY_WAIT_MIN_MS || now - S.lastWaitObservationAt < STRATEGY_WAIT_COOLDOWN_MS) return;
+    const after = Observer.snapshot();
+    if (strategySemanticFingerprint(S.lastEpisodeState) === strategySemanticFingerprint(after)) return;
+    const addedRefs = Array.isArray(burst?.addedRefs) ? burst.addedRefs : [];
+    const afterRefs = new Set((after.interactiveElements || []).map(item => item?.ref).filter(Boolean));
+    const targetRef = addedRefs.find(ref => afterRefs.has(ref)) || null;
+    const before = S.lastEpisodeState;
+    S.waitObservationInFlight = true;
+    S.lastWaitObservationAt = now;
+    const id = begin({ kind: 'observe', operation: 'wait', targetRef, waitedMs: Math.round(waitedMs) }, before);
+    finish(id, 0);
+    setTimeout(() => { S.waitObservationInFlight = false; }, STRATEGY_WAIT_COOLDOWN_MS);
+  }
+
+  function ensureMutationTrace() {
+    if (S.mutationTrace || !MutationTraceFactory?.createMutationTrace) return S.mutationTrace;
+    S.mutationTrace = MutationTraceFactory.createMutationTrace({
+      observer: Observer,
+      decorateEvent,
+      onBurst: handleEpisodeMutationBurst,
+      emitBatch(events) { if (S.rawActive) rawBatch(events, 'mutation'); }
+    });
+    return S.mutationTrace;
+  }
+
+  function syncMutationTrace() {
+    const trace = ensureMutationTrace();
+    if (!trace) return;
+    if (S.rawActive || S.episodeActive) trace.start?.();
+    else trace.stop?.();
+  }
+
   function startRawCapture() {
     if (S.rawActive || !S.autoCaptureEnabled || !S.rawSender || !PhysicalCapture?.createPhysicalCapture) return;
     S.rawActive = true;
@@ -231,12 +293,6 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       emitBatch(events) { rawBatch(events, 'dom'); }
     }) || null;
 
-    S.mutationTrace = MutationTraceFactory?.createMutationTrace?.({
-      observer: Observer,
-      decorateEvent,
-      emitBatch(events) { rawBatch(events, 'mutation'); }
-    }) || null;
-
     S.hoverTrace = HoverTraceFactory?.createHoverTrace?.({
       observer: Observer,
       decorateEvent,
@@ -253,7 +309,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
 
     S.physical.start();
     S.domCapture?.start();
-    S.mutationTrace?.start();
+    syncMutationTrace();
     S.hoverTrace?.start();
 
     const initialObservation = Observer.snapshot();
@@ -286,10 +342,10 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     S.healthTimer = null;
     S.routeTrace?.stop?.();
     S.hoverTrace?.stop?.();
-    S.mutationTrace?.stop?.();
     S.domCapture?.stop?.();
     S.physical?.stop?.();
     S.rawActive = false;
+    syncMutationTrace();
   }
 
   function applyAutoCaptureEnabled(enabled) {
@@ -488,6 +544,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     S.dragState = null;
     S.controlBeforeByRef.clear();
     stopRawCapture();
+    if (!S.episodeActive) syncMutationTrace();
   }, true);
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -496,24 +553,32 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       if (!IS_TOP_FRAME) { sendResponse({ ok: true, ignoredSubframe: true, pageInstanceId: NS2.pageInstanceId }); return false; }
       S.episodeActive = true;
       S.lastEpisodeState = Observer.snapshot();
+      S.lastHumanActionAt = 0;
+      S.lastWaitObservationAt = 0;
+      S.waitObservationInFlight = false;
       S.transitionBefore.clear();
       S.transitionOrder?.clear?.();
       S.beforeInputByRef.clear();
       S.controlBeforeByRef.clear();
       clearStrategyHover();
       S.dragState = null;
+      syncMutationTrace();
       sendResponse({ ok: true, pageInstanceId: NS2.pageInstanceId });
       return false;
     }
     if (message.type === 'STOP_EPISODE_CAPTURE') {
       S.episodeActive = false;
       S.lastEpisodeState = null;
+      S.lastHumanActionAt = 0;
+      S.lastWaitObservationAt = 0;
+      S.waitObservationInFlight = false;
       S.transitionBefore.clear();
       S.transitionOrder?.clear?.();
       S.beforeInputByRef.clear();
       S.controlBeforeByRef.clear();
       clearStrategyHover();
       S.dragState = null;
+      syncMutationTrace();
       sendResponse({ ok: true });
       return false;
     }
@@ -542,6 +607,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     S.episodeActive = IS_TOP_FRAME && !!response.episodeActive;
     if (S.episodeActive) {
       S.lastEpisodeState = Observer.snapshot();
+      syncMutationTrace();
       await send('EPISODE_DOCUMENT_READY', {
         pageInstanceId: NS2.pageInstanceId,
         observedAtMs: Math.round(relTime()),
