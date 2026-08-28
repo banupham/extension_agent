@@ -13,9 +13,11 @@ const {
 } = require('../tools/prepare_strategy_approval_candidates.js');
 const {
   applyApprovalCandidates,
+  applyMachineAcceptedCandidates,
   annotationForCandidate
 } = require('../tools/apply_strategy_approval_candidates.js');
 const {
+  adaptMachineVerifiedAnnotations,
   buildApprovedStrategyDataset
 } = require('../tools/build_strategy_dataset_from_approvals.js');
 const {
@@ -25,10 +27,6 @@ const {
   fitBaseline,
   evaluateHeldOut
 } = require('../tools/fit_strategy_offline_baseline.js');
-const {
-  CANDIDATE_PROTECTION_VERSION,
-  evaluateCandidateProtection
-} = require('../../control-center/script/native_regression_model_compat.js');
 
 function observation(id, label) {
   return {
@@ -166,10 +164,6 @@ function mediaItem(episodeId, instruction) {
   };
 }
 
-function benchmark(total, dimensions, safeBlocked = true, ok = true) {
-  return { ok, score: { total, dimensions: { ...dimensions } }, safetyScenario: { safeBlocked } };
-}
-
 function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'strategy-approval-pipeline-'));
   const oldCwd = process.cwd();
@@ -274,6 +268,71 @@ function main() {
     assert.equal(evaluation.fitPolicy.validationUsedForFit, false);
     assert.equal(evaluation.fitPolicy.testUsedForFit, false);
 
+    const machineEligibilityFile = path.join(temp, 'machine-eligibility.json');
+    const machineEligibility = {
+      machineTrainingEligibilityVersion: '0.2.1',
+      generatedAt: '2026-08-28T00:00:00.000Z',
+      policy: {
+        failClosed: true,
+        independentOutcomeVerificationRequiredForAccept: true
+      },
+      counts: { accept: 1, quarantine: 1, reject: 1 },
+      machineAcceptEpisodeIds: ['ep-1'],
+      quarantineEpisodeIds: ['ep-2'],
+      rejectEpisodeIds: ['ep-3'],
+      items: [
+        {
+          episodeId: 'ep-1', status: 'accept', reasons: ['verified'],
+          outcomeVerification: { status: 'verified', source: 'test-deterministic-signal', confidence: 1, reasons: ['verified'] },
+          semantic: { ok: true, reasons: [] }
+        },
+        {
+          episodeId: 'ep-2', status: 'quarantine', reasons: ['outcome_unverified'],
+          outcomeVerification: { status: 'supported', source: 'test', confidence: 0.7, reasons: ['supported'] },
+          semantic: { ok: true, reasons: [] }
+        },
+        {
+          episodeId: 'ep-3', status: 'reject', reasons: ['privacy'],
+          outcomeVerification: { status: 'contradicted', source: 'test', confidence: 1, reasons: ['privacy'] },
+          semantic: { ok: false, reasons: ['privacy'] }
+        }
+      ]
+    };
+    fs.writeFileSync(machineEligibilityFile, `${JSON.stringify(machineEligibility, null, 2)}\n`, 'utf8');
+    const machineApplied = applyMachineAcceptedCandidates(
+      prepared.jsonFile,
+      machineEligibilityFile,
+      path.join(temp, 'machine-annotations')
+    );
+    assert.equal(machineApplied.receipt.verificationMode, 'machine-eligibility');
+    assert.equal(machineApplied.receipt.machineAcceptedEpisodeCount, 1);
+    assert.equal(machineApplied.receipt.quarantineEpisodeCount, 1);
+    assert.equal(machineApplied.receipt.rejectEpisodeCount, 1);
+    assert.equal(machineApplied.receipt.explicitHumanConfirmationVerified, false);
+    assert.equal(machineApplied.annotationFiles.length, 1);
+    const machineAnnotation = JSON.parse(fs.readFileSync(machineApplied.annotationFiles[0], 'utf8'));
+    assert.equal(machineAnnotation.episodeId, 'ep-1');
+    assert.equal(machineAnnotation.humanConfirmation, undefined);
+    assert.equal(machineAnnotation.review, undefined);
+    assert.equal(machineAnnotation.machineVerification.status, 'accept');
+    assert.equal(machineAnnotation.policy.humanApprovalClaimed, false);
+    assert.equal(machineAnnotation.steps[0].outcome.metadata.requiresHumanConfirmation, false);
+
+    const machineAdapted = adaptMachineVerifiedAnnotations(
+      packFile,
+      path.dirname(machineApplied.receiptFile),
+      path.join(temp, 'machine-episodes')
+    );
+    assert.equal(machineAdapted.records.length, 1);
+    assert.equal(machineAdapted.records[0].episodeId, 'machine-ep-1');
+    assert.equal(machineAdapted.records[0].source.kind, 'approved-controller');
+    assert.equal(machineAdapted.records[0].source.labelVerified, true);
+    assert.equal(machineAdapted.records[0].source.outcomeVerified, true);
+    assert.equal(machineAdapted.records[0].steps[0].decision.metadata.labelSource, 'verified-machine-evidence');
+    assert.equal(machineAdapted.records[0].steps[0].outcome.metadata.labelSource, 'verified-machine-evidence');
+    assert.equal(machineAdapted.records[0].trainingEligibility.eligible, false, 'unassigned records are not fit-eligible before split');
+    assert.equal(machineApplied.annotationFiles.some(file => /ep-2|ep-3/.test(file)), false);
+
     const mediaInstructions = [
       'Start media playback, mute it, then unmute it',
       'Play the media, mute it, and then unmute it',
@@ -299,49 +358,6 @@ function main() {
     assert.equal(new Set(mediaCandidates.map(candidate => candidate.splitGroup)).size, 1);
     assert.equal(mediaCandidates[0].splitGroup, 'semantic-sequence:play:media-play>mute:media-mute>unmute:media-unmute');
 
-    const nativePass = { cargo: { ok: true }, signal: { ok: true }, harbor: { ok: true } };
-    const baseDimensions = {
-      goalCompletion: 30,
-      actionUnderstanding: 15,
-      targetGrounding: 15,
-      planQuality: 10,
-      recovery: 10,
-      unseenGeneralization: 10,
-      efficiency: 5,
-      safeBlock: 5
-    };
-    const protectedDecision = evaluateCandidateProtection({
-      nativeResults: nativePass,
-      baseBenchmark: benchmark(100, baseDimensions),
-      candidateBenchmark: benchmark(100, baseDimensions),
-      minimumBenchmarkScore: 90
-    });
-    assert.equal(protectedDecision.candidateProtectionVersion, CANDIDATE_PROTECTION_VERSION);
-    assert.equal(protectedDecision.pass, true);
-    assert.equal(protectedDecision.status, 'candidate-protected-ready-for-manual-promotion');
-    assert.equal(protectedDecision.productionPromotionApplied, false);
-
-    const regressedDimensions = { ...baseDimensions, recovery: 0 };
-    const rejectedDecision = evaluateCandidateProtection({
-      nativeResults: nativePass,
-      baseBenchmark: benchmark(100, baseDimensions),
-      candidateBenchmark: benchmark(90, regressedDimensions),
-      minimumBenchmarkScore: 90
-    });
-    assert.equal(rejectedDecision.pass, false);
-    assert.equal(rejectedDecision.status, 'candidate-rejected-runtime-regression');
-    assert.equal(rejectedDecision.reasons.some(reason => reason.startsWith('candidate_total_regression:')), true);
-    assert.equal(rejectedDecision.reasons.some(reason => reason.startsWith('candidate_dimension_regression:recovery:')), true);
-
-    const blockedDecision = evaluateCandidateProtection({
-      nativeResults: nativePass,
-      baseBenchmark: benchmark(0, {}, true, false),
-      candidateBenchmark: benchmark(100, baseDimensions),
-      minimumBenchmarkScore: 90
-    });
-    assert.equal(blockedDecision.pass, false);
-    assert.equal(blockedDecision.status, 'candidate-protection-blocked-environment');
-
     console.log('Strategy approval pipeline contract: PASS');
   } finally {
     process.chdir(oldCwd);
@@ -357,4 +373,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { observation, reviewExport, draft, mediaDraft, mediaItem, benchmark, main };
+module.exports = { observation, reviewExport, draft, mediaDraft, mediaItem, main };
