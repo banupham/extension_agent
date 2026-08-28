@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const REVIEW_CONTRACT = require('../../control-center/HUMAN_STRATEGY_REVIEW_CONTRACT.json');
 
-const REVIEW_PACK_VERSION = '0.1.3';
+const REVIEW_PACK_VERSION = '0.1.4';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -84,6 +84,7 @@ function isSubmissionTarget(target) {
 
 function actionTypeHint(rawAction = {}, targetBefore = null, targetAfter = null) {
   const kind = String(rawAction.kind || '').toLowerCase();
+  const operation = String(rawAction.operation || '').trim();
   const target = targetBefore || targetAfter || null;
   if (kind === 'double-click' || kind === 'dblclick') return 'doubleClick';
   if (kind === 'drag') return 'drag-review-required';
@@ -104,8 +105,8 @@ function actionTypeHint(rawAction = {}, targetBefore = null, targetAfter = null)
   if (kind === 'dom-input' || kind === 'text-change') return 'text-action-review-required';
   if (kind === 'keyboard' || kind === 'key' || kind === 'text-key') return 'keyboard-action-review-required';
   if (kind === 'wheel' || kind.includes('scroll')) return 'scroll-direction-review-required';
-  if (kind === 'wait-observe') return 'waitAndObserve-review-required';
-  if (kind.startsWith('tab-')) return 'tab-lifecycle-review-required';
+  if (kind === 'wait-observe' || (kind === 'observe' && operation === 'wait')) return 'waitAndObserve-review-required';
+  if (kind.startsWith('tab-') || kind === 'browser') return 'tab-lifecycle-review-required';
   return null;
 }
 
@@ -267,7 +268,6 @@ module.exports = {
   semanticElements,
   semanticTarget,
   actionTypeHint,
-  isSubmissionTarget,
   transitionProposal,
   splitGroupHint,
   annotationTemplate,
