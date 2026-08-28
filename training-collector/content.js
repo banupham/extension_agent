@@ -42,6 +42,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     sourceEventCounts: new Map(),
     lastKeyByRef: new Map(),
     beforeInputByRef: new Map(),
+    controlBeforeByRef: new Map(),
     transitionBefore: new Map(),
     lastEpisodeState: null,
     scrollTimer: null,
@@ -187,6 +188,21 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     return { el, semantic, resolved };
   }
 
+  function keyModifiers(event) {
+    return { alt: !!event.altKey, ctrl: !!event.ctrlKey, meta: !!event.metaKey, shift: !!event.shiftKey };
+  }
+
+  function isFormControlSemantic(semantic) {
+    return semantic?.tag === 'select' || (semantic?.tag === 'input' && ['checkbox', 'radio', 'range'].includes(String(semantic.inputType || '').toLowerCase()));
+  }
+
+  function rememberControlBefore(event) {
+    if (!S.episodeActive || !IS_TOP_FRAME) return;
+    const { semantic } = semanticForEvent(event);
+    if (!semantic || !isFormControlSemantic(semantic)) return;
+    S.controlBeforeByRef.set(semantic.ref, Observer.snapshot());
+  }
+
   function clearStrategyHover() {
     if (S.strategyHoverTimer) clearTimeout(S.strategyHoverTimer);
     S.strategyHoverTimer = null;
@@ -281,6 +297,8 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     if (S.autoCaptureEnabled) startRawCapture();
     else stopRawCapture();
   }
+
+  addEventListener('pointerdown', rememberControlBefore, true);
 
   addEventListener('click', event => {
     const { semantic, resolved } = semanticForEvent(event);
@@ -384,7 +402,18 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       : 'other-key';
     const ref = semantic?.ref || null;
     if (ref) S.lastKeyByRef.set(ref, performance.now());
-    const id = begin({ kind: editable ? 'text-key' : 'key', targetRef: ref, operation, keyClass: event.key.length === 1 ? 'printable' : event.key, code: event.key.length === 1 ? null : event.code, repeat: event.repeat });
+    if (semantic && isFormControlSemantic(semantic) && !S.controlBeforeByRef.has(ref)) {
+      S.controlBeforeByRef.set(ref, Observer.snapshot());
+    }
+    const id = begin({
+      kind: editable ? 'text-key' : 'key',
+      targetRef: ref,
+      operation,
+      keyClass: event.key.length === 1 ? 'printable' : event.key,
+      code: event.key.length === 1 ? null : event.code,
+      repeat: event.repeat,
+      modifiers: keyModifiers(event)
+    });
     finish(id, 20);
   }, true);
 
@@ -393,7 +422,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     const el = event.target instanceof Element ? event.target : null;
     if (!el || Observer.isSensitive(el)) return;
     const semantic = Observer.semanticElement(el);
-    if (!semantic) return;
+    if (!semantic?.editable) return;
     S.beforeInputByRef.set(semantic.ref, { at: performance.now(), stateBefore: Observer.snapshot(), inputType: event.inputType || null });
   }, true);
 
@@ -402,7 +431,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     const el = event.target instanceof Element ? event.target : null;
     if (!el || Observer.isSensitive(el)) return;
     const semantic = Observer.semanticElement(el);
-    if (!semantic) return;
+    if (!semantic?.editable) return;
     const recentKeyAt = S.lastKeyByRef.get(semantic.ref) || 0;
     if (performance.now() - recentKeyAt < 120) return;
     const pending = S.beforeInputByRef.get(semantic.ref);
@@ -410,6 +439,29 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     const valueLength = typeof el.value === 'string' ? el.value.length : (el.textContent || '').length;
     const id = begin({ kind: 'text-change', targetRef: semantic.ref, inputType: event.inputType || pending?.inputType || null, length: valueLength }, pending?.stateBefore || Observer.snapshot());
     finish(id, 20);
+  }, true);
+
+  addEventListener('change', event => {
+    if (!S.episodeActive || !IS_TOP_FRAME) return;
+    const el = event.target instanceof Element ? event.target : null;
+    if (!el || Observer.isSensitive(el)) return;
+    const semantic = Observer.semanticElement(el);
+    if (!semantic || !isFormControlSemantic(semantic)) return;
+    const before = S.controlBeforeByRef.get(semantic.ref) || S.lastEpisodeState || Observer.snapshot();
+    S.controlBeforeByRef.delete(semantic.ref);
+    const raw = {
+      kind: 'change',
+      targetRef: semantic.ref,
+      controlType: semantic.tag === 'select' ? 'select' : semantic.inputType
+    };
+    if (typeof semantic.checked === 'boolean') raw.checked = semantic.checked;
+    if (Number.isInteger(Number(semantic.selectedIndex))) raw.selectedIndex = Number(semantic.selectedIndex);
+    if (Number.isFinite(Number(semantic.rangeValue))) raw.rangeValue = Number(semantic.rangeValue);
+    if (Number.isFinite(Number(semantic.rangeMin))) raw.rangeMin = Number(semantic.rangeMin);
+    if (Number.isFinite(Number(semantic.rangeMax))) raw.rangeMax = Number(semantic.rangeMax);
+    if (Number.isFinite(Number(semantic.rangeStep))) raw.rangeStep = Number(semantic.rangeStep);
+    const id = begin(raw, before);
+    finish(id, 30);
   }, true);
 
   addEventListener('focusin', event => {
@@ -434,6 +486,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   addEventListener('pagehide', () => {
     clearStrategyHover();
     S.dragState = null;
+    S.controlBeforeByRef.clear();
     stopRawCapture();
   }, true);
 
@@ -445,6 +498,8 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       S.lastEpisodeState = Observer.snapshot();
       S.transitionBefore.clear();
       S.transitionOrder?.clear?.();
+      S.beforeInputByRef.clear();
+      S.controlBeforeByRef.clear();
       clearStrategyHover();
       S.dragState = null;
       sendResponse({ ok: true, pageInstanceId: NS2.pageInstanceId });
@@ -455,6 +510,8 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       S.lastEpisodeState = null;
       S.transitionBefore.clear();
       S.transitionOrder?.clear?.();
+      S.beforeInputByRef.clear();
+      S.controlBeforeByRef.clear();
       clearStrategyHover();
       S.dragState = null;
       sendResponse({ ok: true });
