@@ -6,14 +6,17 @@ importScripts(
   'core/episode_state_queue.js',
   'core/raw_session_store.js',
   'core/indexeddb_chunk_store.js',
+  'core/task_episode_review_export.js',
   'core/socket_mirror.js'
 );
 
 const EPISODE_STATE_KEY = 'trainingCollectorStateV03';
+const TASK_REVIEW_OUTBOX_KEY = 'trainingCollectorTaskReviewOutboxV1';
 const RECENT_SESSION_LIMIT = 20;
 const SOCKET_ENDPOINT = 'ws://127.0.0.1:8765/training-collector';
 const EpisodeBuilder = globalThis.TrainingCollectorV02.EpisodeBuilder;
 const EpisodeCaptureGate = globalThis.TrainingCollectorV09.EpisodeCaptureGate;
+const TaskEpisodeReviewExport = globalThis.TrainingCollectorV09.TaskEpisodeReviewExport;
 const EpisodeStateQueueFactory = globalThis.TrainingCollectorV12.EpisodeStateQueue;
 const RawStore = globalThis.TrainingCollectorV03.RawSessionStore;
 const ChunkStore = globalThis.TrainingCollectorV06.IndexedDbChunkStore.createChunkStore({ chunkSize: RawStore.CHUNK_SIZE });
@@ -22,6 +25,7 @@ const EpisodeStateQueue = EpisodeStateQueueFactory?.createEpisodeStateQueue?.() 
 const EMPTY = { active: false, episode: null };
 let browserSessionInitPromise = null;
 let rawAppendChain = Promise.resolve();
+let taskReviewOutboxChain = Promise.resolve();
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -85,6 +89,52 @@ async function requestSnapshot(tabId) {
   }
 }
 
+async function readTaskReviewOutbox() {
+  const data = await chrome.storage.local.get(TASK_REVIEW_OUTBOX_KEY);
+  const value = data?.[TASK_REVIEW_OUTBOX_KEY];
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+async function writeTaskReviewOutbox(value) {
+  await chrome.storage.local.set({ [TASK_REVIEW_OUTBOX_KEY]: value || {} });
+}
+function mutateTaskReviewOutbox(job) {
+  const next = taskReviewOutboxChain.then(job);
+  taskReviewOutboxChain = next.catch(() => {});
+  return next;
+}
+async function persistTaskReview(review) {
+  const episodeId = String(review?.episodeId || '').trim();
+  if (!episodeId) throw new Error('task_review_episode_id_required');
+  await mutateTaskReviewOutbox(async () => {
+    const rows = await readTaskReviewOutbox();
+    rows[episodeId] = {
+      review,
+      queuedAt: rows[episodeId]?.queuedAt || nowIso(),
+      lastQueuedAt: nowIso()
+    };
+    await writeTaskReviewOutbox(rows);
+  });
+  return review;
+}
+async function acknowledgeTaskReview(message) {
+  const episodeId = String(message?.episodeId || '').trim();
+  if (!episodeId || (message?.persisted !== true && message?.permanent !== true)) return;
+  await mutateTaskReviewOutbox(async () => {
+    const rows = await readTaskReviewOutbox();
+    if (!rows[episodeId]) return;
+    delete rows[episodeId];
+    await writeTaskReviewOutbox(rows);
+  });
+}
+async function registerTaskReviewBacklog() {
+  await taskReviewOutboxChain;
+  const rows = await readTaskReviewOutbox();
+  for (const row of Object.values(rows)) {
+    if (row?.review?.episodeId) SocketMirror?.registerTaskReview?.(row.review);
+  }
+  return Object.keys(rows).length;
+}
+
 async function replaySession(sessionId, afterSeq, emit) {
   const session = await ChunkStore.getSession(sessionId);
   if (!session) return;
@@ -105,7 +155,8 @@ const SocketMirror = SocketMirrorFactory?.createSocketMirror?.({
   endpoint: SOCKET_ENDPOINT,
   heartbeatMs: 20000,
   maxReconnectMs: 10000,
-  replaySession
+  replaySession,
+  onTaskReviewAck: acknowledgeTaskReview
 }) || null;
 
 async function closeDanglingSessions() {
@@ -355,7 +406,17 @@ async function stopEpisodeUnlocked(outcome) {
   state.active = false;
   state.episode.endedAt = nowIso();
   state.episode.finalOutcome = outcome || { status: 'stopped' };
-  return saveEpisodeState(state);
+
+  let review = null;
+  if (String(state.episode.finalOutcome?.status || '').toLowerCase() === 'success') {
+    if (!TaskEpisodeReviewExport?.buildReviewExport) throw new Error('task_episode_review_export_unavailable');
+    review = TaskEpisodeReviewExport.buildReviewExport(state.episode, { exportedAt: nowIso() });
+    await persistTaskReview(review);
+  }
+
+  await saveEpisodeState(state);
+  if (review) SocketMirror?.registerTaskReview?.(review);
+  return state;
 }
 function stopEpisode(outcome) {
   return queueEpisodeMutation(() => stopEpisodeUnlocked(outcome));
@@ -432,6 +493,8 @@ function bootstrap() {
   ensureBrowserSession()
     .then(() => registerClosedBacklog())
     .catch(() => {});
+  registerTaskReviewBacklog().catch(() => {});
+  SocketMirror?.requestPipelineStatus?.();
 }
 
 chrome.runtime.onStartup.addListener(bootstrap);
@@ -471,13 +534,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return { ok: true, data: await verifyRawSession(message.sessionId || current.sessionId, !!message.full) };
     }
     if (message.type === 'GET_RECENT_RAW_SESSIONS') return { ok: true, sessions: await recentSessions() };
-    if (message.type === 'GET_SOCKET_STATUS') return { ok: true, socket: SocketMirror?.status?.() || { state: 'unavailable' } };
-    if (message.type === 'GET_STATE') return {
-      ok: true,
-      state: await consistentEpisodeState(),
-      rawSession: await ensureBrowserSession(),
-      socket: SocketMirror?.status?.() || null
-    };
+    if (message.type === 'GET_SOCKET_STATUS') {
+      SocketMirror?.requestPipelineStatus?.();
+      return { ok: true, socket: SocketMirror?.status?.() || { state: 'unavailable' } };
+    }
+    if (message.type === 'GET_STATE') {
+      SocketMirror?.requestPipelineStatus?.();
+      return {
+        ok: true,
+        state: await consistentEpisodeState(),
+        rawSession: await ensureBrowserSession(),
+        socket: SocketMirror?.status?.() || null
+      };
+    }
     if (message.type === 'GET_EPISODE_DIAGNOSTIC') {
       const state = await consistentEpisodeState();
       return { ok: true, diagnostic: episodeDiagnostic(state) };
