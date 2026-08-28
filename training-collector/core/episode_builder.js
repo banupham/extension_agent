@@ -42,6 +42,7 @@
       status: 'pending',
       startedAtMs: Number(payload.startedAtMs || 0),
       endedAtMs: null,
+      sourceContext: payload.sourceContext && typeof payload.sourceContext === 'object' ? payload.sourceContext : null,
       stateBefore: payload.stateBefore || null,
       stateBeforeDiff: payload.stateBeforeDiff || null,
       strategyObservationBefore: payload.strategyObservationBefore || null,
