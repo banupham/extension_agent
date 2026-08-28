@@ -3,8 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const { evaluateGoal } = require('../../control-center/manager/goal/goal_checker.js');
+const { SCENARIOS, successTitleFor } = require('../../control-center/script/teaching_lab_server.js');
 
-const MACHINE_TRAINING_ELIGIBILITY_VERSION = '0.1.0';
+const MACHINE_TRAINING_ELIGIBILITY_VERSION = '0.2.0';
 const MACHINE_STATUSES = Object.freeze(['accept', 'quarantine', 'reject']);
 
 function readJson(file) {
@@ -20,6 +21,16 @@ function byEpisode(items) {
   return new Map((Array.isArray(items) ? items : [])
     .map(item => [String(item?.episodeId || ''), item])
     .filter(([id]) => !!id));
+}
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function observationFingerprint(observation) {
@@ -119,6 +130,65 @@ function declaredMachineSignalVerification(review) {
   };
 }
 
+function teachingScenarioFromUrl(value) {
+  const text = String(value || '');
+  const match = text.match(/\/teaching\/(TL\d{2})(?:[/?#]|$)/i);
+  if (!match) return null;
+  const id = match[1].toUpperCase();
+  return SCENARIOS[id] ? id : null;
+}
+
+function teachingTaskMatchesScenario(task, scenarioId) {
+  const scenario = SCENARIOS[scenarioId];
+  if (!scenario) return false;
+  const instruction = normalizeText(task?.instruction);
+  if (!instruction) return false;
+  const id = normalizeText(scenarioId);
+  const canonical = normalizeText(scenario.task);
+  return instruction.includes(id) || instruction === canonical || instruction.includes(canonical);
+}
+
+function teachingLabOutcomeVerification(review) {
+  const transitions = Array.isArray(review?.transitions) ? review.transitions : [];
+  if (!transitions.length) return null;
+  const beforeUrl = String(transitions[0]?.strategyObservationBefore?.url || transitions[0]?.strategyObservationBefore?.page?.url || '');
+  const after = transitions.at(-1)?.strategyObservationAfter || null;
+  const afterUrl = String(after?.url || after?.page?.url || '');
+  const scenarioId = teachingScenarioFromUrl(afterUrl) || teachingScenarioFromUrl(beforeUrl);
+  if (!scenarioId) return null;
+  const scenario = SCENARIOS[scenarioId];
+  if (!teachingTaskMatchesScenario(review?.task, scenarioId)) {
+    return {
+      status: 'unverified',
+      source: 'teaching-lab-deterministic-signal',
+      confidence: 0.4,
+      scenarioId,
+      reasons: ['teaching_lab_task_scenario_alignment_unverified']
+    };
+  }
+  if (scenario?.type === 'ambiguity') {
+    return {
+      status: 'unverified',
+      source: 'teaching-lab-deterministic-signal',
+      confidence: 1,
+      scenarioId,
+      reasons: ['teaching_lab_ambiguity_is_not_positive_action_training']
+    };
+  }
+  const expectedTitle = successTitleFor(scenarioId);
+  const actualTitle = String(after?.title || after?.page?.title || '');
+  const matched = actualTitle === expectedTitle;
+  return {
+    status: matched ? 'verified' : 'contradicted',
+    source: 'teaching-lab-deterministic-signal',
+    confidence: 1,
+    scenarioId,
+    expectedTitle,
+    actualTitle,
+    reasons: [matched ? 'teaching_lab_success_signal_satisfied' : 'teaching_lab_success_signal_not_satisfied']
+  };
+}
+
 function genericOutcomeSupport(review) {
   const transitions = Array.isArray(review?.transitions) ? review.transitions : [];
   const finalStatus = String(review?.finalOutcome?.status || '').trim().toLowerCase();
@@ -161,6 +231,8 @@ function verifyTaskOutcome(review) {
   if (explicit) return explicit;
   const declared = declaredMachineSignalVerification(review);
   if (declared) return declared;
+  const teaching = teachingLabOutcomeVerification(review);
+  if (teaching) return teaching;
   return genericOutcomeSupport(review);
 }
 
@@ -271,6 +343,7 @@ function evaluateMachineTrainingEligibility({ manifest, reviewPack, resolution, 
       failClosed: true,
       userTaskLevelOutcomeIsNotSemanticLabelApproval: true,
       independentOutcomeVerificationRequiredForAccept: true,
+      deterministicTeachingLabSignalSupported: true,
       unresolvedSemanticAmbiguityQuarantined: true,
       privacyOrInvalidReviewRejected: true,
       supportedButUnverifiedOutcomeQuarantined: true,
@@ -290,10 +363,14 @@ module.exports = {
   readJson,
   resolveFile,
   byEpisode,
+  normalizeText,
   observationFingerprint,
   semanticStateChanged,
   explicitSuccessCriteriaVerification,
   declaredMachineSignalVerification,
+  teachingScenarioFromUrl,
+  teachingTaskMatchesScenario,
+  teachingLabOutcomeVerification,
   genericOutcomeSupport,
   verifyTaskOutcome,
   candidateSemanticSafety,
