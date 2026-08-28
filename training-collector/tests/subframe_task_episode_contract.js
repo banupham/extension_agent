@@ -11,8 +11,21 @@ const bridge = fs.readFileSync(path.join(ROOT, 'core', 'frame_episode_background
 const subframe = fs.readFileSync(path.join(ROOT, 'capture', 'subframe_episode_capture.js'), 'utf8');
 const episodeBuilder = fs.readFileSync(path.join(ROOT, 'core', 'episode_builder.js'), 'utf8');
 
+function versionAtLeast(actual, minimum) {
+  const a = String(actual || '').split('.').map(value => Number(value) || 0);
+  const b = String(minimum || '').split('.').map(value => Number(value) || 0);
+  const width = Math.max(a.length, b.length);
+  for (let i = 0; i < width; i += 1) {
+    const av = a[i] || 0;
+    const bv = b[i] || 0;
+    if (av > bv) return true;
+    if (av < bv) return false;
+  }
+  return true;
+}
+
 const scripts = manifest.content_scripts?.[0]?.js || [];
-assert.strictEqual(manifest.version, '0.8.4', 'collector version must expose the frame-aware Task Episode fix');
+assert(versionAtLeast(manifest.version, '0.8.4'), `collector version ${manifest.version} must be >= 0.8.4 for frame-aware Task Episode support`);
 assert.strictEqual(manifest.background?.service_worker, 'background_entry.js', 'background entry must load the frame episode bridge');
 assert.strictEqual(manifest.content_scripts?.[0]?.all_frames, true, 'collector must inject into all frames');
 assert(scripts.includes('capture/subframe_episode_capture.js'), 'subframe Task Episode capture must be injected');
@@ -37,4 +50,4 @@ assert(subframe.includes("addEventListener('scroll'"), 'subframe capture must re
 
 assert(episodeBuilder.includes('sourceContext:'), 'episode transition schema must persist source frame context');
 
-console.log('Subframe Task Episode contract: PASS');
+console.log(`Subframe Task Episode contract: PASS (collector ${manifest.version})`);
