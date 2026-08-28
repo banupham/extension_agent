@@ -9,12 +9,40 @@
     return ['x', 'y', 'width', 'height'].every(k => Number(a[k] || 0) === Number(b[k] || 0));
   }
 
+  function finiteOrNull(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function mediaStateOf(value) {
+    if (!value || typeof value !== 'object') return null;
+    return {
+      paused: value.paused === true,
+      muted: value.muted === true,
+      volume: finiteOrNull(value.volume),
+      currentTime: finiteOrNull(value.currentTime),
+      duration: finiteOrNull(value.duration),
+      playbackRate: finiteOrNull(value.playbackRate)
+    };
+  }
+
+  function sameMediaState(a, b) {
+    return JSON.stringify(mediaStateOf(a)) === JSON.stringify(mediaStateOf(b));
+  }
+
   function stateOf(el = {}) {
     return {
       enabled: el.enabled !== false,
       rendered: !!el.rendered,
       inViewport: !!el.inViewport,
       interactable: !!el.interactable,
+      checked: typeof el.checked === 'boolean' ? el.checked : null,
+      selectedIndex: Number.isInteger(Number(el.selectedIndex)) ? Number(el.selectedIndex) : null,
+      rangeValue: finiteOrNull(el.rangeValue),
+      rangeMin: finiteOrNull(el.rangeMin),
+      rangeMax: finiteOrNull(el.rangeMax),
+      rangeStep: finiteOrNull(el.rangeStep),
+      mediaState: mediaStateOf(el.mediaState),
       rect: el.rect || null
     };
   }
@@ -24,6 +52,13 @@
       a.rendered === b.rendered &&
       a.inViewport === b.inViewport &&
       a.interactable === b.interactable &&
+      a.checked === b.checked &&
+      a.selectedIndex === b.selectedIndex &&
+      a.rangeValue === b.rangeValue &&
+      a.rangeMin === b.rangeMin &&
+      a.rangeMax === b.rangeMax &&
+      a.rangeStep === b.rangeStep &&
+      sameMediaState(a.mediaState, b.mediaState) &&
       sameRect(a.rect, b.rect);
   }
 
@@ -61,6 +96,6 @@
     return diff;
   }
 
-  NS.StateDiff = { diffObservation };
+  NS.StateDiff = { diffObservation, stateOf, sameState };
   if (typeof module !== 'undefined' && module.exports) module.exports = NS.StateDiff;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
