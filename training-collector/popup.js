@@ -6,10 +6,18 @@ const rawStatusEl = document.getElementById('rawStatus');
 const previewEl = document.getElementById('preview');
 const sessionsEl = document.getElementById('sessions');
 const socketStatusEl = document.getElementById('socketStatus');
+const captureControlStatusEl = document.getElementById('captureControlStatus');
+const captureToggleEl = document.getElementById('captureToggle');
 const EpisodeStopSettlement = globalThis.TrainingCollectorV10?.EpisodeStopSettlement || null;
+const AUTO_CAPTURE_KEY = 'trainingCollectorAutoCaptureEnabledV1';
+const LIGHT_EPISODE_SCOPE = 'TRAINING_COLLECTOR_EPISODE_STATE_V1';
 
 function send(type, extra = {}) {
   return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...extra });
+}
+
+function sendLightEpisode(type, extra = {}) {
+  return chrome.runtime.sendMessage({ scope: LIGHT_EPISODE_SCOPE, type, ...extra });
 }
 
 function episodeTransitionCounts(episode) {
@@ -86,6 +94,33 @@ function showSocket(socket, error) {
   ].filter(Boolean).join('\n');
 }
 
+function showCaptureControl(enabled) {
+  const on = enabled !== false;
+  captureControlStatusEl.textContent = on
+    ? 'Auto raw capture: ON — pointer/DOM/mutation/hover/route telemetry is recording.'
+    : 'Auto raw capture: PAUSED — continuous telemetry listeners/timers are stopped. Manual Task Episode remains available.';
+  captureToggleEl.textContent = on ? 'Pause Auto Raw Capture' : 'Resume Auto Raw Capture';
+}
+
+async function loadCaptureControl() {
+  const data = await chrome.storage.local.get(AUTO_CAPTURE_KEY);
+  const enabled = data?.[AUTO_CAPTURE_KEY] !== false;
+  showCaptureControl(enabled);
+  return enabled;
+}
+
+async function toggleCaptureControl() {
+  captureToggleEl.disabled = true;
+  try {
+    const enabled = await loadCaptureControl();
+    const next = !enabled;
+    await chrome.storage.local.set({ [AUTO_CAPTURE_KEY]: next });
+    showCaptureControl(next);
+  } finally {
+    captureToggleEl.disabled = false;
+  }
+}
+
 function sessionText(session) {
   return [
     session.sessionId,
@@ -121,6 +156,7 @@ async function loadSocket() {
 }
 
 async function refresh() {
+  await loadCaptureControl();
   const res = await send('GET_STATE');
   showEpisode(res.state, res.error);
   showRaw(res.rawSession, res.error);
@@ -184,16 +220,17 @@ async function exportRaw() {
 }
 
 async function loadEpisodeStateOnly() {
-  const res = await send('GET_STATE');
+  const res = await sendLightEpisode('GET_STATE');
   if (!res?.ok) throw new Error(res?.error || 'episode_state_load_failed');
   return res.state;
 }
 
 async function stopWithOutcome(status) {
+  statusEl.textContent = `Finalizing episode as ${status}...`;
   if (status === 'success' && EpisodeStopSettlement) {
     const settled = await EpisodeStopSettlement.waitForSettlement(loadEpisodeStateOnly, {
-      timeoutMs: 1800,
-      pollMs: 60
+      timeoutMs: 2500,
+      pollMs: 200
     });
     if (settled?.state) showEpisode(settled.state);
   }
@@ -214,6 +251,9 @@ document.getElementById('previewRaw').addEventListener('click', () => previewRaw
 document.getElementById('exportRaw').addEventListener('click', () => exportRaw().catch(error => showRaw(null, String(error?.message || error))));
 document.getElementById('refreshSessions').addEventListener('click', () => loadSessions().catch(error => { sessionsEl.textContent = String(error?.message || error); }));
 document.getElementById('refreshSocket').addEventListener('click', () => loadSocket().catch(error => showSocket(null, String(error?.message || error))));
+captureToggleEl.addEventListener('click', () => toggleCaptureControl().catch(error => {
+  captureControlStatusEl.textContent = `Capture control error: ${String(error?.message || error)}`;
+}));
 
 document.getElementById('start').addEventListener('click', async () => {
   const instruction = taskEl.value.trim();
@@ -223,9 +263,9 @@ document.getElementById('start').addEventListener('click', async () => {
   showRaw(raw?.session, raw?.error);
 });
 
-document.getElementById('success').addEventListener('click', () => stopWithOutcome('success'));
-document.getElementById('failed').addEventListener('click', () => stopWithOutcome('failed'));
-document.getElementById('stop').addEventListener('click', () => stopWithOutcome('stopped'));
+document.getElementById('success').addEventListener('click', () => stopWithOutcome('success').catch(error => { statusEl.textContent = `Error: ${String(error?.message || error)}`; }));
+document.getElementById('failed').addEventListener('click', () => stopWithOutcome('failed').catch(error => { statusEl.textContent = `Error: ${String(error?.message || error)}`; }));
+document.getElementById('stop').addEventListener('click', () => stopWithOutcome('stopped').catch(error => { statusEl.textContent = `Error: ${String(error?.message || error)}`; }));
 
 refresh().catch(error => {
   const text = String(error?.message || error);
