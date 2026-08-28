@@ -59,6 +59,7 @@ call :run "Goal Checker" node script\checks\goal_checker.js
 call :run "Bounded one-step replan" node script\checks\one_step_replan.js
 call :run "Tab lifecycle Agent integration" node script\checks\tab_lifecycle_agent_integration.js
 call :run "Explicit action verb precedence" node script\checks\explicit_action_intent.js
+call :run "Target ambiguity safety guard" node script\checks\target_ambiguity_guard.js
 call :run "Offline frozen Strategy decisions" node script\offline_strategy_fresh_unseen_decision_gate.js --model "%MODEL%"
 
 echo.
