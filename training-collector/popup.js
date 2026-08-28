@@ -99,6 +99,7 @@ function showPipeline(socket, error) {
   const counts = pipeline.counts || {};
   const candidate = pipeline.candidate || null;
   const baseReady = pipeline.baseDatasetConfigured === true && pipeline.baseModelConfigured === true;
+  const lastReasons = Array.isArray(pipeline.lastResult?.reasons) ? pipeline.lastResult.reasons.filter(Boolean) : [];
   pipelineStatusEl.textContent = [
     `Pipeline: ${pipeline.enabled === false ? 'DISABLED' : 'ON'}`,
     `Extension review outbox: ${outbox}`,
@@ -111,6 +112,7 @@ function showPipeline(socket, error) {
     candidate ? `Protection: ${candidate.protectionPass ? 'PASS' : (candidate.status === 'candidate-awaiting-runtime-protection' ? 'PENDING' : 'not passed')}` : null,
     'Production promotion: MANUAL ONLY',
     pipeline.lastResult?.status ? `Last result: ${pipeline.lastResult.status}${pipeline.lastResult.episodeId ? ` · ${pipeline.lastResult.episodeId}` : ''}` : null,
+    lastReasons.length ? `Last reasons: ${lastReasons.join(', ')}` : null,
     pipeline.lastError ? `Last error: ${pipeline.lastError}` : null
   ].filter(Boolean).join('\n');
 }
