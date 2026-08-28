@@ -28,10 +28,22 @@ const action = ActionNormalizer.normalize({
   repeat: false,
   t: 125
 });
-assert.equal(action.actionVersion, '0.2.0');
+assert.equal(action.actionVersion, '0.3.0');
 assert.equal(action.kind, 'text-key');
 assert.equal(action.operation, 'backspace');
 assert.equal(action.targetRef, 'e12');
+
+const dragAction = ActionNormalizer.normalize({
+  kind: 'drag',
+  targetRef: 'e20',
+  destinationRef: 'e21',
+  button: 0,
+  t: 150
+});
+assert.equal(dragAction.actionVersion, '0.3.0');
+assert.equal(dragAction.kind, 'drag');
+assert.equal(dragAction.targetRef, 'e20');
+assert.equal(dragAction.destinationRef, 'e21');
 
 const before = {
   pageInstanceId: 'page-1',
@@ -70,6 +82,7 @@ const strategyAfter = StrategyEpisodeView.sanitizeSnapshot(after, {
   capturedAt: '2026-08-25T00:00:00.100Z'
 });
 assert.equal(strategyBefore.url, 'https://example.com/search');
+assert.equal(strategyBefore.strategyObservationVersion, '0.2.0');
 assert.equal(strategyBefore.interactiveElements[0].selector, undefined);
 assert.equal(strategyAfter.interactiveElements.length, 2);
 
