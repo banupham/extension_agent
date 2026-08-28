@@ -9,8 +9,13 @@ const { buildMediaCdpPlan } = require('../execution/media_plan.js');
 const { buildWaitAndObservePlan } = require('../execution/wait_plan.js');
 const { buildTypeTextCdpPlan } = require('../execution/text_plan.js');
 const { buildSubmitCdpPlan } = require('../execution/submit_plan.js');
+const {
+  resolveTargetTrackingMode,
+  withTargetTrackingBehavior,
+  withTargetTrackingPlan
+} = require('../execution/target_tracking_variant.js');
 
-const BRIDGE_VERSION = '0.3.0';
+const BRIDGE_VERSION = '0.3.1';
 const BROWSER_ACTION_VERSION = '0.1.0';
 const TRANSIENT_REDACTION = '[transient-redacted]';
 const TAB_LIFECYCLE_ACTION_TYPES = new Set(['switchTab', 'openNewTab', 'closeTab']);
@@ -324,12 +329,21 @@ async function runOneAction(options) {
   const destination = destinationRef ? findTarget(before, destinationRef) : null;
   if (destinationRef && !destination) throw new Error('destination_ref_not_in_observation');
 
-  const behavior = sampledBehavior({
+  const sampled = sampledBehavior({
     baseline: options.baseline || null,
     mappedAction: executionMappedAction,
     target,
     rng: options.rng || Math.random
   });
+  const targetTracking = resolveTargetTrackingMode({
+    mappedAction: executionMappedAction,
+    target,
+    observation: before,
+    requested: options?.targetTracking || 'auto'
+  });
+  const behavior = targetTracking === 'follow-live'
+    ? withTargetTrackingBehavior(sampled, targetTracking)
+    : sampled;
 
   if (TAB_LIFECYCLE_ACTION_TYPES.has(executionMappedAction.type)) {
     if (typeof runtime.executeBrowserAction !== 'function') throw new Error('runtime executeBrowserAction required');
@@ -380,7 +394,7 @@ async function runOneAction(options) {
     viewportCenter: pointerStartFor(before, null),
     rng: options.rng || Math.random
   };
-  const executionCdpPlan = executionMappedAction.type === 'drag'
+  const baseExecutionCdpPlan = executionMappedAction.type === 'drag'
     ? buildDragCdpPlan({ mappedAction: executionMappedAction, behavior, source: target, destination, context })
     : executionMappedAction.type === 'typeText'
       ? buildTypeTextCdpPlan({ mappedAction: executionMappedAction, behavior, target, context })
@@ -393,6 +407,9 @@ async function runOneAction(options) {
             : executionMappedAction.type === 'waitAndObserve'
               ? buildWaitAndObservePlan({ mappedAction: executionMappedAction, behavior })
               : buildCdpPlan({ mappedAction: executionMappedAction, behavior, target, context });
+  const executionCdpPlan = targetTracking === 'follow-live'
+    ? withTargetTrackingPlan(baseExecutionCdpPlan, behavior, target)
+    : baseExecutionCdpPlan;
 
   const rawExecution = await runtime.executePlan({
     observationId: before.observationId,
