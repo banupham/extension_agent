@@ -3,9 +3,13 @@
 const fs = require('fs');
 const path = require('path');
 const { evaluateGoal } = require('../../control-center/manager/goal/goal_checker.js');
-const { SCENARIOS, successTitleFor } = require('../../control-center/script/teaching_lab_server.js');
+const {
+  SCENARIOS,
+  successTitleFor,
+  successSignalLabelFor
+} = require('../../control-center/script/teaching_lab_server.js');
 
-const MACHINE_TRAINING_ELIGIBILITY_VERSION = '0.2.1';
+const MACHINE_TRAINING_ELIGIBILITY_VERSION = '0.2.2';
 const MACHINE_STATUSES = Object.freeze(['accept', 'quarantine', 'reject']);
 
 function readJson(file) {
@@ -33,11 +37,21 @@ function normalizeText(value) {
     .trim();
 }
 
+function observationElements(observation) {
+  const direct = Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : [];
+  const nested = Array.isArray(observation?.page?.interactiveElements) ? observation.page.interactiveElements : [];
+  return direct.length ? direct : nested;
+}
+
+function observationHasElementLabel(observation, expectedLabel) {
+  const expected = String(expectedLabel || '').trim();
+  if (!expected) return false;
+  return observationElements(observation).some(element => String(element?.label || '').trim() === expected);
+}
+
 function observationFingerprint(observation) {
   if (!observation || typeof observation !== 'object') return null;
-  const direct = Array.isArray(observation.interactiveElements) ? observation.interactiveElements : [];
-  const nested = Array.isArray(observation?.page?.interactiveElements) ? observation.page.interactiveElements : [];
-  const elements = (direct.length ? direct : nested).map(element => ({
+  const elements = observationElements(observation).map(element => ({
     label: typeof element?.label === 'string' ? element.label.trim().toLowerCase() : null,
     role: typeof element?.role === 'string' ? element.role.trim().toLowerCase() : null,
     tag: typeof element?.tag === 'string' ? element.tag.trim().toLowerCase() : null,
@@ -115,7 +129,8 @@ function declaredMachineSignalVerification(review) {
   const actualUrl = String(after?.url || after?.page?.url || '');
   const signals = after?.pageSignals || after?.page?.pageSignals || {};
   let matched = false;
-  if (typeof expected.title === 'string') matched = actualTitle === expected.title;
+  if (typeof expected.elementLabel === 'string') matched = observationHasElementLabel(after, expected.elementLabel);
+  else if (typeof expected.title === 'string') matched = actualTitle === expected.title;
   else if (typeof expected.titleIncludes === 'string') matched = actualTitle.includes(expected.titleIncludes);
   else if (typeof expected.urlIncludes === 'string') matched = actualUrl.includes(expected.urlIncludes);
   else if (typeof expected.pageSignalKey === 'string') {
@@ -175,16 +190,22 @@ function teachingLabOutcomeVerification(review) {
       reasons: ['teaching_lab_ambiguity_is_not_positive_action_training']
     };
   }
+  const expectedSemanticSignal = successSignalLabelFor(scenarioId);
+  const semanticSignalMatched = observationHasElementLabel(after, expectedSemanticSignal);
   const expectedTitle = successTitleFor(scenarioId);
   const actualTitle = String(after?.title || after?.page?.title || '');
-  const matched = actualTitle === expectedTitle;
+  const titleMatched = actualTitle === expectedTitle;
+  const matched = semanticSignalMatched || titleMatched;
   return {
     status: matched ? 'verified' : 'contradicted',
     source: 'teaching-lab-deterministic-signal',
     confidence: 1,
     scenarioId,
+    expectedSemanticSignal,
+    semanticSignalMatched,
     expectedTitle,
     actualTitle,
+    titleMatched,
     reasons: [matched ? 'teaching_lab_success_signal_satisfied' : 'teaching_lab_success_signal_not_satisfied']
   };
 }
@@ -370,6 +391,8 @@ module.exports = {
   resolveFile,
   byEpisode,
   normalizeText,
+  observationElements,
+  observationHasElementLabel,
   observationFingerprint,
   semanticStateChanged,
   explicitSuccessCriteriaVerification,
