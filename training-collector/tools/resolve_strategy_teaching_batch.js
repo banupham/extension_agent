@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const Base = require('./resolve_strategy_review_ambiguity.js');
 
-const TEACHING_BATCH_RESOLVER_VERSION = '0.3.0';
+const TEACHING_BATCH_RESOLVER_VERSION = '0.4.0';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -62,12 +62,46 @@ function taskDeclaredText(task) {
   return null;
 }
 
+function taskDeclaredReplacement(task) {
+  const instruction = cleanText(task?.instruction, 500);
+  if (!instruction || instructionIsSensitive(instruction)) return null;
+  const patterns = [
+    /(?:thay|đổi)\s+.+?\s+(?:thành|bằng)\s+(.+?)(?:[.!?;]|$)/i,
+    /(?:replace|change)\s+.+?\s+(?:with|to)\s+(.+?)(?:[.!?;]|$)/i
+  ];
+  for (const pattern of patterns) {
+    const text = stripDeclaredText(instruction.match(pattern)?.[1]);
+    if (text) return text;
+  }
+  return null;
+}
+
+function taskDeclaredClearThenText(task) {
+  const instruction = cleanText(task?.instruction, 500);
+  if (!instruction || instructionIsSensitive(instruction)) return null;
+  const patterns = [
+    /(?:xóa|xoá)\s+.+?\s+(?:rồi|sau đó)\s+(?:nhập|gõ)\s+(.+?)(?:[.!?;]|$)/i,
+    /clear\s+.+?\s+(?:then|and then)\s+(?:type|enter|fill|write)\s+(.+?)(?:[.!?;]|$)/i
+  ];
+  for (const pattern of patterns) {
+    const text = stripDeclaredText(instruction.match(pattern)?.[1]);
+    if (text) return text;
+  }
+  return null;
+}
+
+function taskTextPlan(task) {
+  const replacement = taskDeclaredReplacement(task);
+  if (replacement) return { mode: 'replaceText', text: replacement };
+  const clearedText = taskDeclaredClearThenText(task);
+  if (clearedText) return { mode: 'clearThenType', text: clearedText };
+  const text = taskDeclaredText(task);
+  return text ? { mode: 'typeText', text } : null;
+}
+
 function semanticTargetForTransition(transition) {
   const found = Base.targetForTransition(transition || {});
-  return {
-    ref: found.ref,
-    target: Base.semanticTarget(found.element)
-  };
+  return { ref: found.ref, target: Base.semanticTarget(found.element) };
 }
 
 function noise(transitionId, hint, target, reasonCode) {
@@ -146,12 +180,46 @@ function laterTaskAlignedAction(transitions, index, task) {
   return false;
 }
 
+function rawModifiers(raw = {}) {
+  const modifiers = raw.modifiers && typeof raw.modifiers === 'object' ? raw.modifiers : {};
+  return {
+    alt: !!modifiers.alt,
+    ctrl: !!modifiers.ctrl,
+    meta: !!modifiers.meta,
+    shift: !!modifiers.shift
+  };
+}
+
+function keyboardControl(rawAction = {}) {
+  const candidates = [rawAction.key, rawAction.code, rawAction.operation]
+    .filter(value => typeof value === 'string')
+    .map(value => value.toLowerCase());
+  if (candidates.some(value => value.includes('enter'))) return 'Enter';
+  if (candidates.some(value => value.includes('escape') || value.includes('esc'))) return 'Escape';
+  if (candidates.some(value => value.includes('tab'))) return 'Tab';
+  return null;
+}
+
+function isTypedCharacter(rawAction = {}) {
+  if (String(rawAction.kind || '').toLowerCase() !== 'text-key') return false;
+  if (String(rawAction.operation || '').toLowerCase() !== 'type-char') return false;
+  const m = rawModifiers(rawAction);
+  return !m.ctrl && !m.meta && !m.alt;
+}
+
+function commandSelectAll(rawAction = {}) {
+  if (String(rawAction.kind || '').toLowerCase() !== 'text-key') return false;
+  if (String(rawAction.operation || '').toLowerCase() !== 'type-char') return false;
+  const m = rawModifiers(rawAction);
+  return m.ctrl || m.meta;
+}
+
 function typeCharGroups(transitions) {
   const groups = [];
   let current = null;
   for (const transition of transitions) {
     const raw = transition?.rawAction || {};
-    const isChar = String(raw.kind || '').toLowerCase() === 'text-key' && String(raw.operation || '').toLowerCase() === 'type-char';
+    const isChar = isTypedCharacter(raw);
     const ref = typeof raw.targetRef === 'string' ? raw.targetRef : null;
     if (!isChar) {
       current = null;
@@ -181,16 +249,6 @@ function sameEditableTarget(left, right, leftRef = null, rightRef = null) {
   return !!leftKey && leftKey === semanticTargetKey(right);
 }
 
-function keyboardControl(rawAction = {}) {
-  const candidates = [rawAction.key, rawAction.code, rawAction.operation]
-    .filter(value => typeof value === 'string')
-    .map(value => value.toLowerCase());
-  if (candidates.some(value => value.includes('enter'))) return 'Enter';
-  if (candidates.some(value => value.includes('escape') || value.includes('esc'))) return 'Escape';
-  if (candidates.some(value => value.includes('tab'))) return 'Tab';
-  return null;
-}
-
 function taskRequestsSubmit(task) {
   return Base.taskMentions(task || {}, [
     'submit', 'search', 'send', 'go', 'enter',
@@ -216,7 +274,9 @@ function semanticElementState(element) {
     enabled: element.enabled !== false,
     visible: element.visible !== false && element.rendered !== false,
     checked: typeof element.checked === 'boolean' ? element.checked : null,
-    selected: typeof element.selected === 'boolean' ? element.selected : null
+    selected: typeof element.selected === 'boolean' ? element.selected : null,
+    selectedIndex: Number.isInteger(Number(element.selectedIndex)) ? Number(element.selectedIndex) : null,
+    rangeValue: Number.isFinite(Number(element.rangeValue)) ? Number(element.rangeValue) : null
   };
 }
 
@@ -244,7 +304,7 @@ function textEntryMechanicalKey(rawAction = {}) {
   const kind = String(rawAction.kind || '').toLowerCase();
   if (kind !== 'text-key' || keyboardControl(rawAction)) return false;
   const operation = String(rawAction.operation || '').toLowerCase();
-  return ['type-char', 'backspace', 'delete', 'other-key'].includes(operation);
+  return ['backspace', 'delete', 'other-key'].includes(operation) || commandSelectAll(rawAction);
 }
 
 function sequenceCompatibleNoise(transition, target, ref) {
@@ -279,14 +339,14 @@ function competingSubmitActionAfter(transitions, enterIndex, task) {
 }
 
 function genericTextFormSequence(transitions, task, sourceReview) {
-  const declaredText = taskDeclaredText(task || {});
-  if (!declaredText || !taskRequestsSubmit(task || {}) || !successfulFinalOutcome(sourceReview)) return null;
+  const plan = taskTextPlan(task || {});
+  if (!plan || !successfulFinalOutcome(sourceReview)) return null;
 
   const chars = [];
   for (let index = 0; index < transitions.length; index += 1) {
     const transition = transitions[index];
     const raw = transition?.rawAction || {};
-    if (String(raw.kind || '').toLowerCase() !== 'text-key' || String(raw.operation || '').toLowerCase() !== 'type-char') continue;
+    if (!isTypedCharacter(raw)) continue;
     const found = semanticTargetForTransition(transition);
     if (!capturedSuccess(transition) || found.target?.editable !== true || !found.ref) return null;
     chars.push({ index, transition, ...found });
@@ -302,50 +362,80 @@ function genericTextFormSequence(transitions, task, sourceReview) {
     startIndex = index;
   }
 
+  const prelude = [];
+  for (let index = startIndex; index < anchor.index; index += 1) prelude.push({ index, transition: transitions[index] });
+  const selectAllItem = prelude.find(item => commandSelectAll(item.transition?.rawAction || {})) || null;
+  const deleteItems = prelude.filter(item => ['backspace', 'delete'].includes(String(item.transition?.rawAction?.operation || '').toLowerCase()));
+  if (plan.mode === 'replaceText' && !selectAllItem && !deleteItems.length) return null;
+  if (plan.mode === 'clearThenType' && !deleteItems.length) return null;
+
   const lastChar = chars[chars.length - 1];
   let enter = null;
   for (let index = lastChar.index + 1; index < transitions.length; index += 1) {
     const transition = transitions[index];
     const raw = transition?.rawAction || {};
-    const kind = String(raw.kind || '').toLowerCase();
     const found = semanticTargetForTransition(transition);
-    if (kind === 'text-key' && keyboardControl(raw) === 'Enter') {
+    if (String(raw.kind || '').toLowerCase() === 'text-key' && keyboardControl(raw) === 'Enter') {
       if (!capturedSuccess(transition) || !sameEditableTarget(found.target, anchor.target, found.ref, anchor.ref)) return null;
       enter = { index, transition, ...found };
       break;
     }
-    if (!sequenceCompatibleNoise(transition, anchor.target, anchor.ref)) return null;
-  }
-  if (!enter) return null;
-
-  for (let index = startIndex; index <= enter.index; index += 1) {
-    const transition = transitions[index];
-    if (transition === enter.transition) continue;
-    if (!sequenceCompatibleNoise(transition, anchor.target, anchor.ref)) return null;
+    if (!sequenceCompatibleNoise(transition, anchor.target, anchor.ref)) break;
   }
 
-  const pageOrSemanticChange = observableSemanticStateChanged(enter.transition) ||
-    normalizedPage(transitions[startIndex]?.strategyObservationBefore).url !== normalizedPage(enter.transition?.strategyObservationAfter).url;
-  const competing = competingSubmitActionAfter(transitions, enter.index, task || {});
+  const wantsSubmit = taskRequestsSubmit(task || {});
   const enterExplicit = taskExplicitlyRequestsEnter(task || {});
-  const enterOutcomeSupported = pageOrSemanticChange || enterExplicit || competing.length === 0;
-  const outcomeSupported = capturedSuccess(enter.transition) && successfulFinalOutcome(sourceReview) && enterOutcomeSupported;
-  if (!outcomeSupported) return null;
+  let competing = [];
+  let pageOrSemanticChange = false;
+  if (enter) {
+    pageOrSemanticChange = observableSemanticStateChanged(enter.transition) ||
+      normalizedPage(transitions[startIndex]?.strategyObservationBefore).url !== normalizedPage(enter.transition?.strategyObservationAfter).url;
+    competing = competingSubmitActionAfter(transitions, enter.index, task || {});
+    if (wantsSubmit) {
+      const enterOutcomeSupported = pageOrSemanticChange || enterExplicit || competing.length === 0;
+      if (!enterOutcomeSupported) return null;
+    }
+  } else if (enterExplicit) {
+    return null;
+  }
 
   const charIds = chars.map(item => String(item.transition?.transitionId || ''));
+  const firstTypeTransitionId = charIds[0];
   const noiseIds = new Set();
   const postSubmitNoiseTransitionIds = new Set();
-  for (let index = startIndex; index <= enter.index; index += 1) {
+  const semanticActionByTransition = new Map();
+
+  if (plan.mode === 'replaceText') {
+    semanticActionByTransition.set(firstTypeTransitionId, Base.safeAction('replaceText', anchor.ref, { text: plan.text }, 'task-declared-semantic-replace-text'));
+  } else {
+    semanticActionByTransition.set(firstTypeTransitionId, Base.safeAction('typeText', anchor.ref, { text: plan.text }, 'task-declared-semantic-text-entry'));
+  }
+
+  let clearTransitionId = '';
+  if (plan.mode === 'clearThenType') {
+    clearTransitionId = String(deleteItems[0]?.transition?.transitionId || '');
+    if (!clearTransitionId) return null;
+    semanticActionByTransition.set(clearTransitionId, Base.safeAction('clear', anchor.ref, {}, 'task-declared-semantic-clear'));
+  }
+
+  for (let index = startIndex; index <= lastChar.index; index += 1) {
     const transition = transitions[index];
     const id = String(transition?.transitionId || '');
-    if (!id || id === charIds[0] || id === String(enter.transition?.transitionId || '')) continue;
+    if (!id || semanticActionByTransition.has(id)) continue;
     const found = semanticTargetForTransition(transition);
-    if (sequenceCompatibleNoise(transition, anchor.target, anchor.ref) && sameEditableTarget(found.target, anchor.target, found.ref, anchor.ref)) {
+    if (sameEditableTarget(found.target, anchor.target, found.ref, anchor.ref) &&
+        (sequenceCompatibleNoise(transition, anchor.target, anchor.ref) || charIds.includes(id))) {
       noiseIds.add(id);
     }
   }
 
-  if (enterExplicit) {
+  let submitTransitionId = '';
+  if (wantsSubmit && enter) {
+    submitTransitionId = String(enter.transition?.transitionId || '');
+    semanticActionByTransition.set(submitTransitionId, Base.safeAction('submit', anchor.ref, {}, 'semantic-submit-via-enter'));
+  }
+
+  if (enterExplicit && enter) {
     for (const item of competing) {
       const kind = String(item.transition?.rawAction?.kind || '').toLowerCase();
       if (!['click', 'dom-click'].includes(kind)) continue;
@@ -359,18 +449,21 @@ function genericTextFormSequence(transitions, task, sourceReview) {
   }
 
   return {
-    declaredText,
+    mode: plan.mode,
+    declaredText: plan.text,
     targetRef: anchor.ref,
     target: anchor.target,
     startTransitionId: String(transitions[startIndex]?.transitionId || ''),
-    firstTypeTransitionId: charIds[0],
+    firstTypeTransitionId,
+    clearTransitionId,
     charTransitionIds: new Set(charIds),
-    submitTransitionId: String(enter.transition?.transitionId || ''),
+    submitTransitionId,
     noiseTransitionIds: noiseIds,
     postSubmitNoiseTransitionIds,
+    semanticActionByTransition,
     outcomeEvidence: {
       finalOutcomeSuccess: true,
-      enterActionSucceeded: true,
+      enterActionSucceeded: enter ? true : null,
       observableSemanticStateChanged: pageOrSemanticChange,
       taskExplicitlyRequestsEnter: enterExplicit,
       competingPostEnterSubmitActionCount: competing.length
@@ -392,7 +485,7 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
   const transitions = Array.isArray(sourceReview?.transitions) ? sourceReview.transitions : [];
   const byScore = scoreMap(triageItem);
   const byProposal = proposalMap(packItem);
-  const declaredText = taskDeclaredText(packItem?.task || sourceReview?.task || {});
+  const textPlan = taskTextPlan(packItem?.task || sourceReview?.task || {});
   const textSequence = genericTextFormSequence(transitions, packItem?.task || sourceReview?.task || {}, sourceReview);
   const resolutions = [];
 
@@ -409,9 +502,20 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
     const actionCapturedSuccess = proposal?.evidence?.actionSucceededCaptured !== false && capturedSuccess(transition);
 
     if (!actionCapturedSuccess) {
-      if (score?.fastLabelReviewCandidate !== true) {
-        resolutions.push(unresolved(transitionId, hint, target, 'captured_action_failure_requires_human_review'));
-      }
+      if (score?.fastLabelReviewCandidate !== true) resolutions.push(unresolved(transitionId, hint, target, 'captured_action_failure_requires_human_review'));
+      continue;
+    }
+
+    const sequenceAction = textSequence?.semanticActionByTransition.get(transitionId) || null;
+    if (sequenceAction) {
+      const reason = sequenceAction.type === 'clear'
+        ? 'task_declared_clear_collapsed_from_editing_mechanics'
+        : sequenceAction.type === 'replaceText'
+          ? 'task_declared_replace_collapsed_from_editing_sequence'
+          : sequenceAction.type === 'submit'
+            ? 'enter_on_continuous_editable_target_with_successful_task_outcome'
+            : 'per_character_capture_collapsed_to_task_declared_text_action';
+      resolutions.push(resolved(transitionId, hint || 'keyboard-action-review-required', sequenceAction, target, reason));
       continue;
     }
 
@@ -426,7 +530,9 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
               ? 'text_change_capture_provenance_how_not_strategy'
               : kind === 'text-key' && ['backspace', 'delete', 'other-key'].includes(operation)
                 ? 'text_entry_editing_mechanic_how_not_strategy'
-                : 'per_character_capture_collapsed_into_single_text_action';
+                : commandSelectAll(raw)
+                  ? 'text_entry_editing_mechanic_how_not_strategy'
+                  : 'per_character_capture_collapsed_into_single_text_action';
       resolutions.push(noise(transitionId, hint || (kind === 'text-key' ? 'keyboard-action-review-required' : kind), target, reason));
       continue;
     }
@@ -436,7 +542,7 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
       continue;
     }
 
-    if ((kind === 'click' || kind === 'dom-click') && target?.editable === true && declaredText) {
+    if ((kind === 'click' || kind === 'dom-click') && target?.editable === true && textPlan) {
       resolutions.push(noise(transitionId, hint || 'click', target, 'editable_target_click_focus_acquisition_how_not_strategy'));
       continue;
     }
@@ -446,17 +552,8 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
       continue;
     }
 
-    if (kind === 'text-key' && operation === 'type-char') {
-      if (!textSequence || !textSequence.charTransitionIds.has(transitionId) || target?.editable !== true || !ref) {
-        resolutions.push(unresolved(transitionId, hint || 'keyboard-action-review-required', target, 'text_entry_sequence_evidence_insufficient', 'typeText'));
-        continue;
-      }
-      if (textSequence.firstTypeTransitionId === transitionId) {
-        const action = Base.safeAction('typeText', ref, { text: textSequence.declaredText }, 'task-declared-semantic-text-entry');
-        resolutions.push(resolved(transitionId, hint || 'keyboard-action-review-required', action, target, 'per_character_capture_collapsed_to_task_declared_text_action'));
-      } else {
-        resolutions.push(noise(transitionId, hint || 'keyboard-action-review-required', target, 'per_character_capture_collapsed_into_single_text_action'));
-      }
+    if (kind === 'text-key' && isTypedCharacter(raw)) {
+      resolutions.push(unresolved(transitionId, hint || 'keyboard-action-review-required', target, 'text_entry_sequence_evidence_insufficient', textPlan?.mode === 'replaceText' ? 'replaceText' : 'typeText'));
       continue;
     }
 
@@ -465,22 +562,8 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
       continue;
     }
 
-    if (kind === 'text-key' && keyboardControl(raw) === 'Enter' && target?.editable === true && taskRequestsSubmit(packItem?.task || sourceReview?.task || {})) {
-      if (textSequence?.submitTransitionId === transitionId && sameEditableTarget(target, textSequence.target, ref, textSequence.targetRef)) {
-        const action = Base.safeAction('submit', ref, {}, 'semantic-submit-via-enter');
-        resolutions.push(resolved(transitionId, hint || 'keyboard-action-review-required', action, target, 'enter_on_continuous_editable_target_with_successful_task_outcome'));
-      } else {
-        resolutions.push(unresolved(transitionId, hint || 'keyboard-action-review-required', target, 'semantic_text_submit_sequence_evidence_insufficient', 'submit'));
-      }
-      continue;
-    }
-
     if (score?.fastLabelReviewCandidate === true) continue;
-    resolutions.push(Base.resolveAmbiguousTransition({
-      proposal,
-      transition,
-      task: packItem?.task || sourceReview?.task || {}
-    }));
+    resolutions.push(Base.resolveAmbiguousTransition({ proposal, transition, task: packItem?.task || sourceReview?.task || {} }));
   }
 
   const ambiguousIds = new Set((Array.isArray(triageItem?.transitions) ? triageItem.transitions : [])
@@ -509,22 +592,17 @@ function resolveTeachingItem(packItem, triageItem, sourceReview) {
 
 function markdownFor(result) {
   const lines = [
-    '# Strategy teaching-batch resolution',
-    '',
+    '# Strategy teaching-batch resolution', '',
     `Episodes: ${result.episodeCount}`,
     `Ambiguous transitions: ${result.ambiguousTransitionCount}`,
     `Resolved semantic actions: ${result.resolvedSemanticActionCount}`,
     `Capture noise: ${result.captureNoiseCount}`,
     `Still needs human review: ${result.unresolvedHumanReviewCount}`,
-    `Episodes fully resolved as review aids: ${result.fullyResolvedEpisodeCount}`,
-    '',
-    '> Review aids only. Nothing here is human verification or automatic Strategy training eligibility.',
-    ''
+    `Episodes fully resolved as review aids: ${result.fullyResolvedEpisodeCount}`, '',
+    '> Review aids only. Nothing here is human verification or automatic Strategy training eligibility.', ''
   ];
   for (const item of result.items) {
-    lines.push(`## ${item.episodeId || '<unknown>'}`);
-    lines.push('');
-    lines.push(`Task: ${String(item.task?.instruction || '').replace(/\s+/g, ' ').trim()}`);
+    lines.push(`## ${item.episodeId || '<unknown>'}`, '', `Task: ${String(item.task?.instruction || '').replace(/\s+/g, ' ').trim()}`);
     for (const resolution of item.resolutions) {
       const target = resolution.semanticTarget?.label || resolution.semanticTarget?.role || resolution.semanticTarget?.tag || '<target missing>';
       const action = resolution.suggestedAction?.type || resolution.semanticActionType || '-';
@@ -540,8 +618,7 @@ function resolveTeachingBatch(packFile, triageFile, outputDir) {
   const fullTriage = path.resolve(triageFile);
   const pack = readJson(fullPack);
   const triage = readJson(fullTriage);
-  const triageByEpisode = new Map((Array.isArray(triage?.items) ? triage.items : [])
-    .map(item => [String(item?.episodeId || ''), item]));
+  const triageByEpisode = new Map((Array.isArray(triage?.items) ? triage.items : []).map(item => [String(item?.episodeId || ''), item]));
   const items = [];
 
   for (const packItem of (Array.isArray(pack?.items) ? pack.items : []).filter(item => item?.status === 'awaiting-human-review')) {
@@ -570,6 +647,9 @@ function resolveTeachingBatch(packFile, triageFile, outputDir) {
       sensitiveTaskTextRejected: true,
       rawKeyCharacterValuesNeverStored: true,
       perCharacterCaptureCollapsed: true,
+      typeOnlySequenceSupported: true,
+      replaceTextSequenceSupported: true,
+      clearThenTypeSequenceSupported: true,
       textEditingMechanicsCollapsedIntoHowNoise: true,
       semanticEditableTargetContinuityRequired: true,
       submitRequiresTaskIntentAndSuccessfulOutcomeEvidence: true,
@@ -610,9 +690,7 @@ function parseArgs(argv) {
 function main(argv = process.argv.slice(2)) {
   try {
     const args = parseArgs(argv);
-    if (!args.pack || !args.triage) {
-      throw new Error('Usage: node training-collector/tools/resolve_strategy_teaching_batch.js --pack <review-pack.json> --triage <triage.json> [--out dir]');
-    }
+    if (!args.pack || !args.triage) throw new Error('Usage: node training-collector/tools/resolve_strategy_teaching_batch.js --pack <review-pack.json> --triage <triage.json> [--out dir]');
     const resolvedBatch = resolveTeachingBatch(args.pack, args.triage, args.out);
     console.log(JSON.stringify({
       ok: true,
@@ -641,10 +719,16 @@ module.exports = {
   cleanText,
   instructionIsSensitive,
   taskDeclaredText,
+  taskDeclaredReplacement,
+  taskDeclaredClearThenText,
+  taskTextPlan,
   semanticTargetForTransition,
   noObservablePageChange,
   targetMatchesTask,
   laterTaskAlignedAction,
+  rawModifiers,
+  isTypedCharacter,
+  commandSelectAll,
   typeCharGroups,
   semanticTargetKey,
   sameEditableTarget,
