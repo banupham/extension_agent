@@ -2,7 +2,7 @@
 
 (function initStrategyEpisodeView(root) {
   const NS = root.TrainingCollectorV09 = root.TrainingCollectorV09 || {};
-  const STRATEGY_OBSERVATION_VERSION = '0.1.0';
+  const STRATEGY_OBSERVATION_VERSION = '0.2.0';
 
   function isObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -11,6 +11,11 @@
   function finiteOrZero(value) {
     const n = Number(value);
     return Number.isFinite(n) ? n : 0;
+  }
+
+  function finiteOrNull(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
   }
 
   function pageUrl(page) {
@@ -39,6 +44,18 @@
     };
   }
 
+  function safeMediaState(mediaState) {
+    if (!isObject(mediaState)) return null;
+    return {
+      paused: mediaState.paused === true,
+      muted: mediaState.muted === true,
+      volume: finiteOrNull(mediaState.volume),
+      currentTime: finiteOrNull(mediaState.currentTime),
+      duration: finiteOrNull(mediaState.duration),
+      playbackRate: finiteOrNull(mediaState.playbackRate)
+    };
+  }
+
   function safeElement(element) {
     if (!isObject(element)) return null;
     const ref = typeof element.ref === 'string' && element.ref.trim() ? element.ref.trim() : null;
@@ -49,6 +66,12 @@
       role: typeof element.role === 'string' ? element.role : null,
       label: typeof element.label === 'string' ? element.label : '',
       editable: element.editable === true,
+      inputType: typeof element.inputType === 'string' ? element.inputType : null,
+      draggable: element.draggable === true,
+      checked: typeof element.checked === 'boolean' ? element.checked : null,
+      selectedIndex: Number.isInteger(Number(element.selectedIndex)) ? Number(element.selectedIndex) : null,
+      rangeValue: finiteOrNull(element.rangeValue),
+      mediaState: safeMediaState(element.mediaState),
       enabled: element.enabled !== false,
       rendered: element.rendered === true,
       inViewport: element.inViewport === true,
@@ -91,7 +114,8 @@
         authorizationDataStored: false,
         selectorsStored: false,
         tabIdStored: false,
-        policyVersion: 'strategy-episode-view-0.1.0'
+        rawControlTextValuesStored: false,
+        policyVersion: 'strategy-episode-view-0.2.0'
       }
     };
   }
@@ -99,6 +123,8 @@
   NS.StrategyEpisodeView = {
     STRATEGY_OBSERVATION_VERSION,
     pageUrl,
+    safeRect,
+    safeMediaState,
     safeElement,
     sanitizeSnapshot
   };
