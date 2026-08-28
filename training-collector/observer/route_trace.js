@@ -8,6 +8,7 @@
     const observer = options.observer;
     const emitBatch = typeof options.emitBatch === 'function' ? options.emitBatch : () => {};
     const decorateEvent = typeof options.decorateEvent === 'function' ? options.decorateEvent : event => event;
+    const listeners = [];
     let timer = null;
     let running = false;
     let lastHref = String(location.href);
@@ -18,6 +19,7 @@
     }
 
     function emitRoute(reason = 'poll') {
+      if (!running) return;
       const observation = snapshot();
       if (!observation) return;
       const currentPage = observation.page || null;
@@ -44,10 +46,16 @@
     }
 
     function check(reason = 'poll') {
+      if (!running) return;
       const href = String(location.href);
       if (href === lastHref) return;
       lastHref = href;
       emitRoute(reason);
+    }
+
+    function on(target, type, handler, options) {
+      target.addEventListener(type, handler, options);
+      listeners.push(() => target.removeEventListener(type, handler, options));
     }
 
     function start(initialPage = null) {
@@ -55,8 +63,8 @@
       running = true;
       lastHref = String(location.href);
       lastPage = initialPage || snapshot()?.page || null;
-      addEventListener('popstate', () => check('popstate'), true);
-      addEventListener('hashchange', () => check('hashchange'), true);
+      on(globalThis, 'popstate', () => check('popstate'), true);
+      on(globalThis, 'hashchange', () => check('hashchange'), true);
       timer = setInterval(() => check('poll'), POLL_MS);
     }
 
@@ -64,6 +72,9 @@
       running = false;
       if (timer) clearInterval(timer);
       timer = null;
+      for (const remove of listeners.splice(0)) {
+        try { remove(); } catch {}
+      }
     }
 
     return { start, stop, check, get running() { return running; } };
