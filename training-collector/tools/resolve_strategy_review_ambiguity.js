@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { validateAgentAction } = require('../../control-center/manager/strategy/agent_action_contract.js');
 
-const AMBIGUITY_RESOLVER_VERSION = '0.2.0';
+const AMBIGUITY_RESOLVER_VERSION = '0.3.0';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -29,6 +29,13 @@ function taskMentions(task, candidates) {
   return candidates.some(word => set.has(word));
 }
 
+function taskRequestsDoubleClick(task) {
+  const tokens = new Set(words(task?.instruction));
+  return (tokens.has('double') && tokens.has('click')) ||
+    (tokens.has('nhap') && tokens.has('dup')) ||
+    (tokens.has('click') && tokens.has('dup'));
+}
+
 function transitionById(review, transitionId) {
   return (Array.isArray(review?.transitions) ? review.transitions : [])
     .find(item => String(item?.transitionId || '') === String(transitionId || '')) || null;
@@ -38,6 +45,30 @@ function observationElements(observation) {
   const direct = Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : [];
   const nested = Array.isArray(observation?.page?.interactiveElements) ? observation.page.interactiveElements : [];
   return direct.length ? direct : nested;
+}
+
+function observationFingerprint(observation) {
+  const elements = observationElements(observation).map(element => ({
+    ref: element?.ref || element?.elementRef || null,
+    label: typeof element?.label === 'string' ? element.label : null,
+    role: typeof element?.role === 'string' ? element.role : null,
+    tag: typeof element?.tag === 'string' ? element.tag : null,
+    visible: element?.visible !== false && element?.rendered !== false,
+    enabled: element?.enabled !== false,
+    checked: typeof element?.checked === 'boolean' ? element.checked : null,
+    selectedIndex: Number.isInteger(Number(element?.selectedIndex)) ? Number(element.selectedIndex) : null,
+    rangeValue: Number.isFinite(Number(element?.rangeValue)) ? Number(element.rangeValue) : null
+  })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return JSON.stringify({
+    url: String(observation?.url || observation?.page?.url || ''),
+    elements,
+    pageSignals: observation?.pageSignals || observation?.page?.pageSignals || {}
+  });
+}
+
+function observableSemanticStateChanged(transition) {
+  return observationFingerprint(transition?.strategyObservationBefore) !==
+    observationFingerprint(transition?.strategyObservationAfter);
 }
 
 function targetForTransition(transition) {
@@ -175,9 +206,21 @@ function resolveAmbiguousTransition({ proposal, transition, task }) {
 
   if (!capturedSuccess) return unresolved(transitionId, hint, target, 'captured_action_failure_requires_human_review');
 
+  if (hint === 'click' && taskRequestsDoubleClick(task)) {
+    return noise(transitionId, hint, target, 'component_click_of_explicit_double_click_how_not_strategy');
+  }
+
   if (hint === 'doubleClick') {
     if (!ref) return unresolved(transitionId, hint, target, 'double_click_target_required', 'doubleClick');
     return resolved(transitionId, hint, safeAction('doubleClick', ref, {}, 'captured-semantic-double-click'), target, 'captured_double_click_with_semantic_target');
+  }
+
+  if (hint === 'hoverAndObserve') {
+    if (!ref) return unresolved(transitionId, hint, target, 'hover_target_required', 'hoverAndObserve');
+    if (!observableSemanticStateChanged(transition)) {
+      return noise(transitionId, hint, target, 'incidental_hover_without_semantic_state_change_how_not_strategy');
+    }
+    return resolved(transitionId, hint, safeAction('hoverAndObserve', ref, {}, 'captured-hover-semantic-state-change'), target, 'hover_revealed_or_changed_semantic_state');
   }
 
   if (hint === 'drag') {
@@ -281,7 +324,7 @@ function markdownFor(result) {
     `Still needs human review: ${result.unresolvedHumanReviewCount}`,
     `Episodes fully resolved as review aids: ${result.fullyResolvedEpisodeCount}`,
     '',
-    '> Resolution outputs are review aids only. They never count as human verification or training eligibility.',
+    '> Resolution outputs are review aids only. They never count as human verification or automatic training eligibility.',
     ''
   ];
   for (const item of result.items) {
@@ -331,6 +374,8 @@ function resolveReviewPack(packFile, triageFile, outputDir) {
       noRawTextValuesStored: true,
       arbitraryKeyboardCharactersNeverStored: true,
       capturedDoubleClickCanResolveWithSemanticTarget: true,
+      componentClicksOfExplicitDoubleClickAreNoise: true,
+      capturedHoverRequiresObservableSemanticStateChange: true,
       capturedDragRequiresSourceAndDestinationRefs: true,
       incidentalScrollDefaultsToHowNoiseUnlessTaskExplicitlyRequestsScroll: true,
       textContentRequiresHumanReviewBecauseValueIsRedacted: true,
@@ -394,8 +439,11 @@ module.exports = {
   AMBIGUITY_RESOLVER_VERSION,
   words,
   taskMentions,
+  taskRequestsDoubleClick,
   transitionById,
   observationElements,
+  observationFingerprint,
+  observableSemanticStateChanged,
   targetForTransition,
   semanticTarget,
   safeAction,
