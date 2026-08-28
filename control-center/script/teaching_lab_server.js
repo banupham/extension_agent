@@ -1,17 +1,21 @@
 'use strict';
 
+const assert = require('assert');
 const http = require('http');
 const { URL } = require('url');
 
 const HOST = '127.0.0.1';
-const PORT = Number(process.env.TEACHING_LAB_PORT || 8791);
+const DEFAULT_PORT = 8791;
+const PORT = Number(process.env.TEACHING_LAB_PORT || DEFAULT_PORT);
 
 /*
  * Teaching Lab design rule:
- * - One server.
- * - One generic route shape: /teaching/<scenario-id>.
+ * - One server for human-teaching fixtures.
+ * - One generic route shape for core scenarios: /teaching/<scenario-id>.
  * - Scenarios are data, not separate handlers/files.
- * - Add a scenario only when it teaches a genuinely new capability.
+ * - Reusable compatibility fixtures live as routes here, not as new servers.
+ * - Add a scenario/file only when it teaches a genuinely new capability or
+ *   requires a genuinely different execution context.
  */
 const SCENARIOS = Object.freeze({
   TL01: {
@@ -145,6 +149,61 @@ function renderScenario(id, s) {
   return layout(id, s, '<p>Unsupported scenario type.</p>');
 }
 
+// Reused legacy Strategy teaching fixture. It stays available for coverage
+// contracts, but no longer owns a second HTTP server/file/port.
+function strategyTeachingFixtureHtml() {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Strategy Teaching Fixture</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:24px;line-height:1.4}
+    section{border:1px solid #aaa;border-radius:8px;padding:16px;margin:14px 0}
+    label{display:block;margin-bottom:8px;font-weight:600}
+    input,button{font-size:16px;padding:8px 10px;margin-right:8px}
+    #state{position:sticky;top:0;background:#fffbe6;border:1px solid #cc9;padding:10px;z-index:2}
+  </style>
+</head>
+<body>
+  <h1>Strategy Teaching Fixture</h1>
+  <div id="state">READY</div>
+  <section>
+    <h2>Topic search</h2>
+    <form id="topicForm">
+      <label for="topicInput">Topic Search</label>
+      <input id="topicInput" aria-label="Topic Search" autocomplete="off">
+      <button type="submit" aria-label="Topic Search Submit">Topic Search Submit</button>
+    </form>
+  </section>
+  <section>
+    <h2>Message composer</h2>
+    <form id="messageForm">
+      <label for="messageInput">Message Composer</label>
+      <input id="messageInput" aria-label="Message Composer" autocomplete="off">
+      <button type="submit" aria-label="Message Send">Message Send</button>
+    </form>
+  </section>
+  <section>
+    <h2>Independent click task</h2>
+    <button id="confirm" aria-label="Teaching Confirm">Teaching Confirm</button>
+  </section>
+  <script>
+    const state = document.getElementById('state');
+    document.getElementById('topicForm').addEventListener('submit', event => {
+      event.preventDefault(); state.textContent = 'TOPIC SUBMITTED'; document.body.dataset.lastAction = 'topic-submit';
+    });
+    document.getElementById('messageForm').addEventListener('submit', event => {
+      event.preventDefault(); state.textContent = 'MESSAGE SENT'; document.body.dataset.lastAction = 'message-submit';
+    });
+    document.getElementById('confirm').addEventListener('click', () => {
+      state.textContent = 'TEACHING CONFIRMED'; document.body.dataset.lastAction = 'teaching-confirm';
+    });
+  </script>
+</body>
+</html>`;
+}
+
 function indexPage() {
   const rows = Object.entries(SCENARIOS).map(([id, s]) => `
     <tr>
@@ -163,6 +222,7 @@ body{font:15px system-ui,sans-serif;margin:0;background:#f5f7fb;color:#172033}ma
 <h1>Teaching Lab Core</h1>
 <div class="rule">Chỉ giữ 5 năng lực nền tảng. Không thêm scenario chỉ để đổi label, thời gian hoặc vị trí.</div>
 <table><thead><tr><th>ID</th><th>Family</th><th>Task</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+<p><a href="/teaching/strategy-fixture">Strategy teaching compatibility fixture</a></p>
 </section></main></body></html>`;
 }
 
@@ -174,28 +234,65 @@ function sendHtml(res, status, html) {
   res.end(html);
 }
 
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
+function createServer() {
+  return http.createServer((req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
 
-  if (url.pathname === '/' || url.pathname === '/teaching') {
-    return sendHtml(res, 200, indexPage());
-  }
+    if (url.pathname === '/' || url.pathname === '/teaching') {
+      return sendHtml(res, 200, indexPage());
+    }
 
-  const match = url.pathname.match(/^\/teaching\/(TL\d{2})$/i);
-  if (match) {
-    const id = match[1].toUpperCase();
-    const scenario = SCENARIOS[id];
-    if (scenario) return sendHtml(res, 200, renderScenario(id, scenario));
-  }
+    if (url.pathname === '/teaching/strategy-fixture') {
+      return sendHtml(res, 200, strategyTeachingFixtureHtml());
+    }
 
-  return sendHtml(res, 404, '<h1>404</h1><p><a href="/teaching">Teaching Lab</a></p>');
-});
+    const match = url.pathname.match(/^\/teaching\/(TL\d{2})$/i);
+    if (match) {
+      const id = match[1].toUpperCase();
+      const scenario = SCENARIOS[id];
+      if (scenario) return sendHtml(res, 200, renderScenario(id, scenario));
+    }
 
-if (require.main === module) {
-  server.listen(PORT, HOST, () => {
-    console.log(`Teaching Lab listening on http://${HOST}:${PORT}/teaching`);
-    console.log(`Core scenarios: ${Object.keys(SCENARIOS).join(', ')}`);
+    return sendHtml(res, 404, '<h1>404</h1><p><a href="/teaching">Teaching Lab</a></p>');
   });
 }
 
-module.exports = { HOST, PORT, SCENARIOS, renderScenario, indexPage, server };
+function runSelfTest() {
+  assert.strictEqual(DEFAULT_PORT, 8791, 'Teaching Lab default port must remain isolated from Control Center');
+  assert.ok(SCENARIOS && typeof SCENARIOS === 'object', 'Teaching Lab must expose SCENARIOS');
+  assert.deepStrictEqual(Object.keys(SCENARIOS), ['TL01', 'TL02', 'TL03', 'TL04', 'TL05']);
+  assert.deepStrictEqual(Object.values(SCENARIOS).map(item => item.type), ['delay', 'replace', 'ambiguity', 'moving', 'recovery']);
+  const fixture = strategyTeachingFixtureHtml();
+  assert.ok(fixture.includes('aria-label="Topic Search"'));
+  assert.ok(fixture.includes('aria-label="Message Composer"'));
+  assert.ok(fixture.includes('aria-label="Teaching Confirm"'));
+  console.log(`Teaching Lab self-test: PASS (${Object.keys(SCENARIOS).length} core scenarios + shared strategy fixture on port ${DEFAULT_PORT})`);
+  return true;
+}
+
+const server = createServer();
+
+if (require.main === module) {
+  if (process.argv.includes('--self-test')) {
+    runSelfTest();
+  } else {
+    server.listen(PORT, HOST, () => {
+      console.log(`Teaching Lab listening on http://${HOST}:${PORT}/teaching`);
+      console.log(`Core scenarios: ${Object.keys(SCENARIOS).join(', ')}`);
+      console.log(`Strategy fixture: http://${HOST}:${PORT}/teaching/strategy-fixture`);
+    });
+  }
+}
+
+module.exports = {
+  HOST,
+  DEFAULT_PORT,
+  PORT,
+  SCENARIOS,
+  renderScenario,
+  strategyTeachingFixtureHtml,
+  indexPage,
+  createServer,
+  runSelfTest,
+  server
+};
