@@ -76,16 +76,22 @@ const runtime = {
     rng: () => 0.5,
     settleSleep: async () => {}
   });
-  assert.strictEqual(result.bridgeVersion, '0.3.0');
+  assert.strictEqual(result.bridgeVersion, '0.3.1');
   assert.strictEqual(brainSawObservationId, 'obs-1');
   assert.strictEqual(result.beforeObservationId, 'obs-1');
   assert.strictEqual(result.afterObservationId, 'obs-7');
   assert.strictEqual(result.decision.status, 'act');
   assert.strictEqual(result.mappedAction.type, 'click');
   assert.strictEqual(result.behavior.metadata.behaviorFamily, 'pointer-click');
+  assert.strictEqual(result.behavior.pointer.targetTracking, 'follow-live');
+  assert.strictEqual(result.behavior.metadata.targetTracking, 'follow-live');
   assert.strictEqual(result.cdpPlan.actionType, 'click');
+  assert.strictEqual(result.cdpPlan.targetTracking, 'follow-live');
+  assert.strictEqual(result.cdpPlan.trackingTarget.ref, 'e17');
+  assert.strictEqual(result.cdpPlan.trackingTarget.label, 'Like');
   assert.ok(result.cdpPlan.steps.length > 2);
   assert.strictEqual(executed.observationId, 'obs-1');
+  assert.strictEqual(executed.plan.targetTracking, 'follow-live');
   assert.strictEqual(result.after.title, 'DYNAMIC READY');
   assert.ok(result.after.interactiveElements.some(x => x.label === 'Dynamic Child'));
   assert.strictEqual(result.postActionObservation.mode, 'settled');
@@ -191,9 +197,6 @@ const runtime = {
   const waitRuntime = {
     async observe() {
       waitObserveCount += 1;
-      // First observation is the decision snapshot. The semantic change occurs only
-      // after 63 subsequent 80ms polls (~5.04s), proving waitAndObserve is not
-      // constrained by the ordinary 800ms post-action settle deadline.
       const ready = waitObserveCount >= 65;
       return {
         observationId: `wait-obs-${waitObserveCount}`,
