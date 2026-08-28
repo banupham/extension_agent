@@ -76,6 +76,48 @@ Xem:
 - `docs/TAB_LIFECYCLE_AGENT_INTEGRATION_2026-08-28.md`
 - repository `STATUS.md`
 
+## Support tooling — reuse first
+
+Các file trong `script/` không phải production runtime phải ưu tiên **tái sử dụng entrypoint hiện có**. Không tạo một server/diagnostic/contract mới chỉ vì có thêm một case test.
+
+### Fixture servers dùng chung
+
+```text
+script/page_cdp_test_lab.js       port 8091
+script/teaching_lab_server.js     port 8791
+```
+
+`page_cdp_test_lab.js` là regression fixture server dùng chung. Thêm regression UI mới dưới dạng route/fixture của server này khi cùng execution context. Các route hiện có gồm PAGE_CDP/form/media/frame/recovery, moving-target guard và semantic mission.
+
+`teaching_lab_server.js` là human-teaching fixture server dùng chung. Core scenario là dữ liệu trong `SCENARIOS`; Strategy teaching compatibility fixture cũng được phục vụ từ server này. Self-test chạy bằng:
+
+```bat
+node script\teaching_lab_server.js --self-test
+```
+
+### Regression runner dùng chung
+
+Cargo / Signal / Harbor dùng chung:
+
+```bat
+node script\native_regression_model_compat.js --gate <cargo|signal|harbor> --model <model.json>
+```
+
+Không tạo thêm `diagnose_<case>.js` nếu thông tin cần thiết có thể bổ sung bằng option/output của runner hoặc gate hiện có. Diagnostic một lần phải được bỏ sau khi lỗi đã có regression bảo vệ; lịch sử Git là nơi lưu bằng chứng source cũ.
+
+### Khi nào mới được tạo file mới
+
+Chỉ tạo module/entrypoint mới khi có ít nhất một lý do kiến trúc rõ ràng:
+
+- execution context khác (ví dụ background service worker so với content frame);
+- lifecycle độc lập cần start/stop riêng;
+- API/module được nhiều caller tái sử dụng;
+- capability mới không thể biểu diễn sạch bằng route/scenario/gate hiện có.
+
+Đổi label, delay, target, fixture HTML hoặc thêm một regression case **không phải** lý do tạo server/file mới.
+
+Không gộp production module chỉ để giảm số file nếu việc tách module phản ánh execution context hoặc trách nhiệm thực sự khác nhau.
+
 ## Chạy
 
 ```bat
