@@ -5,7 +5,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const {
-  adaptApprovedAnnotations
+  adaptApprovedAnnotations,
+  adaptMachineVerifiedAnnotations
 } = require('./build_strategy_dataset_from_approvals.js');
 const {
   parseJsonRecords,
@@ -23,7 +24,7 @@ const {
   evaluateBaselineReadiness
 } = require('./check_strategy_baseline_readiness.js');
 
-const INCREMENTAL_DATASET_BUILDER_VERSION = '0.1.0';
+const INCREMENTAL_DATASET_BUILDER_VERSION = '0.2.0';
 const DEFAULT_SPLIT_SEED = 'strategy-episode-v0';
 const BASE_SPLIT_FILES = Object.freeze(['train.jsonl', 'validation.jsonl', 'test.jsonl']);
 
@@ -163,16 +164,19 @@ function mergeRecordsPreservingBaseSplits(baseRecords, newRecords, options = {})
 function buildIncrementalStrategyDataset(options = {}) {
   if (!options.baseDatasetDir) throw new Error('incremental_base_dataset_required');
   if (!options.packFile) throw new Error('incremental_review_pack_required');
-  if (!options.annotationsDir) throw new Error('incremental_approved_annotations_required');
+  if (!options.annotationsDir) throw new Error('incremental_verified_annotations_required');
   if (!options.outputDir) throw new Error('incremental_output_dir_required');
 
+  const verificationMode = options.verificationMode === 'machine' ? 'machine' : 'human';
   const outDir = path.resolve(options.outputDir);
   const episodesDir = path.join(outDir, 'new-episodes');
   const datasetDir = path.join(outDir, 'dataset');
   fs.mkdirSync(outDir, { recursive: true });
 
   const base = loadBaseDataset(options.baseDatasetDir);
-  const adapted = adaptApprovedAnnotations(options.packFile, options.annotationsDir, episodesDir);
+  const adapted = verificationMode === 'machine'
+    ? adaptMachineVerifiedAnnotations(options.packFile, options.annotationsDir, episodesDir)
+    : adaptApprovedAnnotations(options.packFile, options.annotationsDir, episodesDir);
   const merged = mergeRecordsPreservingBaseSplits(base.records, adapted.records, {
     seed: options.seed || DEFAULT_SPLIT_SEED,
     ratios: options.ratios
@@ -193,15 +197,19 @@ function buildIncrementalStrategyDataset(options = {}) {
   });
   if (!readiness.ready) throw new Error(`incremental_dataset_not_ready:${readiness.errors.join(',')}`);
 
+  const newCount = adapted.records.length;
   const outputBaseHashes = Object.fromEntries(BASE_SPLIT_FILES.map(name => [name, base.hashes[name]]));
   const manifest = {
     incrementalDatasetBuilderVersion: INCREMENTAL_DATASET_BUILDER_VERSION,
     generatedAt: new Date().toISOString(),
+    verificationMode,
     sourceBaseDataset: path.relative(process.cwd(), base.dir),
     sourceReviewPack: path.relative(process.cwd(), path.resolve(options.packFile)),
-    sourceApprovedAnnotations: path.relative(process.cwd(), path.resolve(options.annotationsDir)),
+    sourceVerifiedAnnotations: path.relative(process.cwd(), path.resolve(options.annotationsDir)),
     baseRecordCount: base.records.length,
-    newApprovedEpisodeCount: adapted.records.length,
+    newVerifiedEpisodeCount: newCount,
+    newApprovedEpisodeCount: verificationMode === 'human' ? newCount : 0,
+    newMachineVerifiedEpisodeCount: verificationMode === 'machine' ? newCount : 0,
     combinedRecordCount: merged.records.length,
     inheritedGroupRecordCount: merged.inheritedGroupRecordCount,
     newGroupRecordCount: merged.newGroupRecordCount,
@@ -213,13 +221,17 @@ function buildIncrementalStrategyDataset(options = {}) {
     splitRatios: merged.ratios,
     baseDatasetHashes: outputBaseHashes,
     policy: {
-      onlyExplicitlyHumanConfirmedNewAnnotationsAccepted: true,
+      verificationMode,
+      onlyVerifiedNewAnnotationsAccepted: true,
+      onlyExplicitlyHumanConfirmedNewAnnotationsAccepted: verificationMode === 'human',
+      onlyMachineEligibilityAcceptedNewAnnotationsAccepted: verificationMode === 'machine',
+      humanApprovalClaimedForMachineData: false,
       baseDatasetRecordsNeverReassigned: true,
       existingSplitGroupInheritsBaseSplit: true,
       newSplitGroupUsesIndependentStableHashThreshold: true,
       addingFutureGroupsDoesNotMoveExistingGroups: true,
       heldOutNeverUsedForFit: true,
-      sourceKindRequired: 'human-demonstration'
+      sourceKindRequired: verificationMode === 'machine' ? 'approved-controller' : 'human-demonstration'
     },
     files: written.files,
     newEpisodeFiles: adapted.outputs.map(file => path.relative(process.cwd(), file))
@@ -246,21 +258,25 @@ function main(argv = process.argv.slice(2)) {
   try {
     const args = parseArgs(argv);
     if (!args.base || !args.pack || !args.annotations || !args.out) {
-      throw new Error('Usage: node training-collector/tools/build_incremental_strategy_dataset.js --base <base-dataset-dir> --pack <new-review-pack.json> --annotations <new-approved-annotations-dir> --out <versioned-output-dir> [--seed value]');
+      throw new Error('Usage: node training-collector/tools/build_incremental_strategy_dataset.js --base <base-dataset-dir> --pack <new-review-pack.json> --annotations <verified-annotations-dir> --out <versioned-output-dir> [--verification-mode human|machine] [--seed value]');
     }
     const built = buildIncrementalStrategyDataset({
       baseDatasetDir: args.base,
       packFile: args.pack,
       annotationsDir: args.annotations,
       outputDir: args.out,
+      verificationMode: args['verification-mode'] || 'human',
       seed: args.seed || DEFAULT_SPLIT_SEED
     });
     console.log(JSON.stringify({
       ok: true,
       result: 'PASS',
       version: built.manifest.incrementalDatasetBuilderVersion,
+      verificationMode: built.manifest.verificationMode,
       baseRecordCount: built.manifest.baseRecordCount,
+      newVerifiedEpisodeCount: built.manifest.newVerifiedEpisodeCount,
       newApprovedEpisodeCount: built.manifest.newApprovedEpisodeCount,
+      newMachineVerifiedEpisodeCount: built.manifest.newMachineVerifiedEpisodeCount,
       combinedRecordCount: built.manifest.combinedRecordCount,
       splitCounts: built.manifest.splitCounts,
       baseSplitAssignmentsPreserved: built.manifest.baseSplitAssignmentsPreserved,
