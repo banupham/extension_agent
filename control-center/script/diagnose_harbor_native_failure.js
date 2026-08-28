@@ -33,6 +33,26 @@ async function waitForLab(client, tabId, expectedUrl, timeoutMs = 10000) {
   throw new Error(`harbor_diag_lab_not_ready:${lastError?.message || 'timeout'}`);
 }
 
+function decisionSummary(decision) {
+  if (!decision || typeof decision !== 'object') return null;
+  return {
+    status: decision.status || null,
+    reasonCode: decision.reasonCode || null,
+    confidence: decision.confidence ?? null,
+    actionType: decision?.action?.type || null,
+    targetRef: decision?.action?.targetRef || decision?.targetRef || null,
+    recoverySuggested: decision?.recovery?.suggested || null,
+    metadata: {
+      modelVersion: decision?.metadata?.modelVersion || null,
+      prototypeSource: decision?.metadata?.prototypeSource || null,
+      historyMatched: decision?.metadata?.historyMatched === true,
+      compositionMatched: decision?.metadata?.compositionMatched === true,
+      actionSelectionTargetIndependent: decision?.metadata?.actionSelectionTargetIndependent === true,
+      recoveryDeferredForBaseProgression: decision?.metadata?.recoveryDeferredForBaseProgression === true
+    }
+  };
+}
+
 function stepSummary(step) {
   return {
     stepIndex: step?.stepIndex ?? null,
@@ -55,6 +75,9 @@ function subgoalSummary(item) {
     instruction: item?.instruction || null,
     status: item?.status || null,
     error: result?.error || null,
+    terminalDecision: decisionSummary(result?.terminalDecision || null),
+    strategyCallCount: result?.invariant?.strategyCallCount ?? null,
+    actionExecutionCount: result?.invariant?.actionExecutionCount ?? null,
     finalOutcome: {
       taskSucceeded: result?.finalOutcome?.taskSucceeded === true,
       errorCode: result?.finalOutcome?.errorCode || null
@@ -186,4 +209,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { stepSummary, subgoalSummary, run, main };
+module.exports = { decisionSummary, stepSummary, subgoalSummary, run, main };
