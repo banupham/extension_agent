@@ -18,7 +18,7 @@ const {
   HUMAN_CONFIRMATION_PHRASE
 } = require('./prepare_strategy_approval_candidates.js');
 
-const INCREMENTAL_STRATEGY_LEARNING_VERSION = '0.4.1';
+const INCREMENTAL_STRATEGY_LEARNING_VERSION = '0.5.0';
 const BASE_DATASET_SPLITS = Object.freeze(['train.jsonl', 'validation.jsonl', 'test.jsonl']);
 
 function readJson(file) {
@@ -55,7 +55,7 @@ function collectApprovedEpisodeIds(root) {
         const child = path.join(dir, name);
         const childStat = fs.statSync(child);
         if (childStat.isDirectory()) stack.push(child);
-        else if (/\.strategy-review\.approved\.json$/i.test(name)) files.push(child);
+        else if (/\.strategy-review\.(?:approved|machine-verified)\.json$/i.test(name)) files.push(child);
       }
     }
   }
@@ -99,9 +99,10 @@ function collectEpisodeIdsFromFile(file) {
   }
 }
 
-function collectBaseDatasetEpisodeIds(datasetDir) {
+function collectBaseDatasetEpisodeIds(datasetDir, options = {}) {
   const ids = new Set();
   if (!datasetDir) return ids;
+  const includeProvenanceAliases = options.includeProvenanceAliases === true;
   const dir = path.resolve(datasetDir);
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
     throw new Error(`base_dataset_directory_missing:${dir}`);
@@ -111,8 +112,13 @@ function collectBaseDatasetEpisodeIds(datasetDir) {
     if (!fs.existsSync(file)) throw new Error(`base_dataset_file_missing:${file}`);
     const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(line => line.trim());
     for (const line of lines) {
-      const episodeId = normalizeEpisodeId(JSON.parse(line)?.episodeId);
+      const record = JSON.parse(line);
+      const episodeId = normalizeEpisodeId(record?.episodeId);
       if (episodeId) ids.add(episodeId);
+      if (includeProvenanceAliases) {
+        const provenanceId = normalizeEpisodeId(record?.source?.provenanceId);
+        if (provenanceId) ids.add(provenanceId);
+      }
     }
   }
   return ids;
@@ -121,7 +127,7 @@ function collectBaseDatasetEpisodeIds(datasetDir) {
 function combinedExcludedEpisodeIds(options = {}) {
   const ids = collectApprovedEpisodeIds(options.excludeApprovedDir || null);
   for (const id of collectEpisodeIdsFromFile(options.excludeEpisodeFile || null)) ids.add(id);
-  for (const id of collectBaseDatasetEpisodeIds(options.baseDatasetDir || null)) ids.add(id);
+  for (const id of collectBaseDatasetEpisodeIds(options.baseDatasetDir || null, { includeProvenanceAliases: true })) ids.add(id);
   return ids;
 }
 
@@ -292,7 +298,7 @@ function markdownForBundle(bundle) {
     '> Machine eligibility is fail-closed: only independently verified outcomes can be ACCEPT.',
     '> Machine ACCEPT may be finalized into a candidate without claiming human approval.',
     '> QUARANTINE keeps uncertain data out of training without deleting it.',
-    '> Candidate finalization never overwrites or promotes the base model.',
+    '> Candidate finalization/protection never overwrites or promotes the base model.',
     ''
   ];
   return `${lines.join('\n')}\n`;
@@ -396,6 +402,7 @@ function prepareIncrementalStrategyLearning(options = {}) {
       privacyBatchAppliedBeforeStrategyCandidate: true,
       previouslyProcessedEpisodesExcludedBeforeReviewPack: true,
       baseDatasetEpisodesExcludedBeforeReviewPack: options.baseDatasetDir ? true : null,
+      baseDatasetProvenanceAliasesExcludedBeforeReviewPack: options.baseDatasetDir ? true : null,
       duplicateCurrentEpisodeExportsDeduplicated: true,
       resolverOutputsAreReviewAidsOnly: resolution.result?.policy?.reviewAidOnly === true,
       candidateDigestVerified: true,
@@ -625,6 +632,67 @@ function finalizeMachineAcceptedStrategyLearning(prepared, options = {}) {
   return { finalManifest, finalManifestFile, verified, dataset, candidate };
 }
 
+function applyCandidateProtectionResult(finalized, protection, options = {}) {
+  if (!finalized?.finalManifest || !finalized?.finalManifestFile || !finalized?.candidate?.modelFile) {
+    throw new Error('finalized_candidate_bundle_required_for_protection');
+  }
+  if (!protection || typeof protection !== 'object' || typeof protection.status !== 'string') {
+    throw new Error('candidate_protection_result_required');
+  }
+  const outDir = path.resolve(options.outputDir || path.dirname(finalized.finalManifestFile));
+  const protectionFile = writeJson(path.join(outDir, '11-candidate-protection.json'), protection);
+  const nativeResults = protection.nativeResults && typeof protection.nativeResults === 'object' ? protection.nativeResults : {};
+  const runtimeRegressionPerformed = Object.keys(nativeResults).length > 0;
+  const freshUnseenPerformed = protection?.baseBenchmark?.ok === true && protection?.candidateBenchmark?.ok === true;
+  const protectedManifest = {
+    ...finalized.finalManifest,
+    protectedAt: new Date().toISOString(),
+    status: protection.status,
+    candidateProtection: {
+      file: relativeToCwd(protectionFile),
+      version: protection.candidateProtectionVersion || null,
+      pass: protection.pass === true,
+      status: protection.status,
+      reasons: Array.isArray(protection.reasons) ? protection.reasons : [],
+      baseScore: Number.isFinite(Number(protection.baseScore)) ? Number(protection.baseScore) : null,
+      candidateScore: Number.isFinite(Number(protection.candidateScore)) ? Number(protection.candidateScore) : null,
+      ambiguitySafeBlockPass: protection.ambiguitySafeBlockPass === true,
+      modelIntegrity: protection.modelIntegrity || null
+    },
+    promotion: {
+      applied: false,
+      runtimeRegressionPerformed,
+      freshUnseenPerformed,
+      reason: protection.pass === true
+        ? 'candidate_protected_ready_for_manual_promotion_only'
+        : protection.status
+    }
+  };
+  writeJson(finalized.finalManifestFile, protectedManifest);
+  finalized.finalManifest = protectedManifest;
+  return { ...finalized, protection, protectionFile };
+}
+
+async function protectFinalizedCandidate(finalized, options = {}) {
+  if (!options.baseModelFile) throw new Error('candidate_protection_requires_base_model');
+  const runProtection = typeof options.runProtection === 'function'
+    ? options.runProtection
+    : require('../../control-center/script/native_regression_model_compat.js').runCandidateProtection;
+  const protection = await runProtection({
+    baseModelFile: options.baseModelFile,
+    candidateModelFile: finalized?.candidate?.modelFile,
+    agentId: options.agentId || null,
+    healthBase: options.healthBase || 'http://127.0.0.1:3000',
+    broker: options.broker || 'ws://127.0.0.1:3000',
+    timeoutMs: Number(options.timeoutMs || 10000),
+    minimumConfidence: options.minimumConfidence == null ? 0 : Number(options.minimumConfidence),
+    minimumBenchmarkScore: options.minimumBenchmarkScore == null ? 90 : Number(options.minimumBenchmarkScore),
+    allowedTotalRegression: options.allowedTotalRegression == null ? 0 : Number(options.allowedTotalRegression),
+    allowedDimensionRegression: options.allowedDimensionRegression == null ? 0 : Number(options.allowedDimensionRegression)
+  });
+  return applyCandidateProtectionResult(finalized, protection, options);
+}
+
 function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -653,7 +721,10 @@ async function main(argv = process.argv.slice(2)) {
     const args = parseArgs(argv);
     const input = args.input || args.reviews || null;
     if (!input) {
-      throw new Error('Usage: node training-collector/tools/prepare_incremental_strategy_learning.js --input <review-dir|review-file|reviews.7z> [--base-dataset dir] [--base-model model.json] [--machine-finalize | --interactive-approve] [--out dir]');
+      throw new Error('Usage: node training-collector/tools/prepare_incremental_strategy_learning.js --input <review-dir|review-file|reviews.7z> [--base-dataset dir] [--base-model model.json] [--machine-finalize | --interactive-approve] [--protect-candidate] [--out dir]');
+    }
+    if (args['protect-candidate'] && !args['machine-finalize'] && !args['interactive-approve']) {
+      throw new Error('protect_candidate_requires_finalize_mode');
     }
     const outputDir = path.resolve(args.out || 'training-collector/learning-batches/incremental-latest');
     const inputResolved = resolveReviewInput(input, outputDir, { sevenZipExe: args['7z'] || null });
@@ -696,12 +767,26 @@ async function main(argv = process.argv.slice(2)) {
       if (!args['base-dataset'] || !args['base-model']) {
         throw new Error('machine_finalize_requires_--base-dataset_and_--base-model');
       }
-      const finalized = finalizeMachineAcceptedStrategyLearning(prepared, {
+      let finalized = finalizeMachineAcceptedStrategyLearning(prepared, {
         baseDatasetDir: args['base-dataset'],
         baseModelFile: args['base-model'],
         candidateModelVersion: args['candidate-model-version'] || null,
         seed: args.seed || null
       });
+      if (args['protect-candidate']) {
+        finalized = await protectFinalizedCandidate(finalized, {
+          baseModelFile: args['base-model'],
+          outputDir,
+          agentId: args.agent || null,
+          healthBase: args['health-base'] || 'http://127.0.0.1:3000',
+          broker: args.broker || 'ws://127.0.0.1:3000',
+          timeoutMs: Number(args.timeout || 10000),
+          minimumConfidence: args['minimum-confidence'] == null ? 0 : Number(args['minimum-confidence']),
+          minimumBenchmarkScore: args['minimum-benchmark-score'] == null ? 90 : Number(args['minimum-benchmark-score']),
+          allowedTotalRegression: args['allowed-total-regression'] == null ? 0 : Number(args['allowed-total-regression']),
+          allowedDimensionRegression: args['allowed-dimension-regression'] == null ? 0 : Number(args['allowed-dimension-regression'])
+        });
+      }
       console.log(JSON.stringify({
         ...summary,
         status: finalized.finalManifest.status,
@@ -711,6 +796,12 @@ async function main(argv = process.argv.slice(2)) {
         candidateModel: path.resolve(finalized.candidate.modelFile),
         candidateModelSha256: finalized.finalManifest.candidateModel.sha256,
         datasetManifest: path.resolve(finalized.dataset.manifestFile),
+        candidateProtection: finalized.protection ? {
+          pass: finalized.protection.pass === true,
+          status: finalized.protection.status,
+          reasons: finalized.protection.reasons || [],
+          resultFile: path.resolve(finalized.protectionFile)
+        } : null,
         humanApprovalClaimed: false,
         baseModelMutated: finalized.finalManifest.baseModel.mutated,
         promotionApplied: finalized.finalManifest.promotion.applied,
@@ -744,13 +835,27 @@ async function main(argv = process.argv.slice(2)) {
     const confirmation = await askConfirmation(`\nAfter reviewing the digest, type exactly ${HUMAN_CONFIRMATION_PHRASE} to approve this batch: `);
     if (confirmation !== HUMAN_CONFIRMATION_PHRASE) throw new Error('human_approval_not_confirmed');
 
-    const finalized = finalizeIncrementalStrategyLearning(prepared, {
+    let finalized = finalizeIncrementalStrategyLearning(prepared, {
       baseDatasetDir: args['base-dataset'],
       baseModelFile: args['base-model'],
       candidateModelVersion: args['candidate-model-version'] || null,
       seed: args.seed || null,
       confirmationPhrase: confirmation
     });
+    if (args['protect-candidate']) {
+      finalized = await protectFinalizedCandidate(finalized, {
+        baseModelFile: args['base-model'],
+        outputDir,
+        agentId: args.agent || null,
+        healthBase: args['health-base'] || 'http://127.0.0.1:3000',
+        broker: args.broker || 'ws://127.0.0.1:3000',
+        timeoutMs: Number(args.timeout || 10000),
+        minimumConfidence: args['minimum-confidence'] == null ? 0 : Number(args['minimum-confidence']),
+        minimumBenchmarkScore: args['minimum-benchmark-score'] == null ? 90 : Number(args['minimum-benchmark-score']),
+        allowedTotalRegression: args['allowed-total-regression'] == null ? 0 : Number(args['allowed-total-regression']),
+        allowedDimensionRegression: args['allowed-dimension-regression'] == null ? 0 : Number(args['allowed-dimension-regression'])
+      });
+    }
     console.log(JSON.stringify({
       ok: true,
       result: 'PASS',
@@ -761,6 +866,12 @@ async function main(argv = process.argv.slice(2)) {
       candidateModel: path.resolve(finalized.candidate.modelFile),
       candidateModelSha256: finalized.finalManifest.candidateModel.sha256,
       datasetManifest: path.resolve(finalized.dataset.manifestFile),
+      candidateProtection: finalized.protection ? {
+        pass: finalized.protection.pass === true,
+        status: finalized.protection.status,
+        reasons: finalized.protection.reasons || [],
+        resultFile: path.resolve(finalized.protectionFile)
+      } : null,
       baseModelMutated: finalized.finalManifest.baseModel.mutated,
       promotionApplied: finalized.finalManifest.promotion.applied,
       finalManifest: path.resolve(finalized.finalManifestFile)
@@ -797,6 +908,8 @@ module.exports = {
   fitCandidateDataset,
   finalizeIncrementalStrategyLearning,
   finalizeMachineAcceptedStrategyLearning,
+  applyCandidateProtectionResult,
+  protectFinalizedCandidate,
   parseArgs,
   askConfirmation,
   main
