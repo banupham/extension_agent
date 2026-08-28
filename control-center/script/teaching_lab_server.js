@@ -163,7 +163,7 @@ function runSelfTest() {
   assert.ok(renderMotorScenario('M01', MOTOR_SCENARIOS.M01).includes('TEACHING_SUCCESS_M01'));
   assert.ok(renderMotorScenario('M15', MOTOR_SCENARIOS.M15).includes('Training Media'));
   assert.ok(renderMotorScenario('M22', MOTOR_SCENARIOS.M22).includes('M22-report'));
-  assert.ok(!renderMotorScenario('M20', MOTOR_SCENARIOS.M20).includes('TEACHING_SUCCESS_M20'));
+  assert.ok(!renderMotorScenario('M20', MOTOR_SCENARIOS.M20).includes(`success(${JSON.stringify(MOTOR_SCENARIOS.M20.expected)})`));
   assert.ok(motorIndexPage().includes('/teaching/motor/M01'));
   assert.ok(motorIndexPage().includes('/teaching/motor/M22'));
   const fixture = strategyTeachingFixtureHtml();
