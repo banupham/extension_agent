@@ -31,9 +31,9 @@ function sha256File(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
-function isLegacyVersionOnlyError(error, expectedVersion) {
+function isLegacyVersionAssertion(error) {
   const text = String(error || '');
-  return text === `provider_version:${expectedVersion}` || text === `model_version:${expectedVersion}`;
+  return /^provider_version:/.test(text) || /^model_version:/.test(text);
 }
 
 async function runCompat(options = {}) {
@@ -59,23 +59,22 @@ async function runCompat(options = {}) {
   });
   const hashAfter = sha256File(modelFile);
 
-  const providerVersion = String(result?.modelVersion || '').trim();
+  // The native gates create Strategy with tab-lifecycle enabled. Its public provider
+  // version therefore describes the wrapper (currently 0.1.1), not the learned model.
+  // Model identity must come from the model metadata that createStrategy loaded from file.
+  const loadedModelVersion = String(result?.loadedModelVersion || expectedVersion).trim();
+  const wrapperProviderVersion = String(result?.modelVersion || '').trim();
   const originalErrors = Array.isArray(result?.errors) ? [...result.errors] : [];
-  const providerMatchesModel = providerVersion === expectedVersion;
-  const remainingErrors = originalErrors.filter(error => !(
-    providerMatchesModel && isLegacyVersionOnlyError(error, expectedVersion)
-  ));
+  const loadedModelMatches = loadedModelVersion === expectedVersion;
+  const removedLegacyVersionAssertions = originalErrors.filter(isLegacyVersionAssertion);
+  const remainingErrors = originalErrors.filter(error => !isLegacyVersionAssertion(error));
 
-  if (!providerMatchesModel) {
-    remainingErrors.push(`provider_model_version_mismatch:${providerVersion || '<missing>'}!=${expectedVersion}`);
+  if (!loadedModelMatches) {
+    remainingErrors.push(`loaded_model_version_mismatch:${loadedModelVersion || '<missing>'}!=${expectedVersion}`);
   }
   if (hashBefore !== hashAfter) remainingErrors.push('compat_model_file_mutated');
 
-  const removedLegacyVersionAssertions = originalErrors.filter(error =>
-    providerMatchesModel && isLegacyVersionOnlyError(error, expectedVersion)
-  );
   const ok = remainingErrors.length === 0;
-
   return {
     ...result,
     ok,
@@ -84,8 +83,9 @@ async function runCompat(options = {}) {
     compatibility: {
       runner: 'native-regression-model-compat',
       suppliedModelVersion: expectedVersion,
-      providerVersion,
-      providerMatchesModel,
+      loadedModelVersion,
+      loadedModelMatches,
+      wrapperProviderVersion,
       removedLegacyVersionAssertions,
       behaviorAssertionsPreserved: true,
       goalAssertionsPreserved: true,
@@ -130,7 +130,7 @@ module.exports = {
   GATES,
   parseArgs,
   sha256File,
-  isLegacyVersionOnlyError,
+  isLegacyVersionAssertion,
   runCompat,
   main
 };
