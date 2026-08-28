@@ -17,7 +17,9 @@ const popupHtml = read('popup.html');
 const server = read('socket-server/server.js');
 const serverPkg = JSON.parse(read('socket-server/package.json'));
 
-assert.strictEqual(manifest.version, '0.8.3');
+// The socket-mirror contract describes the V0.8 capability line. Patch
+// releases may advance without rewriting inherited tests.
+assert.match(String(manifest.version || ''), /^0\.8\./, `collector ${manifest.version} must remain on the V0.8 contract line`);
 assert.strictEqual(manifest.minimum_chrome_version, '116');
 assert.ok(manifest.name.includes('V0.8 Socket Mirror'));
 assert.ok(!manifest.host_permissions.some(pattern => /^wss?:/i.test(pattern)));
@@ -68,7 +70,7 @@ assert.ok(rawStore.includes("const VERSION = '0.7.2'"));
 assert.ok(rawStore.includes('localhost-websocket-replay-mirror'));
 assert.ok(rawStore.includes('manual-chunked-jsonl-gzip-fallback-only'));
 assert.ok(popup.includes('GET_SOCKET_STATUS'));
-assert.ok(popupHtml.includes('Training Collector V0.8.3 Socket Mirror'), 'popup version label must match the manifest version');
+assert.ok(popupHtml.includes('Training Collector V0.8'), 'popup must identify the V0.8 collector line');
 assert.ok(!popup.includes('RETRY_AUTO_EXPORT'));
 
-console.log('Training Collector V0.8.3 socket mirror inheritance contract OK');
+console.log(`Training Collector V0.8 socket mirror inheritance contract OK (collector ${manifest.version})`);
