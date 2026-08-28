@@ -62,6 +62,19 @@
         playbackRate: finiteOrNull(raw.playbackRate)
       };
     }
+    if (raw.kind === 'observe') {
+      return {
+        ...base,
+        operation: raw.operation || null,
+        waitedMs: Math.max(0, Number(raw.waitedMs || 0))
+      };
+    }
+    if (raw.kind === 'browser') {
+      return {
+        ...base,
+        operation: raw.operation || null
+      };
+    }
     if (raw.kind === 'key') {
       return {
         ...base,
