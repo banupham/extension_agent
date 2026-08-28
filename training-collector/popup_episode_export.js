@@ -45,7 +45,8 @@
       `${episode.episodeId}`,
       `Transitions: ${review.transitions.length}`,
       `Strategy-ready snapshots: ${review.strategyReady ? 'yes' : 'no'}`,
-      `Training eligible: no — review/labels/split still required`
+      `Manual export: audit/fallback copy only`,
+      `Automatic training eligibility: decided separately by the local machine pipeline`
     ].join('\n');
   }
 
