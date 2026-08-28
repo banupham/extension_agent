@@ -18,7 +18,7 @@ const {
   HUMAN_CONFIRMATION_PHRASE
 } = require('./prepare_strategy_approval_candidates.js');
 
-const INCREMENTAL_STRATEGY_LEARNING_VERSION = '0.3.0';
+const INCREMENTAL_STRATEGY_LEARNING_VERSION = '0.4.0';
 const BASE_DATASET_SPLITS = Object.freeze(['train.jsonl', 'validation.jsonl', 'test.jsonl']);
 
 function readJson(file) {
@@ -286,12 +286,12 @@ function markdownForBundle(bundle) {
     `Still unresolved for human review: ${bundle.unresolvedHumanReviewCount}`,
     '',
     `Approval digest: \`${bundle.digestHash || '<none>'}\``,
-    `Required confirmation phrase: \`${HUMAN_CONFIRMATION_PHRASE}\``,
+    `Required confirmation phrase for human path: \`${HUMAN_CONFIRMATION_PHRASE}\``,
     '',
     '> Machine eligibility is fail-closed: only independently verified outcomes can be ACCEPT.',
+    '> Machine ACCEPT may be finalized into a candidate without claiming human approval.',
     '> QUARANTINE keeps uncertain data out of training without deleting it.',
-    '> This bundle remains review-only until the later auto-training boundary is explicitly enabled.',
-    '> Interactive finalization creates a candidate model only; it never overwrites or promotes the base model.',
+    '> Candidate finalization never overwrites or promotes the base model.',
     ''
   ];
   return `${lines.join('\n')}\n`;
@@ -350,10 +350,12 @@ function prepareIncrementalStrategyLearning(options = {}) {
   if (imported.fitter) throw new Error('incremental_fitter_must_not_be_imported');
 
   const candidateEpisodeCount = Number(candidates.result?.candidateEpisodeCount || 0);
+  const machineAcceptEpisodeCount = Number(machineEligibility.counts?.accept || 0);
   const bundle = {
     incrementalStrategyLearningVersion: INCREMENTAL_STRATEGY_LEARNING_VERSION,
     generatedAt: new Date().toISOString(),
     status: candidateEpisodeCount > 0 ? 'awaiting-explicit-human-approval' : 'no-eligible-candidates',
+    machineFinalizationAvailable: machineAcceptEpisodeCount > 0,
     source: {
       reviewRoot: relativeToCwd(reviewRoot),
       rawRoot: rawRoot ? relativeToCwd(rawRoot) : null,
@@ -368,7 +370,7 @@ function prepareIncrementalStrategyLearning(options = {}) {
     excludedPreviouslyProcessedCount: Number(filteredManifest?.incrementalFilter?.excludedPreviouslyProcessedCount || 0),
     duplicateCurrentEpisodeCount: Number(filteredManifest?.incrementalFilter?.duplicateCurrentEpisodeCount || 0),
     candidateEpisodeCount,
-    machineAcceptEpisodeCount: Number(machineEligibility.counts?.accept || 0),
+    machineAcceptEpisodeCount,
     machineQuarantineEpisodeCount: Number(machineEligibility.counts?.quarantine || 0),
     machineRejectEpisodeCount: Number(machineEligibility.counts?.reject || 0),
     blockedEpisodeCount: Number(candidates.result?.blockedEpisodeCount || 0),
@@ -398,6 +400,7 @@ function prepareIncrementalStrategyLearning(options = {}) {
       machineEligibilityGateApplied: true,
       machineEligibilityFailClosed: machineEligibility.policy?.failClosed === true,
       machineAcceptedEpisodesAutoTrained: false,
+      machineAcceptPathHumanApprovalRequired: false,
       explicitHumanDigestApprovalRequired: true,
       approvalApplied: false,
       datasetBuilt: false,
@@ -465,6 +468,7 @@ function finalizeIncrementalStrategyLearning(prepared, options = {}) {
     packFile: path.resolve(prepared.bundle.stages.reviewPack),
     annotationsDir: path.dirname(approved.receiptFile),
     outputDir: path.join(outDir, '09-incremental-dataset'),
+    verificationMode: 'human',
     seed: options.seed || undefined
   });
   const datasetDir = path.join(path.dirname(dataset.manifestFile), 'dataset');
@@ -476,6 +480,7 @@ function finalizeIncrementalStrategyLearning(prepared, options = {}) {
   const finalManifest = {
     incrementalStrategyLearningVersion: INCREMENTAL_STRATEGY_LEARNING_VERSION,
     finalizedAt: new Date().toISOString(),
+    finalizationMode: 'human-digest-approval',
     status: 'candidate-awaiting-runtime-protection',
     sourceCandidateDigest: prepared.bundle.digestHash,
     approvedEpisodeCount: approved.receipt.approvedEpisodeCount,
@@ -503,8 +508,10 @@ function finalizeIncrementalStrategyLearning(prepared, options = {}) {
     },
     dataset: {
       manifest: relativeToCwd(dataset.manifestFile),
+      verificationMode: dataset.manifest.verificationMode,
       combinedRecordCount: dataset.manifest.combinedRecordCount,
       newApprovedEpisodeCount: dataset.manifest.newApprovedEpisodeCount,
+      newMachineVerifiedEpisodeCount: dataset.manifest.newMachineVerifiedEpisodeCount,
       splitCounts: dataset.manifest.splitCounts,
       baseSplitAssignmentsPreserved: dataset.manifest.baseSplitAssignmentsPreserved === true
     },
@@ -521,6 +528,99 @@ function finalizeIncrementalStrategyLearning(prepared, options = {}) {
   };
   const finalManifestFile = writeJson(path.join(outDir, 'incremental-strategy-learning-finalized.json'), finalManifest);
   return { finalManifest, finalManifestFile, approved, dataset, candidate };
+}
+
+function finalizeMachineAcceptedStrategyLearning(prepared, options = {}) {
+  if (!prepared?.bundle || !prepared?.candidates || !prepared?.machineEligibilityFile) {
+    throw new Error('prepared_machine_incremental_bundle_required');
+  }
+  if (!options.baseDatasetDir) throw new Error('machine_finalize_requires_base_dataset');
+  if (!options.baseModelFile) throw new Error('machine_finalize_requires_base_model');
+  if (!prepared.bundle.machineAcceptEpisodeCount) throw new Error('no_machine_accepted_strategy_candidates');
+
+  const baseModelFile = path.resolve(options.baseModelFile);
+  if (!fs.existsSync(baseModelFile)) throw new Error(`base_model_file_missing:${baseModelFile}`);
+  const baseModel = readJson(baseModelFile);
+  const baseModelHashBefore = sha256File(baseModelFile);
+  const candidateModelVersion = String(options.candidateModelVersion || nextPatchVersion(baseModel?.modelVersion)).trim();
+  const outDir = path.resolve(prepared.outputDir || path.dirname(prepared.bundleFile));
+
+  const { applyMachineAcceptedCandidates } = require('./apply_strategy_approval_candidates.js');
+  const verified = applyMachineAcceptedCandidates(
+    prepared.candidates.jsonFile,
+    prepared.machineEligibilityFile,
+    path.join(outDir, '08-machine-verified-annotations')
+  );
+
+  const { buildIncrementalStrategyDataset } = require('./build_incremental_strategy_dataset.js');
+  const dataset = buildIncrementalStrategyDataset({
+    baseDatasetDir: options.baseDatasetDir,
+    packFile: path.resolve(prepared.bundle.stages.reviewPack),
+    annotationsDir: path.dirname(verified.receiptFile),
+    outputDir: path.join(outDir, '09-machine-incremental-dataset'),
+    verificationMode: 'machine',
+    seed: options.seed || undefined
+  });
+  const datasetDir = path.join(path.dirname(dataset.manifestFile), 'dataset');
+  const candidate = fitCandidateDataset(datasetDir, path.join(outDir, '10-machine-candidate-model'), candidateModelVersion);
+
+  const baseModelHashAfter = sha256File(baseModelFile);
+  if (baseModelHashAfter !== baseModelHashBefore) throw new Error('base_model_file_mutated_during_machine_incremental_learning');
+  if (dataset.manifest.newMachineVerifiedEpisodeCount !== verified.receipt.machineAcceptedEpisodeCount) {
+    throw new Error('machine_verified_dataset_count_mismatch');
+  }
+
+  const finalManifest = {
+    incrementalStrategyLearningVersion: INCREMENTAL_STRATEGY_LEARNING_VERSION,
+    finalizedAt: new Date().toISOString(),
+    finalizationMode: 'machine-eligibility',
+    status: 'candidate-awaiting-runtime-protection',
+    sourceCandidateDigest: prepared.bundle.digestHash,
+    machineAcceptedEpisodeCount: verified.receipt.machineAcceptedEpisodeCount,
+    machineQuarantineEpisodeCount: prepared.bundle.machineQuarantineEpisodeCount,
+    machineRejectEpisodeCount: prepared.bundle.machineRejectEpisodeCount,
+    blockedEpisodeCount: prepared.bundle.blockedEpisodeCount,
+    baseDataset: relativeToCwd(options.baseDatasetDir),
+    baseModel: {
+      file: relativeToCwd(baseModelFile),
+      modelVersion: baseModel?.modelVersion || null,
+      hashBefore: baseModelHashBefore,
+      hashAfter: baseModelHashAfter,
+      mutated: false
+    },
+    candidateModel: {
+      file: relativeToCwd(candidate.modelFile),
+      evaluationFile: relativeToCwd(candidate.evaluationFile),
+      modelVersion: candidate.model.modelVersion,
+      sha256: candidate.modelHash,
+      heldOutPass: candidate.evaluation.pass === true
+    },
+    dataset: {
+      manifest: relativeToCwd(dataset.manifestFile),
+      verificationMode: dataset.manifest.verificationMode,
+      combinedRecordCount: dataset.manifest.combinedRecordCount,
+      newVerifiedEpisodeCount: dataset.manifest.newVerifiedEpisodeCount,
+      newApprovedEpisodeCount: dataset.manifest.newApprovedEpisodeCount,
+      newMachineVerifiedEpisodeCount: dataset.manifest.newMachineVerifiedEpisodeCount,
+      splitCounts: dataset.manifest.splitCounts,
+      baseSplitAssignmentsPreserved: dataset.manifest.baseSplitAssignmentsPreserved === true
+    },
+    verification: {
+      receipt: relativeToCwd(verified.receiptFile),
+      eligibilityFile: relativeToCwd(prepared.machineEligibilityFile),
+      eligibilityDigest: verified.receipt.eligibilityDigest,
+      explicitHumanConfirmationVerified: false,
+      humanApprovalClaimed: false
+    },
+    promotion: {
+      applied: false,
+      runtimeRegressionPerformed: false,
+      freshUnseenPerformed: false,
+      reason: 'candidate_must_pass_runtime_regression_and_fresh_unseen_before_manual_promotion'
+    }
+  };
+  const finalManifestFile = writeJson(path.join(outDir, 'incremental-strategy-learning-machine-finalized.json'), finalManifest);
+  return { finalManifest, finalManifestFile, verified, dataset, candidate };
 }
 
 function parseArgs(argv) {
@@ -551,7 +651,7 @@ async function main(argv = process.argv.slice(2)) {
     const args = parseArgs(argv);
     const input = args.input || args.reviews || null;
     if (!input) {
-      throw new Error('Usage: node training-collector/tools/prepare_incremental_strategy_learning.js --input <review-dir|review-file|reviews.7z> [--base-dataset dir] [--base-model model.json] [--interactive-approve] [--out dir]');
+      throw new Error('Usage: node training-collector/tools/prepare_incremental_strategy_learning.js --input <review-dir|review-file|reviews.7z> [--base-dataset dir] [--base-model model.json] [--machine-finalize | --interactive-approve] [--out dir]');
     }
     const outputDir = path.resolve(args.out || 'training-collector/learning-batches/incremental-latest');
     const inputResolved = resolveReviewInput(input, outputDir, { sevenZipExe: args['7z'] || null });
@@ -580,6 +680,7 @@ async function main(argv = process.argv.slice(2)) {
       machineAcceptEpisodeCount: prepared.bundle.machineAcceptEpisodeCount,
       machineQuarantineEpisodeCount: prepared.bundle.machineQuarantineEpisodeCount,
       machineRejectEpisodeCount: prepared.bundle.machineRejectEpisodeCount,
+      machineFinalizationAvailable: prepared.bundle.machineFinalizationAvailable,
       blockedEpisodeCount: prepared.bundle.blockedEpisodeCount,
       unresolvedHumanReviewCount: prepared.bundle.unresolvedHumanReviewCount,
       digestHash: prepared.bundle.digestHash,
@@ -588,6 +689,33 @@ async function main(argv = process.argv.slice(2)) {
       approvalCandidates: path.resolve(prepared.candidates.jsonFile),
       machineEligibility: path.resolve(prepared.machineEligibilityFile)
     };
+
+    if (args['machine-finalize']) {
+      if (!args['base-dataset'] || !args['base-model']) {
+        throw new Error('machine_finalize_requires_--base-dataset_and_--base-model');
+      }
+      const finalized = finalizeMachineAcceptedStrategyLearning(prepared, {
+        baseDatasetDir: args['base-dataset'],
+        baseModelFile: args['base-model'],
+        candidateModelVersion: args['candidate-model-version'] || null,
+        seed: args.seed || null
+      });
+      console.log(JSON.stringify({
+        ...summary,
+        status: finalized.finalManifest.status,
+        finalizationMode: finalized.finalManifest.finalizationMode,
+        machineAcceptedEpisodeCount: finalized.finalManifest.machineAcceptedEpisodeCount,
+        candidateModelVersion: finalized.finalManifest.candidateModel.modelVersion,
+        candidateModel: path.resolve(finalized.candidate.modelFile),
+        candidateModelSha256: finalized.finalManifest.candidateModel.sha256,
+        datasetManifest: path.resolve(finalized.dataset.manifestFile),
+        humanApprovalClaimed: false,
+        baseModelMutated: finalized.finalManifest.baseModel.mutated,
+        promotionApplied: finalized.finalManifest.promotion.applied,
+        finalManifest: path.resolve(finalized.finalManifestFile)
+      }, null, 2));
+      return;
+    }
 
     if (!args['interactive-approve']) {
       console.log(JSON.stringify({
@@ -625,6 +753,7 @@ async function main(argv = process.argv.slice(2)) {
       ok: true,
       result: 'PASS',
       status: finalized.finalManifest.status,
+      finalizationMode: finalized.finalManifest.finalizationMode,
       approvedEpisodeCount: finalized.finalManifest.approvedEpisodeCount,
       candidateModelVersion: finalized.finalManifest.candidateModel.modelVersion,
       candidateModel: path.resolve(finalized.candidate.modelFile),
@@ -665,6 +794,7 @@ module.exports = {
   prepareIncrementalStrategyLearning,
   fitCandidateDataset,
   finalizeIncrementalStrategyLearning,
+  finalizeMachineAcceptedStrategyLearning,
   parseArgs,
   askConfirmation,
   main
