@@ -8,6 +8,7 @@ const {
 } = require('./contracts');
 const { createBaselineStrategy } = require('./baseline_strategy');
 const { createOfflineBaselineProvider } = require('./offline_baseline_provider');
+const { createExplicitActionIntentProvider } = require('./explicit_action_intent_provider');
 const { resolveOfflineStrategyModel } = require('./offline_model_loader');
 const { createTabLifecycleProvider } = require('./tab_lifecycle_provider');
 
@@ -31,8 +32,13 @@ function resolveStrategyProvider(options = {}) {
     model: options.model || null,
     modelFile: options.modelFile || null
   });
+  const offlineProvider = createOfflineBaselineProvider({
+    model: resolved.model,
+    minimumConfidence: options.minimumConfidence
+  });
   return {
-    provider: createOfflineBaselineProvider({
+    provider: createExplicitActionIntentProvider({
+      baseProvider: offlineProvider,
       model: resolved.model,
       minimumConfidence: options.minimumConfidence
     }),
@@ -98,6 +104,7 @@ module.exports = {
   ...require('./execution_surface_contract'),
   ...require('./execution_behavior_contract'),
   ...require('./offline_baseline_provider'),
+  ...require('./explicit_action_intent_provider'),
   ...require('./offline_model_loader'),
   ...require('./tab_lifecycle_provider'),
   ...require('./self_experience_memory'),
