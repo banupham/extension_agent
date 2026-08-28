@@ -44,12 +44,35 @@ function decisionSummary(decision) {
     recoverySuggested: decision?.recovery?.suggested || null,
     metadata: {
       modelVersion: decision?.metadata?.modelVersion || null,
+      prototypeType: decision?.metadata?.prototypeType || null,
       prototypeSource: decision?.metadata?.prototypeSource || null,
+      instructionScore: decision?.metadata?.instructionScore ?? null,
+      targetLabelScore: decision?.metadata?.targetLabelScore ?? null,
+      taskFeatureScore: decision?.metadata?.taskFeatureScore ?? null,
+      semanticTargetScore: decision?.metadata?.semanticTargetScore ?? null,
       historyMatched: decision?.metadata?.historyMatched === true,
       compositionMatched: decision?.metadata?.compositionMatched === true,
       actionSelectionTargetIndependent: decision?.metadata?.actionSelectionTargetIndependent === true,
-      recoveryDeferredForBaseProgression: decision?.metadata?.recoveryDeferredForBaseProgression === true
+      recoveryDeferredForBaseProgression: decision?.metadata?.recoveryDeferredForBaseProgression === true,
+      error: decision?.metadata?.error || null
     }
+  };
+}
+
+function observationSummary(observation) {
+  return {
+    observationId: observation?.observationId || null,
+    title: observation?.title || null,
+    url: observation?.url || null,
+    interactiveElements: (Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : []).map(element => ({
+      ref: element?.ref || null,
+      label: element?.label || null,
+      role: element?.role || null,
+      tag: element?.tag || null,
+      editable: element?.editable === true,
+      enabled: element?.enabled !== false,
+      visible: element?.visible !== false
+    }))
   };
 }
 
@@ -60,6 +83,7 @@ function stepSummary(step) {
     targetLabel: harbor.targetLabel(step),
     decisionStatus: step?.decision?.status || null,
     decisionReasonCode: step?.decision?.reasonCode || null,
+    prototypeType: step?.decision?.metadata?.prototypeType || null,
     prototypeSource: step?.decision?.metadata?.prototypeSource || null,
     controlStatus: step?.control?.status || null,
     controlReasonCode: step?.control?.reasonCode || null,
@@ -131,9 +155,26 @@ async function run(options = {}) {
       executeBrowserAction: payload => client.executeBrowserAction({ ...payload, tabId: createdTabId })
     };
 
+    const decisionTrace = [];
     const baseStrategy = createStrategy({ modelFile, minimumConfidence: options.minimumConfidence ?? 0 });
     const recoveryProvider = createRecoveryExplorationProvider({ baseProvider: baseStrategy });
-    const missionStrategy = createStrategy({ provider: recoveryProvider });
+    const tracedRecoveryProvider = {
+      name: recoveryProvider.name,
+      version: recoveryProvider.version,
+      async decide(context = {}) {
+        const decision = await recoveryProvider.decide(context);
+        decisionTrace.push({
+          instruction: context?.task?.instruction || null,
+          historyActionTypes: (Array.isArray(context?.history) ? context.history : [])
+            .map(item => item?.actionType || item?.action?.type || null)
+            .filter(Boolean),
+          observation: observationSummary(context?.observation || null),
+          decision: decisionSummary(decision)
+        });
+        return decision;
+      }
+    };
+    const missionStrategy = createStrategy({ provider: tracedRecoveryProvider });
     const result = await executeMissionWithStrategy({
       plan: harbor.missionPlan(),
       runtime,
@@ -167,6 +208,7 @@ async function run(options = {}) {
       missionReasonCode: result?.reasonCode || null,
       progress: result?.progress || null,
       subgoals: (result?.subgoalResults || []).map(subgoalSummary),
+      decisionTrace,
       createdTabClosed: false
     };
   } finally {
@@ -209,4 +251,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { decisionSummary, stepSummary, subgoalSummary, run, main };
+module.exports = { decisionSummary, observationSummary, stepSummary, subgoalSummary, run, main };
