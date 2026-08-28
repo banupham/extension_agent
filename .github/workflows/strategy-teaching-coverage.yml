@@ -5,7 +5,7 @@ on:
     branches:
       - feat/agent-tab-context
     paths:
-      - 'control-center/script/page_strategy_teaching_lab.js'
+      - 'control-center/script/teaching_lab_server.js'
       - 'training-collector/core/episode_stop_settlement.js'
       - 'training-collector/core/episode_transition_order.js'
       - 'training-collector/core/episode_state_queue.js'
@@ -33,7 +33,7 @@ jobs:
           node-version: '20'
       - name: Check syntax
         run: |
-          node --check control-center/script/page_strategy_teaching_lab.js
+          node --check control-center/script/teaching_lab_server.js
           node --check training-collector/core/episode_stop_settlement.js
           node --check training-collector/core/episode_transition_order.js
           node --check training-collector/core/episode_state_queue.js
@@ -44,6 +44,8 @@ jobs:
           node --check training-collector/tests/episode_transition_order_contract.js
           node --check training-collector/tests/episode_state_queue_contract.js
           node --check training-collector/tests/strategy_teaching_coverage_contract.js
+      - name: Run Teaching Lab self-test
+        run: node control-center/script/teaching_lab_server.js --self-test
       - name: Run episode stop settlement contract
         run: node training-collector/tests/episode_stop_settlement_contract.js
       - name: Run episode transition order contract
