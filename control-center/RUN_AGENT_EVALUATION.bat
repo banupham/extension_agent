@@ -9,7 +9,7 @@ if "%~1"=="" (
   echo This suite keeps the model frozen and runs:
   echo   - core Agent contracts
   echo   - offline Strategy decision regression
-  echo   - Runtime connection check
+  echo   - standalone Agent Runtime broker / extension connection check
   echo   - browser-native Strategy regression gates
   exit /b 64
 )
@@ -32,6 +32,12 @@ if not defined MODEL_HASH_BEFORE (
   exit /b 65
 )
 
+call START_AGENT_RUNTIME_BROKER.bat
+if errorlevel 1 (
+  echo [FATAL] Standalone Agent Runtime Broker is not available.
+  exit /b 69
+)
+
 set /a TOTAL=0
 set /a PASS=0
 set /a FAIL=0
@@ -43,6 +49,8 @@ echo ============================================================
 echo Model: %MODEL%
 echo Model version: %MODEL_VERSION%
 echo Model SHA256: %MODEL_HASH_BEFORE%
+echo Runtime transport: standalone broker http://127.0.0.1:3000
+echo Control Center UI: NOT REQUIRED
 echo.
 
 call :run "One-action bridge + follow-live contract" node script\checks\one_action_bridge.js
@@ -54,7 +62,7 @@ call :run "Offline frozen Strategy decisions" node script\offline_strategy_fresh
 
 echo.
 echo ============================================================
-echo NATIVE RUNTIME CHECK
+echo AGENT RUNTIME EXTENSION CHECK
 echo ============================================================
 call :run "Agent Runtime connected and tabs observable" node script\agent_one_action.js --tabs
 
@@ -96,7 +104,7 @@ if !FAIL! GTR 0 (
 echo RESULT: PASS
 echo.
 echo NOTE: Cargo / Signal Relay / Harbor are regression evidence, not new fresh-unseen intelligence evidence.
-echo       For intelligence scoring, run new user tasks after this baseline suite without changing the model.
+echo       The Strategy model is loaded by the evaluation runner; Agent Runtime Extension is the browser executor.
 exit /b 0
 
 :run
