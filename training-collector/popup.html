@@ -4,13 +4,33 @@
   <meta charset="utf-8">
   <title>Training Collector V0.8.6</title>
   <style>
-    body{font:13px system-ui,sans-serif;margin:14px;width:430px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}.notice{padding:8px;background:#f4f6f8;margin:8px 0;line-height:1.35}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}.session-row{border:1px solid #ddd;padding:8px;margin:6px 0}
+    body{font:13px system-ui,sans-serif;margin:14px;width:430px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}.task-section{border:1px solid #a9c7ff;background:#f7faff;border-radius:10px;margin-top:12px;padding:10px}.notice{padding:8px;background:#f4f6f8;margin:8px 0;line-height:1.35}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}.session-row{border:1px solid #ddd;padding:8px;margin:6px 0}
   </style>
 </head>
 <body>
   <strong>Training Collector V0.8.6 Socket Mirror + Task Pipeline</strong>
   <div class="muted">Frame-aware physical + semantic capture with IndexedDB safety buffering, reliable localhost mirroring, durable Task Episode delivery, and fail-closed Strategy learning eligibility.</div>
-  <div class="notice">Primary data path is <b>IndexedDB → ws://127.0.0.1:8765/training-collector → local append-only JSONL</b>. <b>Mark Success</b> now also queues a privacy-safe Task Episode review to the same backend. Production model promotion remains manual.</div>
+  <div class="notice">Primary data path is <b>IndexedDB → ws://127.0.0.1:8765/training-collector → local append-only JSONL</b>. <b>Mark Success</b> also queues a privacy-safe Task Episode review to the same backend. Production model promotion remains manual.</div>
+
+  <div class="task-section">
+    <strong>Optional Task Episode</strong>
+    <div class="muted">Start the episode, perform the task naturally, then reopen this popup and mark Success or Failed. Successful Start closes the popup automatically.</div>
+    <input id="task" placeholder="Task instruction, e.g. Search Google for OpenAI">
+    <button id="start">Start Episode</button>
+    <div class="row">
+      <button id="success">Mark Success</button>
+      <button id="failed">Mark Failed</button>
+    </div>
+    <button id="stop">Stop Episode</button>
+    <button id="exportEpisode">Export Task Episode for Review</button>
+    <div id="status" class="status"></div>
+  </div>
+
+  <div class="section">
+    <strong>Strategy Pipeline Monitor</strong>
+    <div id="pipelineStatus" class="status">Waiting for backend pipeline status...</div>
+    <div class="muted">ACCEPT enters the training buffer. QUARANTINE/REJECT remain available for batch diagnosis but never enter the candidate dataset automatically.</div>
+  </div>
 
   <div class="section">
     <strong>Capture Control</strong>
@@ -23,12 +43,6 @@
     <strong>Socket Mirror</strong>
     <div id="socketStatus" class="status">Loading socket status...</div>
     <button id="refreshSocket">Refresh Socket Status</button>
-  </div>
-
-  <div class="section">
-    <strong>Strategy Pipeline Monitor</strong>
-    <div id="pipelineStatus" class="status">Waiting for backend pipeline status...</div>
-    <div class="muted">ACCEPT can enter the training buffer. QUARANTINE and REJECT never enter the candidate dataset. Candidate protection never promotes the production model automatically.</div>
   </div>
 
   <div class="section">
@@ -48,19 +62,6 @@
     <div id="sessions"></div>
   </div>
 
-  <div class="section">
-    <strong>Optional Task Episode</strong>
-    <div class="muted">Mark Success automatically persists a privacy-safe review in the extension outbox and sends it to the local machine-verification pipeline. Manual export remains only as a fallback/audit copy.</div>
-    <input id="task" placeholder="Task instruction, e.g. Search Google for OpenAI">
-    <button id="start">Start Episode</button>
-    <div class="row">
-      <button id="success">Mark Success</button>
-      <button id="failed">Mark Failed</button>
-    </div>
-    <button id="stop">Stop Episode</button>
-    <button id="exportEpisode">Export Task Episode for Review</button>
-    <div id="status" class="status"></div>
-  </div>
   <script src="core/task_episode_review_export.js"></script>
   <script src="core/episode_stop_settlement.js"></script>
   <script src="popup.js"></script>
