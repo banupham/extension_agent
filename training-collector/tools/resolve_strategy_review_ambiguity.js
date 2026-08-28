@@ -5,13 +5,18 @@ const fs = require('fs');
 const path = require('path');
 const { validateAgentAction } = require('../../control-center/manager/strategy/agent_action_contract.js');
 
-const AMBIGUITY_RESOLVER_VERSION = '0.5.1';
+const AMBIGUITY_RESOLVER_VERSION = '0.5.2';
 const MIN_SEMANTIC_WAIT_MS = 500;
 
 function readJson(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
 function resolveFile(file) { if (!file) return null; return path.isAbsolute(file) ? file : path.resolve(file); }
 function words(value) {
-  return (String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().match(/[a-z0-9]+/g) || []);
+  return (String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .match(/[a-z0-9]+/g) || []);
 }
 function taskMentions(task, candidates) {
   const set = new Set(words(task?.instruction));
@@ -348,7 +353,7 @@ function resolveReviewPack(packFile, triageFile, outputDir) {
   const result = {
     ambiguityResolverVersion: AMBIGUITY_RESOLVER_VERSION, generatedAt: new Date().toISOString(), sourcePack: path.relative(process.cwd(), fullPack), sourceTriage: path.relative(process.cwd(), fullTriage), episodeCount: items.length,
     ambiguousTransitionCount: items.reduce((sum, item) => sum + item.ambiguousTransitionCount, 0), resolvedSemanticActionCount: items.reduce((sum, item) => sum + item.resolvedSemanticActionCount, 0), captureNoiseCount: items.reduce((sum, item) => sum + item.captureNoiseCount, 0), unresolvedHumanReviewCount: items.reduce((sum, item) => sum + item.unresolvedHumanReviewCount, 0), fullyResolvedEpisodeCount: items.filter(item => item.allAmbiguityResolvedForApprovalAid).length,
-    policy: { reviewAidOnly: true, noRawTextValuesStored: true, arbitraryKeyboardCharactersNeverStored: true, capturedDoubleClickCanResolveWithSemanticTarget: true, componentClicksOfExplicitDoubleClickAreNoise: true, capturedHoverRequiresObservableSemanticStateChange: true, capturedDragRequiresSourceAndDestinationRefs: true, formControlSurfaceClicksExcludedAsHowNoise: true, checkableChangeUsesObservedDesiredState: true, taskDeclaredSelectionMayResolveSelectOption: true, mediaRangeChangeRequiresSemanticRangeLabelAndObservedValue: true, explicitTabMayResolveToPressKey: true, delayedSemanticChangeMayResolveWaitAndObserveOnlyWhenTaskExplicitlyWaits: true, browserLifecycleRequiresExplicitTaskIntentAndNeverExportsTabId: true, temporaryTabReturnMayResolveCloseOnlyWithOpenCompleteReturnIntent: true, incidentalScrollDefaultsToHowNoiseUnlessTaskExplicitlyRequestsScroll: true, textContentRequiresHumanReviewBecauseValueIsRedacted: true, autoTrainEligible: false },
+    policy: { reviewAidOnly: true, noRawTextValuesStored: true, arbitraryKeyboardCharactersNeverStored: true, capturedDoubleClickCanResolveWithSemanticTarget: true, componentClicksOfExplicitDoubleClickAreNoise: true, capturedHoverRequiresObservableSemanticStateChange: true, capturedDragRequiresSourceAndDestinationRefs: true, formControlSurfaceClicksExcludedAsHowNoise: true, checkableChangeUsesObservedDesiredState: true, taskDeclaredSelectionMayResolveSelectOption: true, mediaRangeChangeRequiresSemanticRangeLabelAndObservedValue: true, explicitTabMayResolveToPressKey: true, delayedSemanticChangeMayResolveWaitAndObserveOnlyWhenTaskExplicitlyWaits: true, browserLifecycleRequiresExplicitTaskIntentAndNeverExportsTabId: true, temporaryTabReturnMayResolveCloseOnlyWithOpenCompleteReturnIntent: true, vietnameseDStrokeNormalizedForTaskIntent: true, incidentalScrollDefaultsToHowNoiseUnlessTaskExplicitlyRequestsScroll: true, textContentRequiresHumanReviewBecauseValueIsRedacted: true, autoTrainEligible: false },
     items
   };
   const outDir = path.resolve(outputDir || path.join(path.dirname(fullTriage), 'strategy-ambiguity-resolution-v01'));
@@ -362,7 +367,7 @@ function main(argv = process.argv.slice(2)) {
   try {
     const args = parseArgs(argv); if (!args.pack || !args.triage) throw new Error('Usage: node training-collector/tools/resolve_strategy_review_ambiguity.js --pack <review-pack.json> --triage <triage.json> [--out dir]');
     const resolvedPack = resolveReviewPack(args.pack, args.triage, args.out);
-    console.log(JSON.stringify({ ok: true, result: 'PASS', version: resolvedPack.result.ambiguityResolverVersion, episodeCount: resolvedPack.result.episodeCount, ambiguousTransitionCount: resolvedPack.result.ambiguousTransitionCount, resolvedSemanticActionCount: resolvedPack.result.resolvedSemanticActionCount, captureNoiseCount: resolvedPack.result.captureNoiseCount, unresolvedHumanReviewCount: resolvedPack.result.unresolvedHumanReviewCount, fullyResolvedEpisodeCount: resolvedPack.result.fullyResolvedEpisodeCount, autoTrainEligible: resolvedPack.result.policy.autoTrainEligible, resolution: path.resolve(resolvedPack.jsonFile), markdown: path.resolve(resolvedPack.markdownFile) }, null, 2));
+    console.log(JSON.stringify({ ok: true, result: 'PASS', version: resolvedPack.result.ambiguityResolverVersion, episodeCount: resolvedPack.result.episodeCount, ambiguousTransitionCount: resolvedPack.result.ambiguousTransitionCount, resolvedSemanticActionCount: resolvedPack.result.resolvedSemanticActionCount, captureNoiseCount: resolvedPack.result.captureNoiseCount, unresolvedHumanReviewCount: resolvedPack.unresolvedHumanReviewCount, fullyResolvedEpisodeCount: resolvedPack.result.fullyResolvedEpisodeCount, autoTrainEligible: resolvedPack.result.policy.autoTrainEligible, resolution: path.resolve(resolvedPack.jsonFile), markdown: path.resolve(resolvedPack.markdownFile) }, null, 2));
   } catch (error) { console.error(JSON.stringify({ ok: false, result: 'FAIL', error: String(error?.message || error) }, null, 2)); process.exitCode = 1; }
 }
 if (require.main === module) main();
