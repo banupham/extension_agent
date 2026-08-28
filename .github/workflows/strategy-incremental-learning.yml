@@ -5,6 +5,7 @@ on:
     branches: [main, feat/agent-tab-context]
     paths:
       - 'training-collector/tools/prepare_incremental_strategy_learning.js'
+      - 'training-collector/tools/evaluate_machine_training_eligibility.js'
       - 'training-collector/tools/build_incremental_strategy_dataset.js'
       - 'training-collector/tools/prepare_human_learning_batch.js'
       - 'training-collector/tools/prepare_strategy_review_pack.js'
@@ -25,6 +26,7 @@ on:
   pull_request:
     paths:
       - 'training-collector/tools/prepare_incremental_strategy_learning.js'
+      - 'training-collector/tools/evaluate_machine_training_eligibility.js'
       - 'training-collector/tools/build_incremental_strategy_dataset.js'
       - 'training-collector/tools/prepare_human_learning_batch.js'
       - 'training-collector/tools/prepare_strategy_review_pack.js'
@@ -52,7 +54,9 @@ jobs:
         with:
           node-version: '20'
       - name: Check incremental pipeline syntax
-        run: node --check training-collector/tools/prepare_incremental_strategy_learning.js
+        run: |
+          node --check training-collector/tools/prepare_incremental_strategy_learning.js
+          node --check training-collector/tools/evaluate_machine_training_eligibility.js
       - name: Run incremental Strategy learning boundary contract
         run: node training-collector/tests/incremental_strategy_learning_contract.js
       - name: Run incremental Strategy dataset split-preservation contract
