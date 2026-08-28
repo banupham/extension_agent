@@ -20,8 +20,17 @@ if not exist "%MODEL%" (
   exit /b 66
 )
 
-for /f "usebackq delims=" %%V in (`node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));console.log(m.modelVersion||m.version||'unknown')" "%MODEL%"`) do set "MODEL_VERSION=%%V"
-for /f "usebackq delims=" %%H in (`node -e "const fs=require('fs'),c=require('crypto');console.log(c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))" "%MODEL%"`) do set "MODEL_HASH_BEFORE=%%H"
+for /f "delims=" %%V in ('node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));console.log(m.modelVersion?m.modelVersion:(m.version?m.version:'unknown'))" "%MODEL%"') do set "MODEL_VERSION=%%V"
+for /f "delims=" %%H in ('node -e "const fs=require('fs'),c=require('crypto');console.log(c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))" "%MODEL%"') do set "MODEL_HASH_BEFORE=%%H"
+
+if not defined MODEL_VERSION (
+  echo [FATAL] Could not read model version.
+  exit /b 65
+)
+if not defined MODEL_HASH_BEFORE (
+  echo [FATAL] Could not hash model file.
+  exit /b 65
+)
 
 set /a TOTAL=0
 set /a PASS=0
@@ -61,7 +70,7 @@ if /I "%MODEL_VERSION%"=="0.3.3" (
   set /a SKIP+=3
 )
 
-for /f "usebackq delims=" %%H in (`node -e "const fs=require('fs'),c=require('crypto');console.log(c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))" "%MODEL%"`) do set "MODEL_HASH_AFTER=%%H"
+for /f "delims=" %%H in ('node -e "const fs=require('fs'),c=require('crypto');console.log(c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))" "%MODEL%"') do set "MODEL_HASH_AFTER=%%H"
 
 echo.
 echo ============================================================
