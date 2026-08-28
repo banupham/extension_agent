@@ -120,7 +120,7 @@
   }
   function isSensitive(el) { return !!privacyFor(el).sensitive; }
 
-  function finiteMedia(value) {
+  function finiteControl(value) {
     const n = Number(value);
     return Number.isFinite(n) ? Math.round(n * 1000) / 1000 : null;
   }
@@ -131,22 +131,27 @@
       checked: null,
       selectedIndex: null,
       rangeValue: null,
+      rangeMin: null,
+      rangeMax: null,
+      rangeStep: null,
       mediaState: null
     };
     if (tag === 'input' && ['checkbox', 'radio'].includes(inputType)) state.checked = !!el.checked;
     if (tag === 'select' && el instanceof HTMLSelectElement) state.selectedIndex = Number(el.selectedIndex);
     if (tag === 'input' && inputType === 'range') {
-      const value = Number(el.value);
-      state.rangeValue = Number.isFinite(value) ? value : null;
+      state.rangeValue = finiteControl(el.value);
+      state.rangeMin = finiteControl(el.min || 0);
+      state.rangeMax = finiteControl(el.max || 100);
+      state.rangeStep = finiteControl(el.step || 1);
     }
     if ((tag === 'audio' || tag === 'video') && el instanceof HTMLMediaElement) {
       state.mediaState = {
         paused: !!el.paused,
         muted: !!el.muted,
-        volume: finiteMedia(el.volume),
-        currentTime: finiteMedia(el.currentTime),
-        duration: finiteMedia(el.duration),
-        playbackRate: finiteMedia(el.playbackRate)
+        volume: finiteControl(el.volume),
+        currentTime: finiteControl(el.currentTime),
+        duration: finiteControl(el.duration),
+        playbackRate: finiteControl(el.playbackRate)
       };
     }
     return state;
@@ -179,6 +184,9 @@
       checked: controlState.checked,
       selectedIndex: controlState.selectedIndex,
       rangeValue: controlState.rangeValue,
+      rangeMin: controlState.rangeMin,
+      rangeMax: controlState.rangeMax,
+      rangeStep: controlState.rangeStep,
       mediaState: controlState.mediaState,
       enabled: state.enabled,
       rendered: state.rendered,
