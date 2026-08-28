@@ -142,3 +142,5 @@ Random chỉ được áp dụng khi chủ động tạo Scenario Variant hoặc
 - [docs/KEYBOARD.md](docs/KEYBOARD.md): keyboard/Backspace.
 - [docs/RECORDED_CLICK.md](docs/RECORDED_CLICK.md): click deterministic.
 - [docs/ASSIGNMENT_MODES.md](docs/ASSIGNMENT_MODES.md): phân công browser/scenario.
+
+hello
