@@ -22,6 +22,9 @@ on:
       - 'training-collector/tests/human_learning_batch_contract.js'
       - 'training-collector/tests/strategy_teaching_batch_resolver_contract.js'
       - 'training-collector/tests/strategy_approval_pipeline_contract.js'
+      - 'control-center/script/teaching_lab_server.js'
+      - 'control-center/script/native_regression_model_compat.js'
+      - 'control-center/script/agent_intelligence_benchmark.js'
       - '.github/workflows/strategy-incremental-learning.yml'
   pull_request:
     paths:
@@ -43,6 +46,9 @@ on:
       - 'training-collector/tests/human_learning_batch_contract.js'
       - 'training-collector/tests/strategy_teaching_batch_resolver_contract.js'
       - 'training-collector/tests/strategy_approval_pipeline_contract.js'
+      - 'control-center/script/teaching_lab_server.js'
+      - 'control-center/script/native_regression_model_compat.js'
+      - 'control-center/script/agent_intelligence_benchmark.js'
       - '.github/workflows/strategy-incremental-learning.yml'
 
 jobs:
@@ -57,6 +63,8 @@ jobs:
         run: |
           node --check training-collector/tools/prepare_incremental_strategy_learning.js
           node --check training-collector/tools/evaluate_machine_training_eligibility.js
+          node --check control-center/script/native_regression_model_compat.js
+          node control-center/script/teaching_lab_server.js --self-test
       - name: Run incremental Strategy learning boundary contract
         run: node training-collector/tests/incremental_strategy_learning_contract.js
       - name: Run incremental Strategy dataset split-preservation contract
