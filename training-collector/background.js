@@ -147,13 +147,14 @@ function strategyObservationFromRaw(raw, observationId) {
 }
 async function requestStrategyObservation(tabId, label = 'browser', retries = 1) {
   let latest = null;
-  for (let attempt = 0; attempt < Math.max(1, retries); attempt += 1) {
+  const attempts = Math.max(1, Number(retries || 1));
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     const response = await requestSnapshot(tabId);
     if (response?.ok && response.observation) {
-      latest = strategyObservationFromRaw(response.observation, `${label}-${attempt}`);
-      if (latest) return latest;
+      const observed = strategyObservationFromRaw(response.observation, `${label}-${attempt}`);
+      if (observed) latest = observed;
     }
-    if (attempt + 1 < retries) await sleep(BROWSER_OBSERVATION_RETRY_MS);
+    if (attempt + 1 < attempts) await sleep(BROWSER_OBSERVATION_RETRY_MS);
   }
   return latest;
 }
