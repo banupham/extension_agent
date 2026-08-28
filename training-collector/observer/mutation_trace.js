@@ -8,6 +8,7 @@
     const observer = options.observer;
     const emitBatch = typeof options.emitBatch === 'function' ? options.emitBatch : () => {};
     const decorateEvent = typeof options.decorateEvent === 'function' ? options.decorateEvent : event => event;
+    const onBurst = typeof options.onBurst === 'function' ? options.onBurst : null;
     let mo = null;
     let timer = null;
     let burst = null;
@@ -76,6 +77,7 @@
       if (!burst) return;
       const out = burst;
       burst = null;
+      try { onBurst?.(out); } catch {}
       try { emitBatch([out]); } catch {}
     }
 
