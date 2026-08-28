@@ -104,20 +104,11 @@ async function connect(timeoutMs = 5000) {
   throw lastError || new Error('client_connect_timeout');
 }
 
-function send(ws, payload) {
-  ws.send(JSON.stringify({ protocol: PROTOCOL, ...payload }));
-}
-
+function send(ws, payload) { ws.send(JSON.stringify({ protocol: PROTOCOL, ...payload })); }
 function waitFor(ws, predicate, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('message_timeout'));
-    }, timeoutMs);
-    function cleanup() {
-      clearTimeout(timer);
-      ws.off('message', onMessage);
-    }
+    const timer = setTimeout(() => { cleanup(); reject(new Error('message_timeout')); }, timeoutMs);
+    function cleanup() { clearTimeout(timer); ws.off('message', onMessage); }
     function onMessage(raw) {
       let message;
       try { message = JSON.parse(String(raw)); } catch { return; }
@@ -128,56 +119,38 @@ function waitFor(ws, predicate, timeoutMs = 5000) {
     ws.on('message', onMessage);
   });
 }
-
-async function roundTrip(ws, payload, predicate, timeoutMs = 5000) {
-  const waiting = waitFor(ws, predicate, timeoutMs);
-  send(ws, payload);
-  return waiting;
-}
+async function roundTrip(ws, payload, predicate, timeoutMs = 5000) { const waiting = waitFor(ws, predicate, timeoutMs); send(ws, payload); return waiting; }
 
 function event(seq, type = 'pointer') {
-  return {
-    rawVersion: '0.7.2',
-    sessionSeq: seq,
-    type,
-    captureSource: 'integration-test',
-    tsEpochMs: 1000 + seq,
-    pageInstanceId: 'p-test',
-    pageSeq: seq,
-    sourceSeq: seq
-  };
+  return { rawVersion: '0.7.2', sessionSeq: seq, type, captureSource: 'integration-test', tsEpochMs: 1000 + seq, pageInstanceId: 'p-test', pageSeq: seq, sourceSeq: seq };
 }
-
 async function openSession(ws, eventCount) {
-  return roundTrip(ws, {
-    type: 'session-open',
-    session: {
-      schemaVersion: '0.7.2',
-      sessionId: SESSION_ID,
-      status: 'active',
-      startedAt: '2026-08-25T00:00:00.000Z',
-      endedAt: null,
-      lastSeenAt: '2026-08-25T00:00:01.000Z',
-      eventCount,
-      chunkCount: 1,
-      storageBackend: 'indexeddb'
-    }
-  }, message => message.type === 'session-ack' && message.sessionId === SESSION_ID);
+  return roundTrip(ws, { type: 'session-open', session: { schemaVersion: '0.7.2', sessionId: SESSION_ID, status: 'active', startedAt: '2026-08-25T00:00:00.000Z', endedAt: null, lastSeenAt: '2026-08-25T00:00:01.000Z', eventCount, chunkCount: 1, storageBackend: 'indexeddb' } }, message => message.type === 'session-ack' && message.sessionId === SESSION_ID);
 }
 
-function observation(title) {
+function observation(success = false) {
+  const interactiveElements = [{
+    ref: 'target-1',
+    role: 'button',
+    tag: 'button',
+    label: 'Details',
+    visible: true,
+    enabled: true,
+    editable: false
+  }];
+  if (success) interactiveElements.push({
+    ref: 'status-1',
+    role: 'status',
+    tag: 'div',
+    label: 'TEACHING_SUCCESS_M01',
+    visible: true,
+    enabled: true,
+    editable: false
+  });
   return {
-    url: 'http://127.0.0.1:8791/teaching/TL04',
-    title,
-    interactiveElements: [{
-      ref: 'target-1',
-      role: 'button',
-      tag: 'button',
-      label: 'Track Package',
-      visible: true,
-      enabled: true,
-      editable: false
-    }],
+    url: 'http://127.0.0.1:8791/teaching/motor/M01',
+    title: '',
+    interactiveElements,
     pageSignals: {}
   };
 }
@@ -186,49 +159,22 @@ function taskReview() {
   return buildReviewExport({
     schemaVersion: '0.3.0',
     episodeId: TASK_EPISODE_ID,
-    task: {
-      instruction: 'TL04 | Mở Track Package.',
-      type: 'unspecified',
-      args: {}
-    },
+    task: { instruction: 'M01 | Mở thẻ Details.', type: 'unspecified', args: {} },
     startedAt: '2026-08-28T00:00:00.000Z',
     endedAt: '2026-08-28T00:00:02.000Z',
-    privacy: {
-      policyVersion: 'integration-safe',
-      rawTextValuesStored: false,
-      passwordValuesStored: false,
-      cookiesStored: false,
-      storageSecretsStored: false,
-      authorizationDataStored: false
-    },
+    privacy: { policyVersion: 'integration-safe', rawTextValuesStored: false, passwordValuesStored: false, cookiesStored: false, storageSecretsStored: false, authorizationDataStored: false },
     transitions: [{
-      transitionId: 'transition-1',
-      status: 'complete',
-      startedAtMs: 1000,
-      endedAtMs: 1500,
-      action: {
-        actionVersion: '0.7.2',
-        kind: 'click',
-        targetRef: 'target-1',
-        t: 1000
-      },
-      strategyObservationBefore: observation('TL04 · Moving target'),
-      strategyObservationAfter: observation('PASS_TL04'),
+      transitionId: 'transition-1', status: 'complete', startedAtMs: 1000, endedAtMs: 1500,
+      action: { actionVersion: '0.7.2', kind: 'click', targetRef: 'target-1', t: 1000 },
+      strategyObservationBefore: observation(false),
+      strategyObservationAfter: observation(true),
       outcome: { actionSucceeded: true, partial: false }
     }],
     finalOutcome: { status: 'success' }
   }, { exportedAt: '2026-08-28T00:00:03.000Z' });
 }
 
-async function requestPipeline(ws) {
-  return roundTrip(
-    ws,
-    { type: 'pipeline-status-request' },
-    message => message.type === 'pipeline-status',
-    5000
-  );
-}
-
+async function requestPipeline(ws) { return roundTrip(ws, { type: 'pipeline-status-request' }, message => message.type === 'pipeline-status', 5000); }
 async function waitForTaskPipeline(ws, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   let latest = null;
@@ -240,7 +186,6 @@ async function waitForTaskPipeline(ws, timeoutMs = 15000) {
   }
   throw new Error(`task_pipeline_timeout:${JSON.stringify(latest?.pipeline || null)}`);
 }
-
 async function waitForCandidate(ws, timeoutMs = 20000) {
   const deadline = Date.now() + timeoutMs;
   let latest = null;
@@ -264,48 +209,22 @@ async function main() {
     let ack = await openSession(ws, 3);
     assert.strictEqual(ack.resumeFromSeq, 0);
 
-    ack = await roundTrip(ws, {
-      type: 'event-batch', sessionId: SESSION_ID, firstSeq: 1, lastSeq: 2,
-      events: [event(1), event(2, 'dom-click')]
-    }, message => message.type === 'batch-ack' && message.sessionId === SESSION_ID);
-    assert.strictEqual(ack.lastSeq, 2);
-    assert.strictEqual(ack.appended, 2);
+    ack = await roundTrip(ws, { type: 'event-batch', sessionId: SESSION_ID, firstSeq: 1, lastSeq: 2, events: [event(1), event(2, 'dom-click')] }, message => message.type === 'batch-ack' && message.sessionId === SESSION_ID);
+    assert.strictEqual(ack.lastSeq, 2); assert.strictEqual(ack.appended, 2);
+    ack = await roundTrip(ws, { type: 'event-batch', sessionId: SESSION_ID, firstSeq: 1, lastSeq: 2, events: [event(1), event(2, 'dom-click')] }, message => message.type === 'batch-ack' && message.sessionId === SESSION_ID);
+    assert.strictEqual(ack.lastSeq, 2); assert.strictEqual(ack.appended, 0);
 
-    ack = await roundTrip(ws, {
-      type: 'event-batch', sessionId: SESSION_ID, firstSeq: 1, lastSeq: 2,
-      events: [event(1), event(2, 'dom-click')]
-    }, message => message.type === 'batch-ack' && message.sessionId === SESSION_ID);
-    assert.strictEqual(ack.lastSeq, 2);
-    assert.strictEqual(ack.appended, 0);
-
-    const resync = await roundTrip(ws, {
-      type: 'event-batch', sessionId: SESSION_ID, firstSeq: 4, lastSeq: 4,
-      events: [event(4)]
-    }, message => message.type === 'resync' && message.sessionId === SESSION_ID);
-    assert.strictEqual(resync.resumeFromSeq, 2);
-    assert.strictEqual(resync.expectedSeq, 3);
-    assert.strictEqual(resync.receivedSeq, 4);
-
-    ack = await roundTrip(ws, {
-      type: 'event-batch', sessionId: SESSION_ID, firstSeq: 3, lastSeq: 3,
-      events: [event(3, 'collector-stream-health')]
-    }, message => message.type === 'batch-ack' && message.sessionId === SESSION_ID);
-    assert.strictEqual(ack.lastSeq, 3);
-    assert.strictEqual(ack.appended, 1);
+    const resync = await roundTrip(ws, { type: 'event-batch', sessionId: SESSION_ID, firstSeq: 4, lastSeq: 4, events: [event(4)] }, message => message.type === 'resync' && message.sessionId === SESSION_ID);
+    assert.strictEqual(resync.resumeFromSeq, 2); assert.strictEqual(resync.expectedSeq, 3); assert.strictEqual(resync.receivedSeq, 4);
+    ack = await roundTrip(ws, { type: 'event-batch', sessionId: SESSION_ID, firstSeq: 3, lastSeq: 3, events: [event(3, 'collector-stream-health')] }, message => message.type === 'batch-ack' && message.sessionId === SESSION_ID);
+    assert.strictEqual(ack.lastSeq, 3); assert.strictEqual(ack.appended, 1);
 
     const review = taskReview();
     assert.strictEqual(review.strategyReady, true);
-    let reviewAck = await roundTrip(ws, {
-      type: 'task-episode-review', episodeId: TASK_EPISODE_ID, review
-    }, message => message.type === 'task-episode-review-ack' && message.episodeId === TASK_EPISODE_ID, 10000);
-    assert.strictEqual(reviewAck.persisted, true);
-    assert.strictEqual(reviewAck.duplicate, false);
-
-    reviewAck = await roundTrip(ws, {
-      type: 'task-episode-review', episodeId: TASK_EPISODE_ID, review
-    }, message => message.type === 'task-episode-review-ack' && message.episodeId === TASK_EPISODE_ID, 10000);
-    assert.strictEqual(reviewAck.persisted, true);
-    assert.strictEqual(reviewAck.duplicate, true);
+    let reviewAck = await roundTrip(ws, { type: 'task-episode-review', episodeId: TASK_EPISODE_ID, review }, message => message.type === 'task-episode-review-ack' && message.episodeId === TASK_EPISODE_ID, 10000);
+    assert.strictEqual(reviewAck.persisted, true); assert.strictEqual(reviewAck.duplicate, false);
+    reviewAck = await roundTrip(ws, { type: 'task-episode-review', episodeId: TASK_EPISODE_ID, review }, message => message.type === 'task-episode-review-ack' && message.episodeId === TASK_EPISODE_ID, 10000);
+    assert.strictEqual(reviewAck.persisted, true); assert.strictEqual(reviewAck.duplicate, true);
 
     const pipelineMessage = await waitForTaskPipeline(ws);
     assert.strictEqual(pipelineMessage.pipeline.baseDatasetConfigured, false);
@@ -315,54 +234,35 @@ async function main() {
 
     const reviewFile = path.join(dataDir, 'task-episode-reviews', `${TASK_EPISODE_ID}.task-episode-review.json`);
     const receiptFile = path.join(dataDir, 'pipeline', 'receipts', `${TASK_EPISODE_ID}.machine-eligibility.json`);
-    assert.ok(fs.existsSync(reviewFile), 'review must be persisted before durable ack/recovery');
-    assert.ok(fs.existsSync(receiptFile), 'machine eligibility receipt must be persisted');
+    assert.ok(fs.existsSync(reviewFile)); assert.ok(fs.existsSync(receiptFile));
     const receipt = JSON.parse(await fsp.readFile(receiptFile, 'utf8'));
     assert.strictEqual(receipt.status, 'accept');
+    assert.strictEqual(receipt.machineEligibility?.outcomeVerification?.scenarioId, 'M01');
+    assert.strictEqual(receipt.machineEligibility?.outcomeVerification?.semanticSignalMatched, true);
     assert.strictEqual(receipt.productionPromotionApplied, false);
 
-    const closed = await roundTrip(ws, {
-      type: 'session-close', sessionId: SESSION_ID, expectedLastSeq: 3,
-      endedAt: '2026-08-25T00:01:00.000Z', reason: 'integration_test_close'
-    }, message => message.type === 'session-closed' && message.sessionId === SESSION_ID);
+    const closed = await roundTrip(ws, { type: 'session-close', sessionId: SESSION_ID, expectedLastSeq: 3, endedAt: '2026-08-25T00:01:00.000Z', reason: 'integration_test_close' }, message => message.type === 'session-closed' && message.sessionId === SESSION_ID);
     assert.strictEqual(closed.lastSeq, 3);
 
-    ws.close();
-    await delay(100);
-    await stopServer(server);
-    server = null;
-    ws = null;
+    ws.close(); await delay(100); await stopServer(server); server = null; ws = null;
 
     const rawFile = path.join(dataDir, `${SESSION_ID}.raw.jsonl`);
     const metaFile = path.join(dataDir, `${SESSION_ID}.meta.json`);
     const records = (await fsp.readFile(rawFile, 'utf8')).trim().split(/\r?\n/).map(JSON.parse);
-    const events = records.filter(record => record.recordType === 'event');
-    assert.deepStrictEqual(events.map(item => item.sessionSeq), [1, 2, 3]);
+    assert.deepStrictEqual(records.filter(record => record.recordType === 'event').map(item => item.sessionSeq), [1, 2, 3]);
     assert.strictEqual(records.filter(record => record.recordType === 'session').length, 1);
     assert.strictEqual(records.filter(record => record.recordType === 'session-end').length, 1);
-
     let meta = JSON.parse(await fsp.readFile(metaFile, 'utf8'));
-    assert.strictEqual(meta.status, 'closed');
-    assert.strictEqual(meta.lastSeq, 3);
-    assert.strictEqual(meta.eventCount, 3);
+    assert.strictEqual(meta.status, 'closed'); assert.strictEqual(meta.lastSeq, 3); assert.strictEqual(meta.eventCount, 3);
 
-    // Restart against the same durable ACCEPT receipt with a test base dataset/model.
-    // Threshold=1 proves the socket backend can create a candidate by itself.
     const baseDataset = path.join(dataDir, 'integration-base-dataset');
     const baseModelFile = path.join(dataDir, 'integration-base-model.json');
     writeBaseDataset(baseDataset);
     await fsp.writeFile(baseModelFile, `${JSON.stringify({ modelVersion: '0.3.5', kind: 'socket-integration-base-model' }, null, 2)}\n`, 'utf8');
     const baseModelBefore = await fsp.readFile(baseModelFile, 'utf8');
 
-    server = startServer(dataDir, {
-      baseDataset,
-      baseModel: baseModelFile,
-      batchThreshold: 1,
-      autoProtect: false
-    });
-    await server.ready;
-    ws = await connect();
-    ack = await openSession(ws, 4);
+    server = startServer(dataDir, { baseDataset, baseModel: baseModelFile, batchThreshold: 1, autoProtect: false });
+    await server.ready; ws = await connect(); ack = await openSession(ws, 4);
     assert.strictEqual(ack.resumeFromSeq, 3);
 
     const candidatePipeline = await waitForCandidate(ws);
@@ -377,7 +277,7 @@ async function main() {
     assert.strictEqual(candidatePipeline.pipeline.candidate.episodeCount, 1);
     assert.strictEqual(candidatePipeline.pipeline.candidate.protectionPass, false);
     assert.strictEqual(candidatePipeline.pipeline.productionPromotionAllowed, false);
-    assert.strictEqual(await fsp.readFile(baseModelFile, 'utf8'), baseModelBefore, 'automatic candidate creation must not mutate base model');
+    assert.strictEqual(await fsp.readFile(baseModelFile, 'utf8'), baseModelBefore);
 
     const pipelineStateFile = path.join(dataDir, 'pipeline', 'state.json');
     const pipelineState = JSON.parse(await fsp.readFile(pipelineStateFile, 'utf8'));
@@ -391,28 +291,17 @@ async function main() {
     assert.strictEqual(finalManifest.baseModel.mutated, false);
     assert.strictEqual(finalManifest.promotion.applied, false);
 
-    ack = await roundTrip(ws, {
-      type: 'event-batch', sessionId: SESSION_ID, firstSeq: 4, lastSeq: 4,
-      events: [event(4, 'route-change')]
-    }, message => message.type === 'batch-ack' && message.sessionId === SESSION_ID);
-    assert.strictEqual(ack.lastSeq, 4);
-    assert.strictEqual(ack.appended, 1);
-
-    await roundTrip(ws, {
-      type: 'session-close', sessionId: SESSION_ID, expectedLastSeq: 4,
-      endedAt: '2026-08-25T00:02:00.000Z', reason: 'integration_test_restart_close'
-    }, message => message.type === 'session-closed' && message.sessionId === SESSION_ID);
+    ack = await roundTrip(ws, { type: 'event-batch', sessionId: SESSION_ID, firstSeq: 4, lastSeq: 4, events: [event(4, 'route-change')] }, message => message.type === 'batch-ack' && message.sessionId === SESSION_ID);
+    assert.strictEqual(ack.lastSeq, 4); assert.strictEqual(ack.appended, 1);
+    await roundTrip(ws, { type: 'session-close', sessionId: SESSION_ID, expectedLastSeq: 4, endedAt: '2026-08-25T00:02:00.000Z', reason: 'integration_test_restart_close' }, message => message.type === 'session-closed' && message.sessionId === SESSION_ID);
 
     meta = JSON.parse(await fsp.readFile(metaFile, 'utf8'));
-    assert.strictEqual(meta.status, 'closed');
-    assert.strictEqual(meta.lastSeq, 4);
-    assert.strictEqual(meta.eventCount, 4);
-
+    assert.strictEqual(meta.status, 'closed'); assert.strictEqual(meta.lastSeq, 4); assert.strictEqual(meta.eventCount, 4);
     const finalRecords = (await fsp.readFile(rawFile, 'utf8')).trim().split(/\r?\n/).map(JSON.parse);
     assert.deepStrictEqual(finalRecords.filter(record => record.recordType === 'event').map(item => item.sessionSeq), [1, 2, 3, 4]);
     assert.ok(finalRecords.some(record => record.recordType === 'session-resume'));
 
-    console.log('Training Collector V0.8 socket + automatic Task Episode → ACCEPT → candidate integration test OK');
+    console.log('Training Collector V0.8 socket + M01 motor Task Episode → ACCEPT → candidate integration test OK');
   } finally {
     try { ws?.close(); } catch {}
     await stopServer(server);
@@ -420,7 +309,4 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+main().catch(error => { console.error(error); process.exitCode = 1; });
