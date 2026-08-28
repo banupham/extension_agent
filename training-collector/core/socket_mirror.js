@@ -6,9 +6,12 @@
   function createSocketMirror(options = {}) {
     const endpoint = String(options.endpoint || 'ws://127.0.0.1:8765/training-collector');
     const replaySession = typeof options.replaySession === 'function' ? options.replaySession : async () => {};
+    const onTaskReviewAck = typeof options.onTaskReviewAck === 'function' ? options.onTaskReviewAck : null;
+    const onPipelineStatus = typeof options.onPipelineStatus === 'function' ? options.onPipelineStatus : null;
     const heartbeatMs = Math.max(10000, Number(options.heartbeatMs || 20000));
     const maxReconnectMs = Math.max(2000, Number(options.maxReconnectMs || 10000));
     const sessions = new Map();
+    const taskReviews = new Map();
     let socket = null;
     let started = false;
     let reconnectAttempt = 0;
@@ -17,6 +20,8 @@
     let connectedAt = null;
     let lastMessageAt = null;
     let lastError = null;
+    let lastTaskReviewAck = null;
+    let pipeline = null;
 
     function nowIso() { return new Date().toISOString(); }
     function isOpen() { return socket && socket.readyState === WebSocket.OPEN; }
@@ -80,6 +85,20 @@
       const lastSeq = Number(events[events.length - 1]?.sessionSeq || 0);
       return send({ type: 'event-batch', protocol: 'training-collector-v1', sessionId, firstSeq, lastSeq, events });
     }
+    function sendTaskReview(row) {
+      if (!row?.review || !isOpen() || row.sent === true) return false;
+      const sent = send({
+        type: 'task-episode-review',
+        protocol: 'training-collector-v1',
+        episodeId: row.review.episodeId || null,
+        review: row.review
+      });
+      if (sent) {
+        row.sent = true;
+        row.sentAt = nowIso();
+      }
+      return sent;
+    }
     async function syncRow(row) {
       if (!row || row.syncing || !row.serverReady || !isOpen()) return;
       row.syncing = true;
@@ -138,6 +157,13 @@
         send({ type: 'heartbeat', protocol: 'training-collector-v1', at: nowIso() });
       }, heartbeatMs);
     }
+    function notifyPipelineStatus(message) {
+      if (message?.pipeline && typeof message.pipeline === 'object') pipeline = message.pipeline;
+      if (!onPipelineStatus) return;
+      Promise.resolve(onPipelineStatus(message)).catch(error => {
+        lastError = `pipeline_status_callback_failed:${String(error?.message || error)}`;
+      });
+    }
     function handleMessage(message) {
       lastMessageAt = nowIso();
       if (message?.type === 'session-ack') {
@@ -175,6 +201,22 @@
         row.sentThrough = row.ackedThrough;
         row.closeSent = false;
         syncRow(row);
+        return;
+      }
+      if (message?.type === 'task-episode-review-ack') {
+        const episodeId = String(message.episodeId || '');
+        lastTaskReviewAck = message;
+        if (message.persisted === true || message.permanent === true) taskReviews.delete(episodeId);
+        if (message.pipeline) notifyPipelineStatus(message);
+        if (onTaskReviewAck) {
+          Promise.resolve(onTaskReviewAck(message)).catch(error => {
+            lastError = `task_review_ack_callback_failed:${String(error?.message || error)}`;
+          });
+        }
+        return;
+      }
+      if (message?.type === 'task-episode-review-result' || message?.type === 'pipeline-status') {
+        notifyPipelineStatus(message);
       }
     }
     function connect() {
@@ -191,7 +233,12 @@
         lastError = null;
         reconnectAttempt = 0;
         send({ type: 'client-hello', protocol: 'training-collector-v1', runtime: 'mv3-background', at: connectedAt });
+        send({ type: 'pipeline-status-request', protocol: 'training-collector-v1' });
         for (const row of sessions.values()) sendSessionOpen(row);
+        for (const row of taskReviews.values()) {
+          row.sent = false;
+          sendTaskReview(row);
+        }
         startHeartbeat();
       });
       socket.addEventListener('message', event => {
@@ -207,6 +254,7 @@
           row.syncing = false;
           row.closeSent = false;
         }
+        for (const row of taskReviews.values()) row.sent = false;
         lastError = `socket_closed:${Number(event.code || 0)}:${String(event.reason || '')}`;
         scheduleReconnect();
       });
@@ -246,6 +294,28 @@
       if (sendEventBatch(row.session.sessionId, fresh)) row.sentThrough = Number(fresh[fresh.length - 1]?.sessionSeq || row.sentThrough);
       else row.liveQueue.push(fresh);
     }
+    function registerTaskReview(review) {
+      const episodeId = String(review?.episodeId || '').trim();
+      if (!episodeId) return null;
+      const row = {
+        review,
+        registeredAt: nowIso(),
+        sent: false,
+        sentAt: null
+      };
+      taskReviews.set(episodeId, row);
+      if (!started) start();
+      else if (isOpen()) sendTaskReview(row);
+      else connect();
+      return row;
+    }
+    function requestPipelineStatus() {
+      if (!isOpen()) {
+        connect();
+        return false;
+      }
+      return send({ type: 'pipeline-status-request', protocol: 'training-collector-v1' });
+    }
     function status() {
       const bySession = {};
       for (const [sessionId, row] of sessions.entries()) {
@@ -265,11 +335,24 @@
         connectedAt,
         lastMessageAt,
         lastError,
+        taskReviewOutboxCount: taskReviews.size,
+        taskReviewEpisodeIds: [...taskReviews.keys()].slice(0, 20),
+        lastTaskReviewAck,
+        pipeline,
         sessions: bySession
       };
     }
 
-    return { start, stop, connect, registerSession, publish, status };
+    return {
+      start,
+      stop,
+      connect,
+      registerSession,
+      publish,
+      registerTaskReview,
+      requestPipelineStatus,
+      status
+    };
   }
 
   NS.SocketMirror = { createSocketMirror };
