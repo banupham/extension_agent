@@ -8,6 +8,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { WebSocket } = require('ws');
 const { buildReviewExport } = require('../core/task_episode_review_export.js');
+const { writeBaseDataset } = require('../tests/incremental_strategy_learning_contract.js');
 
 const SERVER = path.join(__dirname, 'server.js');
 const PORT = 20000 + (process.pid % 20000);
@@ -18,7 +19,7 @@ const PROTOCOL = 'training-collector-v1';
 
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-function startServer(dataDir) {
+function startServer(dataDir, options = {}) {
   const child = spawn(process.execPath, [SERVER], {
     cwd: __dirname,
     env: {
@@ -28,7 +29,10 @@ function startServer(dataDir) {
       TC_SOCKET_DATA_DIR: dataDir,
       TC_SOCKET_FINALIZE_GRACE_MS: '5000',
       TC_STRATEGY_PIPELINE_ENABLED: '1',
-      TC_STRATEGY_BATCH_THRESHOLD: '100'
+      TC_STRATEGY_BATCH_THRESHOLD: String(options.batchThreshold || 100),
+      TC_STRATEGY_AUTO_PROTECT: options.autoProtect === false ? '0' : '1',
+      ...(options.baseDataset ? { TC_STRATEGY_BASE_DATASET: options.baseDataset } : {}),
+      ...(options.baseModel ? { TC_STRATEGY_BASE_MODEL: options.baseModel } : {})
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -216,21 +220,36 @@ function taskReview() {
   }, { exportedAt: '2026-08-28T00:00:03.000Z' });
 }
 
+async function requestPipeline(ws) {
+  return roundTrip(
+    ws,
+    { type: 'pipeline-status-request' },
+    message => message.type === 'pipeline-status',
+    5000
+  );
+}
+
 async function waitForTaskPipeline(ws, timeoutMs = 15000) {
   const deadline = Date.now() + timeoutMs;
   let latest = null;
   while (Date.now() < deadline) {
-    latest = await roundTrip(
-      ws,
-      { type: 'pipeline-status-request' },
-      message => message.type === 'pipeline-status',
-      5000
-    );
+    latest = await requestPipeline(ws);
     const pipeline = latest.pipeline || {};
     if (Number(pipeline.processedReviewCount || 0) >= 1 && Number(pipeline.counts?.accept || 0) >= 1) return latest;
     await delay(100);
   }
   throw new Error(`task_pipeline_timeout:${JSON.stringify(latest?.pipeline || null)}`);
+}
+
+async function waitForCandidate(ws, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  let latest = null;
+  while (Date.now() < deadline) {
+    latest = await requestPipeline(ws);
+    if (latest?.pipeline?.candidate?.modelVersion) return latest;
+    await delay(100);
+  }
+  throw new Error(`candidate_pipeline_timeout:${JSON.stringify(latest?.pipeline || null)}`);
 }
 
 async function main() {
@@ -327,22 +346,50 @@ async function main() {
     assert.strictEqual(meta.lastSeq, 3);
     assert.strictEqual(meta.eventCount, 3);
 
-    // Restart server against the same archive. It must scan/recover lastSeq and pipeline receipts.
-    server = startServer(dataDir);
+    // Restart against the same durable ACCEPT receipt with a test base dataset/model.
+    // Threshold=1 proves the socket backend can create a candidate by itself.
+    const baseDataset = path.join(dataDir, 'integration-base-dataset');
+    const baseModelFile = path.join(dataDir, 'integration-base-model.json');
+    writeBaseDataset(baseDataset);
+    await fsp.writeFile(baseModelFile, `${JSON.stringify({ modelVersion: '0.3.5', kind: 'socket-integration-base-model' }, null, 2)}\n`, 'utf8');
+    const baseModelBefore = await fsp.readFile(baseModelFile, 'utf8');
+
+    server = startServer(dataDir, {
+      baseDataset,
+      baseModel: baseModelFile,
+      batchThreshold: 1,
+      autoProtect: false
+    });
     await server.ready;
     ws = await connect();
     ack = await openSession(ws, 4);
     assert.strictEqual(ack.resumeFromSeq, 3);
 
-    const restartedPipeline = await roundTrip(
-      ws,
-      { type: 'pipeline-status-request' },
-      message => message.type === 'pipeline-status',
-      10000
-    );
-    assert.strictEqual(restartedPipeline.pipeline.processedReviewCount, 1);
-    assert.strictEqual(restartedPipeline.pipeline.counts.accept, 1);
-    assert.strictEqual(restartedPipeline.pipeline.productionPromotionAllowed, false);
+    const candidatePipeline = await waitForCandidate(ws);
+    assert.strictEqual(candidatePipeline.pipeline.processedReviewCount, 1);
+    assert.strictEqual(candidatePipeline.pipeline.counts.accept, 1);
+    assert.strictEqual(candidatePipeline.pipeline.baseDatasetConfigured, true);
+    assert.strictEqual(candidatePipeline.pipeline.baseModelConfigured, true);
+    assert.strictEqual(candidatePipeline.pipeline.batchThreshold, 1);
+    assert.ok(candidatePipeline.pipeline.candidate);
+    assert.strictEqual(candidatePipeline.pipeline.candidate.status, 'candidate-awaiting-runtime-protection');
+    assert.strictEqual(candidatePipeline.pipeline.candidate.modelVersion, '0.3.6');
+    assert.strictEqual(candidatePipeline.pipeline.candidate.episodeCount, 1);
+    assert.strictEqual(candidatePipeline.pipeline.candidate.protectionPass, false);
+    assert.strictEqual(candidatePipeline.pipeline.productionPromotionAllowed, false);
+    assert.strictEqual(await fsp.readFile(baseModelFile, 'utf8'), baseModelBefore, 'automatic candidate creation must not mutate base model');
+
+    const pipelineStateFile = path.join(dataDir, 'pipeline', 'state.json');
+    const pipelineState = JSON.parse(await fsp.readFile(pipelineStateFile, 'utf8'));
+    assert.strictEqual(pipelineState.pendingCandidate.promotionApplied, false);
+    assert.ok(pipelineState.pendingCandidate.candidateModel);
+    assert.ok(pipelineState.pendingCandidate.finalManifest);
+    const finalManifest = JSON.parse(await fsp.readFile(path.join(dataDir, pipelineState.pendingCandidate.finalManifest), 'utf8'));
+    assert.strictEqual(finalManifest.finalizationMode, 'machine-eligibility');
+    assert.strictEqual(finalManifest.machineAcceptedEpisodeCount, 1);
+    assert.strictEqual(finalManifest.candidateModel.modelVersion, '0.3.6');
+    assert.strictEqual(finalManifest.baseModel.mutated, false);
+    assert.strictEqual(finalManifest.promotion.applied, false);
 
     ack = await roundTrip(ws, {
       type: 'event-batch', sessionId: SESSION_ID, firstSeq: 4, lastSeq: 4,
@@ -365,7 +412,7 @@ async function main() {
     assert.deepStrictEqual(finalRecords.filter(record => record.recordType === 'event').map(item => item.sessionSeq), [1, 2, 3, 4]);
     assert.ok(finalRecords.some(record => record.recordType === 'session-resume'));
 
-    console.log('Training Collector V0.8 socket + automatic task review pipeline integration test OK');
+    console.log('Training Collector V0.8 socket + automatic Task Episode → ACCEPT → candidate integration test OK');
   } finally {
     try { ws?.close(); } catch {}
     await stopServer(server);
