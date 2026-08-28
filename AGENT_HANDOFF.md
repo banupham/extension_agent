@@ -1,608 +1,115 @@
-# Agent development handoff
+# Agent development handoff — main
 
 Read this file before changing the repository.
 
 ## Working rules
 
-- Active branch: `feat/agent-tab-context` only.
-- Do **not** merge/promote to `main` without explicit user approval after verified PASS.
+- Active production branch: `main`.
+- The selective Agent consolidation into `main` was explicitly approved on 2026-08-28.
+- Use `feat/agent-tab-context` only for the deliberately external Browser UI / OS experimental subsystem or historical comparison.
 - Commit every meaningful development, diagnostic, test, and state milestone to GitHub.
-- Update this handoff after milestones/state changes.
-- User runs Windows CMD, not PowerShell.
 - Strategy chooses **WHAT**; Behavior chooses **HOW**.
 - No site/ref hardcode to force PASS.
 - No generic `failure => scroll`.
 - Never move heldout into TRAIN or change split policy merely to force PASS.
-- Do not recollect/relabel the six historical teaching tasks merely to force PASS.
-- Do not persist selectors, coordinates, tab IDs, raw CDP, credentials/passwords/secrets, typed sensitive values, or private reasoning in Strategy/recovery/memory/training.
+- Do not persist selectors, coordinates, raw CDP, raw tab/window IDs, credentials/passwords/secrets, typed sensitive values, or private reasoning in Strategy/recovery/memory/training.
 - No literal trajectory replay.
 - Human demonstrations never auto-promote; exact digest confirmation is required before approval is applied.
 - Raw user interaction never auto-trains directly.
 
-## Current maturity
+## Main Agent body
 
-- Behavior/HOW is learned from real human interaction and runtime-loadable.
-- Strategy/WHAT is supervised and trained from the first human-approved leakage-safe six-group dataset.
-- Strategy v0.3.3 passes unchanged six-group regression exactly on validation/test.
-- Frozen v0.3.3 passed two fresh-unseen semantic decision families.
-- Frozen v0.3.3 passed a real fresh browser-native Cargo end-to-end family.
-- Mission/replan/recovery/world-model infrastructure is integrated with the learned Strategy.
-- Signal Relay long browser-native regression passes all 3 subgoals with real recovery, progression guard, goal checks, privacy redaction, and frozen model invariants.
-- **Frozen v0.3.3 also passes a pristine fresh-unseen long browser-native Harbor Dispatch mission on the first real user run.**
-- Current primary phase is **continuous learning from approved new user interactions**, not more controlled lab tuning.
-- Incremental Strategy ingestion is wired through a review-only orchestrator that stops before approval/dataset/fit and is CI-gated.
-- Incremental post-approval dataset merge now preserves every existing base split assignment across future appends.
-- Agent is maturing but is not broadly autonomous.
-
-## Historical teaching data — CLOSED
-
-Six fixed episodes:
-
-1. `ep-1787826569158` — Google -> Gmail click
-2. `ep-1787826618214` — Google -> type OpenAI -> submit search
-3. `ep-1787826766003` — Mission Atlas -> Mission Orion
-4. `ep-1787828642619` — Topic Search -> type Atlas -> Enter
-5. `ep-1787831377719` — Message Composer -> type Orion -> Enter
-6. `ep-1787828809498` — Teaching Confirm click
-
-Approved digest:
-
-`8f18d4e5b053d9dae57107b4aa021dfbf46128df3c75b9c50dbad996346b8241`
-
-Exact human approval already received. Do not ask again.
-
-Dataset:
-
-- approvedEpisodeCount 6
-- approvedStrategyStepCount 10
-- excludedCaptureNoiseCount 41
-- adaptedEpisodeCount 6
-- distinctSplitGroupCount 6
-- train 4 / validation 1 / test 1
-- `baselineReady:true`
-- heldout never used for fit
-
-TRAIN:
-- click:gmail
-- click:mission-atlas>click:mission-orion
-- click:teaching-confirm
-- typeText:message-composer>submit:message-composer
-
-VALIDATION:
-- typeText:topic-search>submit:topic-search
-
-TEST:
-- typeText:t-m-ki-m>submit:t-m-ki-m
-
-Six-group reruns are regression evidence, not pristine unseen proof.
-
-## Strategy v0.3.3
-
-Policy:
-
-- `actionSelectionPolicy: task-history-decoupled-from-current-target-ranking`
-- `actionSelectionUsesCurrentTargetRanking:false`
-- `targetGroundingPolicy: current-task-dominant-with-action-affordance`
-
-Do not keep tuning on the six historical records.
-
-## Fresh semantic + Cargo evidence
-
-Frozen v0.3.3, no fit/mutation:
-
-- fresh parcel approval: click + correct target
-- fresh dispatch note: `typeText -> submit` + target continuity
-- Cargo native: exact `typeText -> submit`, exact `Cargo Instruction -> Cargo Instruction`, real Chrome goal PASS
-- model unchanged, transient text redacted, no selectors/literal replay
-
-Cargo is closed evidence. Do not optimize/train on it.
-
-## Mission runtime upgrades
-
-### Transient payload + step hooks
-
-- `4cec004bd51a01185f59e2b16f4f56f2252e45d6` — mission executor passes execution-time transient args + step hook into each subgoal and verifies cross-subgoal redaction
-- `32f6df2540f3e946491118f0c116669813ebf5d1` — contract
-
-### Recovery planned-progression guard
-
-Generic behavior:
-
-- ask base Strategy for planned next semantic decision before recovery
-- if action type changes, preserve progression
-- if same action type but semantic target changes, preserve progression
-- recovery explores only when base repeats the same failed action/target or otherwise does not progress
-- no generic `failure => scroll`
-
-Commits:
-
-- `cc7acf88e2a559c9229c366a8c208cf4118ee587`
-- `f42a1f38f719c6c7c509b0f2aabf633f0a6dd5b4`
-
-## Signal Relay — REGRESSION PASS / CLOSED
-
-Mission:
-
-`Click Open Relay Console, then type the provided value into Relay Note and press Enter, then click Finalize Relay`
-
-Real browser regression after fixing only the controlled page's form semantics:
-
-- `ok:true`, `result:PASS`
-- `evidenceClass:regression-after-diagnosis`
-- progress `3/3`
-- exact actions `[["click","waitAndObserve"],["typeText","submit"],["click"]]`
-- exact targets `[["Open Relay Console",null],["Relay Note","Relay Note"],["Finalize Relay"]]`
-- real recovery on subgoal 1
-- planned `typeText -> submit` preserved on subgoal 2
-- model frozen/unchanged
-- privacy/no-literal-replay invariants true
-
-Signal Relay is closed regression evidence.
-
-## Harbor Dispatch — PRISTINE FRESH LONG NATIVE PASS / CLOSED
-
-Gate:
-
-`control-center/script/offline_strategy_fresh_long_harbor_gate.js`
-
-Mission:
-
-`type the provided value into Dispatch Token and press Enter, then click Open Berth Schedule, then click Confirm Berth`
-
-First real user run at HEAD `8d7351c` returned PASS immediately:
-
-- `ok:true`
-- `result:PASS`
-- `evidenceClass:fresh-unseen-controlled-native`
-- `modelVersion:0.3.3`
-- `missionReasonCode:mission_satisfied`
-- progress `3/3`
-- exact actions `[["typeText","submit"],["click","waitAndObserve"],["click"]]`
-- exact targets `[["Dispatch Token","Dispatch Token"],["Open Berth Schedule",null],["Confirm Berth"]]`
-- subgoal 1: privacy-safe `typeText` no-effect observation, then planned submit preserved and succeeded
-- subgoal 2: real click no-effect, `recoveryExploration -> waitAndObserve`, delayed transition observed
-- subgoal 3: click succeeded
-- model frozen/unchanged
-- transient text redacted and absent from public result
-- ordered execution / semantic goal checks / no literal replay all true
-- errors empty, created tab closed
-
-This is the first pristine fresh-unseen **long** browser-native mission proof for learned Strategy v0.3.3 with real recovery/replan. It is still controlled native evidence, not broad web autonomy proof.
-
-Harbor is closed evidence.
-
-Gate/CI:
-
-- `a20b0395a6a2bf8590bb5431aa54a5b3891c2bb8` — Harbor gate
-- `181f5cccc8b3b15a2cf01cc1e1a6a4ae5fb2219a` — Harbor contract
-- `ba55e442a76370336d4c0b28acb898d700504a12` — CI
-- full runtime-syntax `33092139022`: success
-- dedicated mission-long-native `33092170119`: success
-
-## Continuous learning target
-
-Pipeline:
-
-`new user interaction -> raw capture -> privacy/noise filter -> semantic episode candidate -> resolver -> human review/explicit digest approval -> approved dataset -> retrain -> fresh evaluation`
-
-Required properties:
-
-1. no `capture -> auto-train`
-2. raw typed secrets/credentials/private values never enter Strategy/memory/training
-3. capture mechanics such as focus/click/edit noise remain excluded unless semantically necessary
-4. semantic candidate must distinguish WHAT from HOW before approval
-5. human approval must be explicit and digest-bound before candidate promotion
-6. approved episodes append/merge into a versioned dataset without moving old heldout evidence
-7. retraining creates a new Strategy version; v0.3.3 remains a frozen comparison baseline
-8. every new model must be evaluated on old regression gates plus new fresh-unseen families
-9. recovery experience may be learned only from successful, privacy-safe episodes; no literal trajectory replay
-
-## Incremental Strategy ingestion — REVIEW-ONLY PASS
-
-Orchestrator:
-
-`training-collector/tools/prepare_incremental_strategy_learning.js`
-
-Version `0.1.0`.
-
-Pipeline:
-
-`new reviews/raw -> privacy batch -> incremental episode filter -> review pack -> triage -> review drafts -> teaching resolver -> approval candidate digest -> STOP`
-
-Hard boundaries:
-
-- digest integrity must verify
-- candidate policy remains `autoTrainEligible:false`
-- approval applicator, dataset builder, and fitter are forbidden from the orchestrator process
-- output says `approvalApplied:false`, `datasetBuilt:false`, `trainingPerformed:false`
-- previously approved IDs can be excluded before review pack creation
-- duplicate current episode exports are deduplicated by semantic episode ID
-- privacy-unsafe reviews remain blocked before candidate generation
-
-CLI:
+Integrated on `main`:
 
 ```text
-node training-collector/tools/prepare_incremental_strategy_learning.js --reviews <review-dir> [--raw <raw-dir>] [--exclude-approved <approved-dir>] [--exclude-episodes <episode-id-file>] [--out <dir>]
+Mission / subgoals
+Semantic mission interpreter
+Semantic Goal Resolver
+Learned Strategy + model loading
+Recovery / self-experience / world state
+35 semantic Agent Actions
+Behavior policy / learned Behavior baseline
+PAGE_CDP execution
+BROWSER_NATIVE execution
+follow-live moving-target tracking
+browser-native switchTab / openNewTab / closeTab
+Goal Checker
+Semantic Effect Evaluator
+Outcome Controller
+Episode Budget / bounded replan
+privacy-safe human-approved training pipeline
+stable incremental dataset merge
 ```
 
-Commits:
+## Execution surface boundary
 
-- `caff7ad78949bac6b9a81ddc603b52465f428a5f` — orchestrator
-- `ae4dac8bac4742bd6ee6aeee7dea32ce5189f882` — boundary contract
-- `fca2f20d49143deb44c7eb66b7490e5794559b84` — dedicated CI
+Selectable surfaces on main:
 
-Synthetic boundary proof:
+```text
+page-cdp
+browser-native
+```
 
-- previously approved episode excluded
-- duplicate current export deduplicated
-- privacy-unsafe review blocked
-- one genuinely new safe episode becomes exactly one digest candidate
-- no approval receipt, approved annotation, dataset, or model created
+Not selectable on main:
 
-CI:
+```text
+browser-ui-os
+```
 
-- full runtime-syntax `33093032281`: success
-- dedicated incremental-learning `33093059221`: success
+External subsystem preserved on `feat/agent-tab-context`:
 
-## Incremental post-approval dataset merge — STABLE SPLITS PASS
+```text
+Windows UI Automation
+Win32 SendInput
+real shared Windows pointer/keyboard ownership
+visible browser chrome / tab-strip interaction
+```
 
-Problem found during continuous-learning audit:
+Main fails closed if code attempts to force that surface.
 
-- the original batch builder orders all split groups by hash and then allocates a count of test/validation/train groups based on total group count
-- adding new groups can therefore move the old train/validation/test boundaries even with the same seed
-- that is acceptable for a one-time dataset build, but unsafe for longitudinal continuous learning because historical heldout evidence must remain fixed
+## Strategy model boundary
 
-New builder:
+- v0.3.3 remains the frozen proven baseline/fallback model.
+- Incremental candidate work is preserved, but repository consolidation does not itself promote an unapproved model artifact.
+- Continue to require heldout/regression/fresh evidence and explicit promotion approval for model changes.
 
-`training-collector/tools/build_incremental_strategy_dataset.js`
+## Tab lifecycle evidence
 
-Version `0.1.0`.
+The three browser-native functions are integrated end-to-end:
 
-Policy:
+```text
+switchTab
+openNewTab
+closeTab
+```
 
-- load the existing assigned base dataset (`train.jsonl`, `validation.jsonl`, `test.jsonl`)
-- only accept newly approved annotations through the existing explicit human-approval proof boundary
-- never reassign any base episode
-- if a new episode has a `splitGroup` already present in the base dataset, inherit that group's existing split
-- if a group is completely new, assign it using an independent stable hash threshold with seed `strategy-episode-v0`
-- independent threshold means appending future groups cannot move any already assigned group
-- validate the combined assigned dataset and recompute training eligibility from split
-- write a new versioned dataset package; never overwrite or mutate the frozen v0.3.3 dataset in place
+Strategy targets tabs semantically by title/url. Runtime resolves live `tabId/windowId` internally.
 
-Commits:
+Validated before main promotion:
 
-- `7f40dc6a0819c48c8ba035fb382da16a4d90dacc` — stable incremental dataset builder
-- `ab2d2108086563de029908571972591e37f014da` — split-preservation contract
-- `a5cc6adcc2986568cb7bdb5f1f59078aa76da41f` — incremental CI includes split preservation
+- `tab-lifecycle-agent` run `33131781463` — PASS
+- `runtime-syntax` run `33131781515` — PASS
 
-Contract proves:
+Selective merge tree validation:
 
-- existing train/validation/test episodes remain in their original split
-- a new episode sharing an existing semantic splitGroup inherits that exact split
-- a completely new group gets a deterministic independent split
-- a second future append cannot move records from the first append or the original base
-- duplicate episode IDs are rejected
-- train records become training-eligible; validation/test records stay heldout/ineligible for fit
+- `tab-lifecycle-agent` run `33132346961` — PASS
+- `runtime-syntax` run `33132346859` — PASS
 
-CI:
+## Detailed historical handoff
 
-- full runtime-syntax on builder + contract `33093540067`: success
-- dedicated `strategy-incremental-learning` `33093577877`: success
-  - review-only incremental boundary PASS
-  - stable split-preservation PASS
-  - privacy-safe learning batch PASS
-  - Strategy teaching resolver PASS
-  - explicit approval/dataset boundary PASS
+The full pre-main handoff, including dataset digests, Strategy v0.3.3/v0.3.5 candidate history, Cargo/Signal Relay/Harbor evidence and continuous-learning details, is preserved verbatim at:
 
-## Immediate next user phase — genuinely new demonstrations
+```text
+docs/AGENT_HANDOFF_PRE_MAIN_2026-08-28.md
+```
 
-Collector task-episode flow remains:
+Use it for historical evidence, not for branch-selection rules.
 
-`enter task instruction -> Start Episode -> perform task -> Mark Success/Failed -> Stop Episode -> Export Task Episode for Review`
+## Current source-of-truth docs
 
-The export is named:
-
-`training-collector-<episodeId>.task-episode-review.json`
-
-Do not reuse the historical six tasks, Cargo, Signal Relay, or Harbor as new training data.
-
-First real incremental batch should be small and privacy-safe. Produce new task-episode review exports, then run the review-only orchestrator and stop at the digest. Inspect candidate count, blocked count, unresolved count, semantic sequences and privacy invariants. Only after the user explicitly reviews and confirms the exact new digest may approval annotations be created.
-
-After approval, use the incremental dataset builder so v0.3.3's existing heldout split assignments remain unchanged. Fit a new Strategy version only from the resulting train split; keep v0.3.3 as the frozen comparison baseline.
-
-Never promote to `main` without explicit user approval after verified PASS.
-
-## Training Collector cross-document episode continuity — CODE/CONTRACT PASS, MANUAL PENDING
-
-During the first new Wikipedia demonstration, a full-page navigation destroyed the old content-script document before its delayed `TRANSITION_END` messages completed. The new document restored the active episode flag, but the background had no cross-document settlement step, leaving 18 transitions pending and correctly blocking `Mark Success` with `episode_success_has_pending_transition`.
-
-Minimal fix in Training Collector `0.8.2`:
-
-- the new top document sends a privacy-safe `EPISODE_DOCUMENT_READY` observation when it resumes an active episode
-- background settles only pending transitions belonging to an older `pageInstanceId`, scoped to the original episode tab
-- settled transitions carry explicit `documentChanged:true` and `settlementReason:next_document_ready` provenance
-- the new document never settles its own in-flight transitions
-- after the socket server confirms `session-closed` through the session's full event count, the closed session is removed from the in-memory waiting/status queue
-- socket cleanup never deletes IndexedDB raw evidence or server-side `socket-data` files
-
-Verification completed locally:
-
-- `episode_cross_document_settlement_contract.js`: PASS
-- `episode_capture_integration_contract.js`: PASS
-- `episode_capture_gate_contract.js`: PASS
-- `v08_socket_mirror_contract.js`: PASS
-- `node --check` on `background.js` and `content.js`: PASS
-
-Real Chrome navigation retest is still required after reloading Training Collector and reopening/refreshing the target tab. Do not treat this milestone as browser-native PASS yet.
-
-## First incremental Batch 1–2 — CAPTURE VALID / RESOLUTION BLOCKED
-
-Eight new successful review exports were collected and copied into `extension_agent-local-data/incremental-strategy-01`. Every file passes the task-episode review checker and privacy boundary (`selectorsExported:false`, `tabIdExported:false`, `rawActionCoordinatesExported:false`, zero forbidden fields).
-
-The review-only orchestrator stopped safely with:
-
-- source/retained/ready review files: 8 / 8 / 8
-- candidate episodes: 0
-- blocked episodes: 8
-- unresolved human-review transitions: 226
-- digest: `4895a7f4295e0e0ffe661dc6eb11157f7b7c7af43362a3f44fc49d03a4492bec`
-- approval/dataset/training all remain false
-
-Historical audit finding:
-
-- per-key `text-key/type-char` Task Episode capture has existed since the initial semantic collector commit `7624157`; this is not a new `0.8.2` regression
-- previous text episodes resolved because their task instructions explicitly declared the typed payload and submit mechanic (`nhập/gõ ... rồi nhấn Enter`)
-- the newly proposed task wording used broad goals such as `Tìm bài viết ...`, which does not satisfy the privacy-safe declared-text resolver contract
-- all eight new episodes are blocked, not only the earliest files
-- click-only episodes have a small number of unresolved public-site targets with missing semantic labels; text/search episodes contribute most unresolved items because per-key mechanics cannot yet be safely collapsed from the broad task wording
-
-Do not approve the zero-candidate digest. Preserve all eight reviews; diagnose/re-resolve from existing evidence before asking the user to recollect.
-
-## Incremental reviews-v1 ingestion — REVIEW-ONLY PASS / ZERO CANDIDATES
-
-Per explicit user instruction, `extension_agent-local-data/incremental-strategy-01/reviews-v1` was created with exactly these eight review exports:
-
-- `ep-1787851260188`
-- `ep-1787851293595`
-- `ep-1787851361981`
-- `ep-1787851404562`
-- `ep-1787851520829`
-- `ep-1787851685350`
-- `ep-1787851750688`
-- `ep-1787851808921`
-
-`ep-1787850674536` remains excluded (failed, empty task, zero transitions, not Strategy-ready). `ep-1787850381182` remains outside the batch as the weaker duplicate task trace. Neither file was deleted.
-
-The required review-only command was run into `strategy-learning-v01-a` and stopped at digest:
-
-- input/retained/ready: 8 / 8 / 8
-- excluded previously processed: 0
-- duplicate current: 0
-- candidate episodes: 0
-- blocked episodes: 8
-- resolver semantic actions: 0
-- HOW/capture noise: 35
-- unresolved human-review transitions: 226
-- fully resolved episodes: 0
-- digest: `0cc944cdbd619da32abd56591c9f795cfd2ac6809943c84e711ed4129ecaa549`
-
-All eight inputs passed the privacy-safe review queue boundary. No raw session root was supplied. The orchestrator invariants remain:
-
-- `approvalApplied:false`
-- `datasetBuilt:false`
-- `trainingPerformed:false`
-- `autoTrainEligible:false`
-- approval applicator/dataset builder/fitter not imported
-
-The digest has zero eligible semantic candidates and must not be approved or applied. Mark Success is capture outcome evidence only, not semantic approval.
-
-## Continuous-learning user interaction model — CODEX-CURATED
-
-The user is not responsible for reading raw traces, JSON, transition metrics, semantic internals, dataset splits, or training statistics. Going forward:
-
-- user creates demonstrations and later performs final Agent acceptance testing
-- Codex owns privacy inspection, quality filtering, WHAT/HOW semantic curation, ACCEPT/REJECT/REDO decisions, candidate preparation, dataset/training/evaluation, and failure diagnosis
-- user receives only concise ACCEPT/REJECT/REDO results and simple redo instructions
-- the only mid-pipeline user action remains exact digest approval after Codex has produced a valid candidate bundle
-- human digest approval remains mandatory; successful capture never auto-approves training data
-- after approval, Codex runs approval application, stable incremental merge, train-only fit, technical evaluation, and prepares 3–5 fresh user acceptance tasks
-
-Current eight-task Codex curation decision:
-
-- ACCEPT: `ep-1787851293595` — search Wikipedia for Hệ Mặt Trời
-- ACCEPT: `ep-1787851361981` — open CSS on MDN
-- ACCEPT: `ep-1787851404562` — search DuckDuckGo for Linux information
-- ACCEPT: `ep-1787851750688` — search for and open the official Python result
-- ACCEPT: `ep-1787851808921` — search Wikipedia and switch the AI article to English
-- REDO: `ep-1787851260188` — multiple unlabeled clicks prevent reliable identification of the intended Tiếng Việt click
-- REDO: `ep-1787851520829` — captured path goes directly to Hà Nội and does not demonstrate the requested Việt Nam-then-Hà Nội sequence
-- REDO: `ep-1787851685350` — capture proves opening HTML but not a distinct HTML elements action
-
-No episode is REJECTed for privacy. Preserve all original evidence. Do not expose raw diagnostics to the user unless requested.
-
-## Training Collector displayed-version mismatch — FIXED
-
-The repository manifest was correctly versioned `0.8.2`, but `popup.html` still hardcoded `V0.8.1`. Reinstalling the unpacked extension therefore continued to display `0.8.1` even when Chrome loaded the correct directory. This was a UI/version-label defect, not proof that Chrome loaded an old extension copy.
-
-Fix:
-
-- popup title/header now display `V0.8.2`
-- inherited storage/frame contracts now expect manifest `0.8.2`
-- socket mirror contract verifies popup label matches `0.8.2`
-
-Local verification PASS:
-
-- `v06_storage_contract.js`
-- `v072_frame_stream_contract.js`
-- `v08_socket_mirror_contract.js`
-- `episode_cross_document_settlement_contract.js`
-
-The separately observed popup `Loading socket status/raw session...` state is not declared fixed by this label correction and still requires a real Chrome retest/diagnosis.
-
-## Incremental reviews-v2 redo curation — THREE ACCEPT
-
-The user completed the three requested redo demonstrations:
-
-- `ep-1787854827031` — Bấm Tiếng Việt để mở Wikipedia tiếng Việt
-- `ep-1787855724927` — nhập Việt Nam, submit, then open Hà Nội
-- `ep-1787855844011` — open HTML on MDN, then HTML elements
-
-All three review exports pass structure/privacy checks and are stored in `incremental-strategy-01/reviews-v2`. Codex curation decision: ACCEPT all three.
-
-- Wikipedia language redo remains affected by Wikipedia's empty captured link labels, but the repeated constrained demonstration is consistent enough for Codex-owned semantic curation; do not ask the user to redo it again solely for that collector limitation.
-- Việt Nam/Hà Nội now contains recoverable text-entry and submit semantics plus the final click evidence.
-- MDN now reaches `/docs/Web/HTML` and then `/docs/Web/HTML/Reference/Elements`, supporting two distinct semantic clicks.
-
-Together with the five ACCEPT episodes retained from reviews-v1, the intended curated batch now covers eight accepted demonstrations. The next technical step is Codex-owned candidate construction and digest generation. Human exact digest approval is still required before applying annotations or training.
-
-## Codex-curated eight-task approval bundle — AWAITING EXACT DIGEST APPROVAL
-
-A generic review-aid tool was added at `training-collector/tools/apply_codex_semantic_curation.js`. It converts a Codex curation plan into semantic resolution aids while marking every non-selected transition as HOW/non-task noise. It does not approve, build a dataset, or train. Its contract verifies explicit digest approval remains required and forbidden selector/coordinate/tabId keys are absent.
-
-The accepted reviews-v1/v2 inputs were combined under `incremental-strategy-01/reviews-curated-v1`, passed through the existing review-only orchestrator, then through Codex semantic curation and the existing approval-candidate generator.
-
-Final proposed capabilities:
-
-- Wikipedia search: `typeText -> submit`
-- MDN CSS: `click`
-- DuckDuckGo Linux search: `typeText -> submit`
-- official Python result: `typeText -> submit -> click`
-- Wikipedia AI to English: `typeText -> click`
-- Wikipedia Tiếng Việt: `click`
-- Wikipedia Việt Nam to Hà Nội: `typeText -> submit -> click`
-- MDN HTML to HTML elements: `click -> click`
-
-Candidate result:
-
-- 8 eligible episodes
-- 0 blocked episodes
-- digest integrity verified
-- digest `291429f882e340d27d05a0bd7b8a32c4ca611882dfcbbd8bc7e856f832c09866`
-- `autoTrainEligible:false`
-
-STOP here. Do not apply annotations, build the incremental dataset, or train until the user sends the exact required confirmation phrase plus this digest.
-
-## Strategy 0.3.4 candidate — TRAIN-ONLY FIT COMPLETED / HELDOUT FAIL / REJECTED
-
-The user supplied the exact required phrase and digest for `291429f882e340d27d05a0bd7b8a32c4ca611882dfcbbd8bc7e856f832c09866`.
-
-Post-approval pipeline:
-
-- explicit approval applied to 8 episodes / 16 Strategy steps
-- 253 HOW/noise transitions excluded
-- incremental dataset built with 14 records
-- original six split assignments preserved
-- combined split counts: train 10 / validation 2 / test 2
-- baseline readiness PASS
-- v0.3.3 model hash remains unchanged: `75A21FD12E2DB304769B38B3F7B137105ED1930BAC6F5554142200F8AB6B0F30`
-
-The fitter was minimally extended with optional `--model-version` so a new artifact can be labeled without mutating the frozen baseline. Candidate `0.3.4` was written separately under `strategy-learning-curated-v1/12-model-v034` and fit from TRAIN only.
-
-Heldout result: FAIL. Action types were correct, but both MDN HTML heldout click targets were grounded incorrectly because the captured Strategy observations contain empty labels for the expected link refs. Old validation and old/new text-submit test records remained exact. This is a target-grounding/collector-evidence failure, not a reason to move the MDN heldout episode into TRAIN or tune against it.
-
-Candidate `0.3.4` is rejected and must not be promoted or used as the active model. Keep v0.3.3 frozen/active. Next technical phase: repair generic accessible semantic labeling in the collector, then evaluate with appropriate new evidence without leaking heldout into fit.
-
-## Training Collector 0.8.3 accessible semantic labels — CODE/CONTRACT PASS
-
-Root cause of the MDN heldout target-grounding failure was confirmed in `observer/semantic_observer.js`: labels were limited to `aria-label`, placeholder, or associated `<label>`, so visible nested text in links/buttons and `aria-labelledby` were discarded.
-
-Generic fix, with no site hardcoding:
-
-- accessible-name precedence now includes `aria-labelledby`, associated labels, title, image alt, and visible text for non-editable actionable link/button/summary/option elements
-- whitespace is normalized and labels remain length-limited/redacted
-- visible text is never read from editable inputs, textarea, or contenteditable elements, preserving the raw typed-value boundary
-- the computed accessible label is included in sensitive-metadata classification before capture
-- extension version bumped to `0.8.3` with matching popup label
-
-Local PASS:
-
-- semantic accessible label contract
-- task-episode architecture contract
-- inherited storage contract
-- frame/stream contract
-- socket mirror contract
-- cross-document settlement contract
-
-Real Chrome reload and browser capture verification are still required. This fix does not retroactively mutate the rejected 0.3.4 heldout record or promote the rejected model.
-
-## Training Collector 0.8.3 real Chrome label verification — PASS / replacement approval pending
-
-Real Chrome verification for the generic accessible-label fix is now complete.
-
-Verification-only episode:
-
-- `ep-1787857506489` — `Mở tài liệu HTML trên MDN`
-- clicked target `e8`
-- captured actionable label `HTML`
-- final outcome `success`, `strategyReady:true`
-- privacy boundary remains clean
-
-Two replacement MDN demonstrations were then recollected with Training Collector `0.8.3`:
-
-- `ep-1787857678957` — `Mở tài liệu CSS trên MDN`
-  - semantic WHAT: `click@CSS`
-  - one incidental focus transition excluded as HOW/noise
-- `ep-1787857806791` — `Mở tài liệu HTML rồi mở phần HTML elements`
-  - observed browser labels: `HTML` then localized `éléments HTML`
-  - curated semantic WHAT: `click@HTML -> click@HTML elements`
-  - 34 focus/scroll capture transitions excluded as HOW/noise
-
-Both replacement reviews are successful, Strategy-ready and privacy-safe. The second localized browser label is intentionally normalized only at the semantic review layer to `HTML elements`; the raw browser observation remains unchanged. This preserves the existing semantic split group `semantic-sequence:click:html>click:html-elements` without site/ref hardcoding or trajectory replay.
-
-A new review-only two-episode replacement approval bundle was prepared. No approval, dataset build, or fit has been applied yet.
-
-- candidate episodes: 2
-- blocked episodes: 0
-- semantic steps: 3
-- excluded HOW/noise: 35
-- digest integrity: verified
-- digest: `6b2b40b24d3ffdd93e8ab3f86281e3a85634cb97f0cc630c2ed6c19d1e8e5ad7`
-- `autoTrainEligible:false`
-
-STOP at this digest until exact human confirmation is received.
-
-After exact approval, construct the corrected incremental candidate from frozen v0.3.3 plus the six previously approved non-MDN incremental episodes and these two replacement MDN episodes. Do not reuse the superseded collector-0.8.2 MDN episodes `ep-1787851361981` and `ep-1787855844011` in the corrected dataset. Because the semantic split groups are preserved and assignment is hash-stable, CSS remains TRAIN and HTML->HTML-elements remains VALIDATION without reshuffling historical heldout evidence.
-
-## Replacement MDN approval applied / Strategy 0.3.5 candidate — HELDOUT REGRESSION PASS AFTER GENERIC TARGET FIX
-
-The user supplied the exact required confirmation for replacement digest:
-
-`YES-I-REVIEWED-STRATEGY-APPROVAL-DIGEST 6b2b40b24d3ffdd93e8ab3f86281e3a85634cb97f0cc630c2ed6c19d1e8e5ad7`
-
-The uploaded workspace snapshot did not persist the exact two-episode approval-candidate JSON that originally produced this digest. The semantic approval was reconstructed only from the same two successful privacy-safe reviews plus the already-recorded handoff semantics/counts: `click@CSS` and `click@HTML -> click@HTML elements`, 3 Strategy steps, 35 HOW/noise transitions excluded. The approved digest remains the human trust proof; no additional episode or semantic step was added during reconstruction.
-
-Corrected incremental dataset was rebuilt from the frozen v0.3.3 six-record dataset plus exactly eight approved incremental episodes:
-
-- retained six non-MDN incremental episodes: `ep-1787851293595`, `ep-1787851404562`, `ep-1787851750688`, `ep-1787851808921`, `ep-1787854827031`, `ep-1787855724927`
-- replacement MDN `0.8.3` episodes: `ep-1787857678957`, `ep-1787857806791`
-- superseded collector-0.8.2 MDN episodes excluded: `ep-1787851361981`, `ep-1787855844011`
-- combined records: 14
-- split counts: train 10 / validation 2 / test 2
-- every original v0.3.3 split assignment preserved
-- `semantic-sequence:click:css` remains TRAIN
-- `semantic-sequence:click:html>click:html-elements` remains VALIDATION
-- baseline readiness PASS
-- frozen v0.3.3 model SHA-256 unchanged: `75a21fd12e2db304769b38b3f7b137105ed1930bac6f5554142200f8ab6b0f30`
-
-Candidate Strategy `0.3.5` was fit from TRAIN only. Its first heldout evaluation still failed exact target grounding on the replacement MDN validation episode even though accessible labels were now present. Diagnosis showed the generic click target compatibility weights contradicted the declared `current-task-dominant-with-action-affordance` policy: a familiar TRAIN target label could outweigh a different target explicitly named by the current task.
-
-Generic fix in `control-center/manager/strategy/offline_baseline_provider.js`:
-
-- non-editable target grounding now weights current task label 0.70, learned prototype label 0.05, and semantic affordance traits 0.25
-- no-traits fallback now weights current task 0.80 and prototype label 0.20
-- action selection remains target-independent; this changes only target grounding after WHAT is selected
-- no site/ref hardcode, no selector/coordinate targeting, no heldout-to-TRAIN move, no literal replay
-
-`training-collector/tests/strategy_action_target_decoupling_contract.js` now locks the generic rule that a current-task target beats a familiar TRAIN target and an unrelated high-affordance control.
-
-After that generic fix, candidate `0.3.5` heldout evaluation passes exactly:
-
-- validation: 4/4 action type, 4/4 exact semantic target
-- test: 4/4 action type, 4/4 exact semantic target
-- historical fixed six-group heldout regression with v0.3.5: PASS, validation exact 1.0 / test exact 1.0
-- existing frozen-model fresh-unseen decision families with v0.3.5: PASS (`fresh-parcel-approval`, `fresh-dispatch-note`), model file unchanged
-- all 61 Training Collector contracts: PASS
-
-Evidence classification matters: because the replacement MDN validation failure directly informed the generic target-grounding fix, the post-fix MDN validation PASS is regression-after-diagnosis, not pristine unseen evidence. The two pre-existing fresh semantic families are also regression gates, not new pristine evidence for 0.3.5.
-
-Do **not** promote `0.3.5` to active yet. Browser-native Cargo / Signal Relay / Harbor and user acceptance have not been rerun against this candidate in a live Chrome runtime in this environment. Next phase is live native regression/user acceptance; v0.3.3 remains the active frozen fallback until those checks pass and the user explicitly approves promotion.
+```text
+STATUS.md
+docs/MAIN_INTEGRATION_2026-08-28.md
+docs/AGENT_EXECUTION_SURFACES.md
+docs/TAB_LIFECYCLE_AGENT_INTEGRATION_2026-08-28.md
+```

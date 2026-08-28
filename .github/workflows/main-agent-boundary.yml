@@ -1,0 +1,32 @@
+name: main-agent-boundary
+
+on:
+  push:
+    paths:
+      - 'control-center/EXECUTION_SURFACE_CONTRACT.json'
+      - 'control-center/manager/strategy/execution_surface_contract.js'
+      - 'control-center/script/checks/main_execution_surface_boundary.js'
+      - '.github/workflows/main-agent-boundary.yml'
+  pull_request:
+    paths:
+      - 'control-center/EXECUTION_SURFACE_CONTRACT.json'
+      - 'control-center/manager/strategy/execution_surface_contract.js'
+      - 'control-center/script/checks/main_execution_surface_boundary.js'
+      - '.github/workflows/main-agent-boundary.yml'
+
+jobs:
+  boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax
+        run: |
+          node --check control-center/manager/strategy/execution_surface_contract.js
+          node --check control-center/script/checks/main_execution_surface_boundary.js
+      - name: Validate execution surface contract JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('control-center/EXECUTION_SURFACE_CONTRACT.json','utf8'))"
+      - name: Prove Browser UI OS remains external to main Agent
+        run: node control-center/script/checks/main_execution_surface_boundary.js
