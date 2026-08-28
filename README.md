@@ -1,5 +1,7 @@
 # extension_agent
 
+> **Trạng thái tiếp quản:** Repository này hiện đang được tiếp quản để tiếp tục phát triển, rà soát các phần đang dang dở và triển khai các giai đoạn tiếp theo.
+
 Local Chrome/GPM automation framework gồm các phần chính:
 
 - `control-center/`: broker WebSocket, dashboard, deterministic runner và Agent runtime/strategy work.
