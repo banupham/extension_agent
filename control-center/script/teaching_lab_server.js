@@ -52,7 +52,8 @@ const SCENARIOS = Object.freeze({
     task: 'Mở Track Package.',
     expected: 'Package Opened',
     type: 'moving',
-    label: 'Track Package'
+    label: 'Track Package',
+    moveIntervalMs: 1200
   },
   TL05: {
     family: 'RECOVERY',
@@ -140,7 +141,7 @@ function renderScenario(id, s) {
   if (s.type === 'moving') {
     return layout(id, s,
       `<button id="target" class="primary moving" style="left:24px;top:120px">${esc(s.label)}</button>`,
-      `let i=0;const xs=[24,150,300,460,620];const timer=setInterval(()=>{i+=1;if(i>=xs.length){clearInterval(timer);return;}target.style.left=xs[i]+'px';},500);target.onclick=()=>success(${JSON.stringify(s.expected)});`
+      `let i=0;const xs=[24,150,300,460,620];const timer=setInterval(()=>{i+=1;if(i>=xs.length){clearInterval(timer);return;}target.style.left=xs[i]+'px';},${Number(s.moveIntervalMs || 1200)});target.onclick=()=>success(${JSON.stringify(s.expected)});`
     );
   }
 
@@ -267,6 +268,7 @@ function runSelfTest() {
   assert.ok(SCENARIOS && typeof SCENARIOS === 'object', 'Teaching Lab must expose SCENARIOS');
   assert.deepStrictEqual(Object.keys(SCENARIOS), ['TL01', 'TL02', 'TL03', 'TL04', 'TL05']);
   assert.deepStrictEqual(Object.values(SCENARIOS).map(item => item.type), ['delay', 'replace', 'ambiguity', 'moving', 'recovery']);
+  assert.strictEqual(SCENARIOS.TL04.moveIntervalMs, 1200, 'TL04 must remain human-operable while teaching moving-target behavior');
   assert.strictEqual(successTitleFor('TL01'), 'PASS_TL01');
   assert.ok(renderScenario('TL01', SCENARIOS.TL01).includes("document.title=\"PASS_TL01\""));
   assert.ok(!renderScenario('TL03', SCENARIOS.TL03).includes('success(' + JSON.stringify(SCENARIOS.TL03.expected)));
