@@ -1,0 +1,43 @@
+name: tab-lifecycle-agent
+
+on:
+  push:
+    paths:
+      - 'control-center/manager/strategy/tab_lifecycle_provider.js'
+      - 'control-center/manager/strategy/index.js'
+      - 'control-center/manager/strategy/agent_action_contract.js'
+      - 'control-center/manager/mission/semantic_goal_resolver.js'
+      - 'control-center/extension/agent-runtime-extension/tab_context.js'
+      - 'control-center/script/checks/tab_lifecycle_agent_integration.js'
+      - '.github/workflows/tab-lifecycle-agent.yml'
+  pull_request:
+    paths:
+      - 'control-center/manager/strategy/tab_lifecycle_provider.js'
+      - 'control-center/manager/strategy/index.js'
+      - 'control-center/manager/strategy/agent_action_contract.js'
+      - 'control-center/manager/mission/semantic_goal_resolver.js'
+      - 'control-center/extension/agent-runtime-extension/tab_context.js'
+      - 'control-center/script/checks/tab_lifecycle_agent_integration.js'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax
+        run: |
+          node --check control-center/manager/strategy/tab_lifecycle_provider.js
+          node --check control-center/manager/strategy/index.js
+          node --check control-center/manager/strategy/agent_action_contract.js
+          node --check control-center/manager/mission/semantic_goal_resolver.js
+          node --check control-center/extension/agent-runtime-extension/tab_context.js
+          node --check control-center/script/checks/tab_lifecycle_agent_integration.js
+      - name: Existing tab lifecycle bridge
+        run: node control-center/script/checks/tab_lifecycle_bridge.js
+      - name: Existing tab context contract
+        run: node control-center/script/checks/agent_tab_context.js
+      - name: Agent semantic tab integration
+        run: node control-center/script/checks/tab_lifecycle_agent_integration.js
