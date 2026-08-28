@@ -11,6 +11,7 @@ const TARGET_REQUIRED = new Set([
   'play', 'pause', 'mute', 'unmute', 'setVolume', 'seek',
   'changePlaybackRate', 'hoverAndObserve', 'dismiss'
 ]);
+const TAB_MATCH_KEYS = new Set(['title', 'titleIncludes', 'url', 'urlIncludes']);
 const EXECUTION_INTERNAL_FIELDS = [
   'surface',
   'executionSurface',
@@ -22,6 +23,36 @@ const EXECUTION_INTERNAL_FIELDS = [
 
 function isPlainObject(action) {
   return !!action && typeof action === 'object' && !Array.isArray(action);
+}
+
+function normalizeTabMatch(match) {
+  if (!isPlainObject(match)) throw new Error('tab action args.match must be an object');
+  const out = {};
+  for (const [key, value] of Object.entries(match)) {
+    if (!TAB_MATCH_KEYS.has(key)) throw new Error(`unsupported tab match key: ${key}`);
+    if (typeof value !== 'string' || !value.trim()) throw new Error(`tab match ${key} must be a non-empty string`);
+    out[key] = value.trim();
+  }
+  if (!Object.keys(out).length) throw new Error('tab action args.match must not be empty');
+  return out;
+}
+
+function normalizeTabArgs(type, args) {
+  if (!['switchTab', 'openNewTab', 'closeTab'].includes(type)) return args;
+  if (Object.prototype.hasOwnProperty.call(args, 'tabId') || Object.prototype.hasOwnProperty.call(args, 'windowId')) {
+    throw new Error('agent action must not emit raw tabId/windowId');
+  }
+  if (type === 'openNewTab') {
+    const url = typeof args.url === 'string' ? args.url.trim() : '';
+    if (!url) throw new Error('openNewTab requires args.url');
+    let parsed;
+    try { parsed = new URL(url); }
+    catch (_) { throw new Error('openNewTab requires valid url'); }
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('openNewTab requires http(s) url');
+    return { ...args, url };
+  }
+  if (args.match != null) return { ...args, match: normalizeTabMatch(args.match) };
+  return args;
 }
 
 function validateAgentAction(action) {
@@ -41,7 +72,7 @@ function validateAgentAction(action) {
     }
   }
 
-  const args = isPlainObject(action.args) ? { ...action.args } : {};
+  let args = isPlainObject(action.args) ? { ...action.args } : {};
   if (type === 'drag') {
     const destinationRef = typeof args.destinationRef === 'string' && args.destinationRef.trim()
       ? args.destinationRef.trim()
@@ -50,6 +81,7 @@ function validateAgentAction(action) {
     if (destinationRef === targetRef) throw new Error('drag source and destination must differ');
     args.destinationRef = destinationRef;
   }
+  args = normalizeTabArgs(type, args);
 
   return {
     contractVersion: AGENT_ACTION_CONTRACT_VERSION,
@@ -131,6 +163,9 @@ function mapAgentAction(action) {
 module.exports = {
   AGENT_ACTION_CONTRACT_VERSION,
   ACTION_TYPES,
+  TAB_MATCH_KEYS,
+  normalizeTabMatch,
+  normalizeTabArgs,
   validateAgentAction,
   behaviorFamilyFor,
   cdpPrimitiveFor,
