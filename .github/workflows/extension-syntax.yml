@@ -112,6 +112,7 @@ jobs:
           node --check training-collector/tests/action_window_quality_contract.js
           node --check training-collector/tests/behavior_feature_contract.js
           node --check training-collector/tests/behavior_feature_analysis_contract.js
+          node --check training-collector/tests/task_episode_review_export_contract.js
       - name: Validate extension manifests and Agent contracts JSON
         run: |
           node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/AGENT_ACTION_CONTRACT.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/EXECUTION_SURFACE_CONTRACT.json','utf8'))"
@@ -171,6 +172,8 @@ jobs:
         run: node training-collector/tests/v072_frame_stream_contract.js
       - name: Run Collector V0.8 socket mirror contract test
         run: node training-collector/tests/v08_socket_mirror_contract.js
+      - name: Run Task Episode review export privacy contract
+        run: node training-collector/tests/task_episode_review_export_contract.js
       - name: Install socket server dependency
         run: npm install --prefix training-collector/socket-server --no-audit --no-fund
       - name: Run Collector V0.8 socket server integration test
