@@ -28,9 +28,11 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   const EpisodeTransitionOrderFactory = NS11.EpisodeTransitionOrder;
   const IS_TOP_FRAME = window === window.top;
   const HEALTH_INTERVAL_MS = 10000;
+  const AUTO_CAPTURE_KEY = 'trainingCollectorAutoCaptureEnabledV1';
 
   const S = {
     rawActive: false,
+    autoCaptureEnabled: true,
     episodeActive: false,
     startedAt: performance.now(),
     transitionSeq: 0,
@@ -98,11 +100,11 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
 
   function healthModules() {
     return {
-      physical: !!S.physical,
-      dom: !!S.domCapture,
-      mutation: !!S.mutationTrace,
-      hover: !!S.hoverTrace,
-      navigation: !!S.routeTrace
+      physical: !!S.physical?.running,
+      dom: !!S.rawActive,
+      mutation: !!S.rawActive,
+      hover: !!S.rawActive,
+      navigation: !!S.routeTrace?.running
     };
   }
 
@@ -171,7 +173,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   }
 
   function startRawCapture() {
-    if (S.rawActive || !PhysicalCapture?.createPhysicalCapture) return;
+    if (S.rawActive || !S.autoCaptureEnabled || !S.rawSender || !PhysicalCapture?.createPhysicalCapture) return;
     S.rawActive = true;
     S.correlator = CorrelatorFactory?.createCorrelator?.({ observer: Observer }) || null;
     S.targetResolver = TargetResolverFactory?.createActionTargetResolver?.({ observer: Observer }) || null;
@@ -230,13 +232,32 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       type: 'semantic-snapshot',
       tsEpochMs: Date.now(),
       tPageMs: Math.round(performance.now() * 1000) / 1000,
-      snapshotReason: 'document-start',
+      snapshotReason: 'capture-resumed',
       observation: initialObservation
     }, 'semantic')], 'semantic');
 
     S.routeTrace?.start(initialObservation.page || null);
     emitHealth('collector-stream-start');
     S.healthTimer = setInterval(() => emitHealth('collector-stream-health'), HEALTH_INTERVAL_MS);
+  }
+
+  function stopRawCapture() {
+    if (!S.rawActive) return;
+    emitHealth('collector-stream-stop');
+    if (S.healthTimer) clearInterval(S.healthTimer);
+    S.healthTimer = null;
+    S.routeTrace?.stop?.();
+    S.hoverTrace?.stop?.();
+    S.mutationTrace?.stop?.();
+    S.domCapture?.stop?.();
+    S.physical?.stop?.();
+    S.rawActive = false;
+  }
+
+  function applyAutoCaptureEnabled(enabled) {
+    S.autoCaptureEnabled = enabled !== false;
+    if (S.autoCaptureEnabled) startRawCapture();
+    else stopRawCapture();
   }
 
   addEventListener('click', event => {
@@ -317,10 +338,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   }, { capture: true, passive: true });
 
   addEventListener('pagehide', () => {
-    emitHealth('collector-stream-stop');
-    if (S.healthTimer) clearInterval(S.healthTimer);
-    S.healthTimer = null;
-    S.routeTrace?.stop?.();
+    stopRawCapture();
   }, true);
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -347,6 +365,11 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       return false;
     }
     return false;
+  });
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes?.[AUTO_CAPTURE_KEY]) return;
+    applyAutoCaptureEnabled(changes[AUTO_CAPTURE_KEY].newValue !== false);
   });
 
   send('HELLO', {
@@ -376,6 +399,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       maxPending: 128
     }) || null;
     await S.rawSender?.restore?.();
-    startRawCapture();
+    const pref = await chrome.storage.local.get(AUTO_CAPTURE_KEY).catch(() => ({}));
+    applyAutoCaptureEnabled(pref?.[AUTO_CAPTURE_KEY] !== false);
   });
 }
