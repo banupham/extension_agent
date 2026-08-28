@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const {
+  adaptVerifiedReviewToStrategyEpisode,
   adaptHumanReviewToStrategyEpisode
 } = require('../../control-center/manager/training/human_strategy_episode_adapter.js');
 const {
@@ -14,7 +15,8 @@ const {
   evaluateBaselineReadiness
 } = require('./check_strategy_baseline_readiness.js');
 
-const APPROVED_DATASET_BUILDER_VERSION = '0.1.0';
+const APPROVED_DATASET_BUILDER_VERSION = '0.2.0';
+const VERIFICATION_MODES = Object.freeze(['human', 'machine']);
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -24,11 +26,15 @@ function safeName(value) {
   return String(value || 'episode').replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 140) || 'episode';
 }
 
-function annotationFiles(dir) {
+function annotationFiles(dir, verificationMode = 'human') {
   const full = path.resolve(dir);
   if (!fs.existsSync(full)) throw new Error(`annotation_directory_missing:${full}`);
+  const mode = verificationMode === 'machine' ? 'machine' : 'human';
+  const pattern = mode === 'machine'
+    ? /\.strategy-review\.machine-verified\.json$/i
+    : /\.strategy-review\.approved\.json$/i;
   return fs.readdirSync(full, { withFileTypes: true })
-    .filter(entry => entry.isFile() && /\.strategy-review\.approved\.json$/i.test(entry.name))
+    .filter(entry => entry.isFile() && pattern.test(entry.name))
     .map(entry => path.join(full, entry.name))
     .sort((a, b) => a.localeCompare(b));
 }
@@ -49,17 +55,36 @@ function assertApprovalProof(annotation, file) {
   }
 }
 
+function assertMachineProof(annotation, file) {
+  const proof = annotation?.machineVerification || {};
+  if (proof.method !== 'machine-eligibility-gate') throw new Error(`annotation_machine_verification_missing:${file}`);
+  if (proof.status !== 'accept') throw new Error(`annotation_machine_status_not_accept:${file}`);
+  for (const key of ['taskPrivacyVerified', 'semanticLabelsVerified', 'outcomeVerified', 'credentialsExcluded', 'secretsExcluded']) {
+    if (proof[key] !== true) throw new Error(`annotation_machine_verification_missing:${key}:${file}`);
+  }
+  if (proof?.outcomeVerification?.status !== 'verified') throw new Error(`annotation_machine_outcome_not_verified:${file}`);
+  for (const key of ['eligibilityVersion', 'eligibilityDigest', 'sourceCandidateDigest']) {
+    if (typeof proof[key] !== 'string' || !proof[key]) throw new Error(`annotation_machine_digest_missing:${key}:${file}`);
+  }
+  if (annotation?.policy?.humanApprovalClaimed !== false) throw new Error(`annotation_machine_human_claim_boundary_failed:${file}`);
+}
+
 function packByEpisode(pack) {
   return new Map((Array.isArray(pack?.items) ? pack.items : [])
     .map(item => [String(item?.episodeId || ''), item]));
 }
 
-function adaptApprovedAnnotations(packFile, annotationsDir, episodesDir) {
+function adaptVerifiedAnnotations(packFile, annotationsDir, episodesDir, options = {}) {
+  const verificationMode = options.verificationMode === 'machine' ? 'machine' : 'human';
   const fullPack = path.resolve(packFile);
   const pack = readJson(fullPack);
   const byEpisode = packByEpisode(pack);
-  const files = annotationFiles(annotationsDir);
-  if (!files.length) throw new Error('no_approved_strategy_annotations_found');
+  const files = annotationFiles(annotationsDir, verificationMode);
+  if (!files.length) {
+    throw new Error(verificationMode === 'machine'
+      ? 'no_machine_verified_strategy_annotations_found'
+      : 'no_approved_strategy_annotations_found');
+  }
   const outDir = path.resolve(episodesDir);
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -67,16 +92,20 @@ function adaptApprovedAnnotations(packFile, annotationsDir, episodesDir) {
   const outputs = [];
   for (const file of files) {
     const annotation = readJson(file);
-    assertApprovalProof(annotation, file);
+    if (verificationMode === 'machine') assertMachineProof(annotation, file);
+    else assertApprovalProof(annotation, file);
     const episodeId = String(annotation?.episodeId || '');
     const packItem = byEpisode.get(episodeId);
     if (!packItem) throw new Error(`approval_episode_missing_from_review_pack:${episodeId}`);
     const sourceFile = resolveSourceFile(packItem?.sourceFile);
     if (!sourceFile || !fs.existsSync(sourceFile)) throw new Error(`review_source_missing:${episodeId}`);
     const review = readJson(sourceFile);
-    const adapted = adaptHumanReviewToStrategyEpisode(review, annotation);
+    const adapted = verificationMode === 'machine'
+      ? adaptVerifiedReviewToStrategyEpisode(review, annotation, { verificationKind: 'machine-verified' })
+      : adaptHumanReviewToStrategyEpisode(review, annotation);
     const record = adapted.record;
-    if (record?.source?.kind !== 'human-demonstration' || record?.source?.labelVerified !== true || record?.source?.outcomeVerified !== true) {
+    const expectedKind = verificationMode === 'machine' ? 'approved-controller' : 'human-demonstration';
+    if (record?.source?.kind !== expectedKind || record?.source?.labelVerified !== true || record?.source?.outcomeVerified !== true) {
       throw new Error(`adapted_record_trust_boundary_failed:${episodeId}`);
     }
     const output = path.join(outDir, `${safeName(record.episodeId)}.strategy-episode.json`);
@@ -84,7 +113,15 @@ function adaptApprovedAnnotations(packFile, annotationsDir, episodesDir) {
     records.push(record);
     outputs.push(output);
   }
-  return { records, outputs };
+  return { records, outputs, verificationMode };
+}
+
+function adaptApprovedAnnotations(packFile, annotationsDir, episodesDir) {
+  return adaptVerifiedAnnotations(packFile, annotationsDir, episodesDir, { verificationMode: 'human' });
+}
+
+function adaptMachineVerifiedAnnotations(packFile, annotationsDir, episodesDir) {
+  return adaptVerifiedAnnotations(packFile, annotationsDir, episodesDir, { verificationMode: 'machine' });
 }
 
 function distinctSplitGroups(records) {
@@ -112,6 +149,7 @@ function buildApprovedStrategyDataset(packFile, annotationsDir, outputDir, optio
       reasonCode: 'insufficient_distinct_split_groups',
       minimumDistinctSplitGroups: 3,
       policy: {
+        verificationMode: 'human',
         onlyExplicitlyHumanConfirmedAnnotationsAccepted: true,
         sourceKindRequired: 'human-demonstration',
         noAutomaticFallbackApproval: true
@@ -142,6 +180,7 @@ function buildApprovedStrategyDataset(packFile, annotationsDir, outputDir, optio
     baselineReady: readiness.ready,
     baselineReadinessErrors: readiness.errors,
     policy: {
+      verificationMode: 'human',
       onlyExplicitlyHumanConfirmedAnnotationsAccepted: true,
       sourceKindRequired: 'human-demonstration',
       deterministicGroupSplit: true,
@@ -199,13 +238,17 @@ if (require.main === module) main();
 
 module.exports = {
   APPROVED_DATASET_BUILDER_VERSION,
+  VERIFICATION_MODES,
   readJson,
   safeName,
   annotationFiles,
   resolveSourceFile,
   assertApprovalProof,
+  assertMachineProof,
   packByEpisode,
+  adaptVerifiedAnnotations,
   adaptApprovedAnnotations,
+  adaptMachineVerifiedAnnotations,
   distinctSplitGroups,
   buildApprovedStrategyDataset,
   parseArgs,
