@@ -9,6 +9,7 @@ const {
 const { createBaselineStrategy } = require('./baseline_strategy');
 const { createOfflineBaselineProvider } = require('./offline_baseline_provider');
 const { createExplicitActionIntentProvider } = require('./explicit_action_intent_provider');
+const { createTargetAmbiguityGuardProvider } = require('./target_ambiguity_guard_provider');
 const { resolveOfflineStrategyModel } = require('./offline_model_loader');
 const { createTabLifecycleProvider } = require('./tab_lifecycle_provider');
 
@@ -36,12 +37,13 @@ function resolveStrategyProvider(options = {}) {
     model: resolved.model,
     minimumConfidence: options.minimumConfidence
   });
+  const explicitProvider = createExplicitActionIntentProvider({
+    baseProvider: offlineProvider,
+    model: resolved.model,
+    minimumConfidence: options.minimumConfidence
+  });
   return {
-    provider: createExplicitActionIntentProvider({
-      baseProvider: offlineProvider,
-      model: resolved.model,
-      minimumConfidence: options.minimumConfidence
-    }),
+    provider: createTargetAmbiguityGuardProvider({ baseProvider: explicitProvider }),
     modelMetadata: resolved.metadata
   };
 }
@@ -105,6 +107,7 @@ module.exports = {
   ...require('./execution_behavior_contract'),
   ...require('./offline_baseline_provider'),
   ...require('./explicit_action_intent_provider'),
+  ...require('./target_ambiguity_guard_provider'),
   ...require('./offline_model_loader'),
   ...require('./tab_lifecycle_provider'),
   ...require('./self_experience_memory'),
