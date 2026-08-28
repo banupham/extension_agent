@@ -44,14 +44,22 @@ assert.ok(hover.cdpPrimitives.includes('Runtime.evaluate'));
 const volume = mapAgentAction({ type: 'setVolume', targetRef: 'e12', args: { value: 0.6 } });
 assert.strictEqual(volume.behaviorFamily, 'pointer-drag');
 
-const typing = mapAgentAction({ type: 'typeText', args: { text: 'task-provided text' } });
+const typing = mapAgentAction({ type: 'typeText', targetRef: 'text-field-1', args: { text: 'task-provided text' } });
 const typingBehavior = defaultBehaviorFor(typing);
+assert.strictEqual(typing.targetRef, 'text-field-1');
 assert.strictEqual(typingBehavior.keyboard.profile, 'empirical');
 assert.strictEqual(typingBehavior.keyboard.burstProfile, 'context-conditioned');
 
 const clickBehavior = defaultBehaviorFor(mapAgentAction({ type: 'click', targetRef: 'e1' }));
 assert.strictEqual(clickBehavior.pointer.targetAcquisition, 'adaptive');
 assert.strictEqual(clickBehavior.profile, 'empirical-v0');
+
+const submit = mapAgentAction({ type: 'submit', targetRef: 'form-1' });
+assert.strictEqual(submit.behaviorFamily, 'form-control');
+assert.strictEqual(defaultBehaviorFor(submit).pointer.targetAcquisition, 'adaptive');
+const select = mapAgentAction({ type: 'selectOption', targetRef: 'select-1', args: { value: 'x' } });
+assert.strictEqual(select.behaviorFamily, 'form-control');
+assert.strictEqual(defaultBehaviorFor(select).pointer.targetAcquisition, 'adaptive');
 
 const explicit = validateExecutionBehavior({
   actionType: 'click',
@@ -62,6 +70,7 @@ assert.strictEqual(explicit.pointer.dwellBeforeDownMs, 90);
 assert.strictEqual(explicit.pointer.holdMs, 65);
 
 throws(() => validateAgentAction({ type: 'click' }), /requires targetRef/);
+throws(() => validateAgentAction({ type: 'typeText', args: { text: 'x' } }), /typeText requires targetRef/);
 throws(() => validateAgentAction({ type: 'drag', targetRef: 'e1' }), /drag requires args\.destinationRef/);
 throws(() => validateAgentAction({ type: 'drag', targetRef: 'e1', args: { destinationRef: 'e1' } }), /source and destination must differ/);
 throws(() => validateAgentAction({ type: 'click', targetRef: 'e1', selector: '#bad' }), /must not use selector/);

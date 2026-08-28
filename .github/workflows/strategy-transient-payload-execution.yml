@@ -1,0 +1,33 @@
+name: strategy-transient-payload-execution
+
+on:
+  push:
+    branches: [feat/agent-tab-context]
+    paths:
+      - 'control-center/manager/agent/one_action_bridge.js'
+      - 'control-center/manager/agent/bounded_episode_loop.js'
+      - 'control-center/manager/execution/text_plan.js'
+      - 'control-center/manager/execution/submit_plan.js'
+      - 'control-center/manager/strategy/agent_action_contract.js'
+      - 'training-collector/tests/strategy_transient_payload_execution_contract.js'
+      - '.github/workflows/strategy-transient-payload-execution.yml'
+  pull_request:
+    paths:
+      - 'control-center/manager/agent/one_action_bridge.js'
+      - 'control-center/manager/agent/bounded_episode_loop.js'
+      - 'control-center/manager/execution/text_plan.js'
+      - 'control-center/manager/execution/submit_plan.js'
+      - 'control-center/manager/strategy/agent_action_contract.js'
+      - 'training-collector/tests/strategy_transient_payload_execution_contract.js'
+      - '.github/workflows/strategy-transient-payload-execution.yml'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run transient Strategy payload execution contract
+        run: node training-collector/tests/strategy_transient_payload_execution_contract.js

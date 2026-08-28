@@ -3,7 +3,7 @@ name: a5-replan-gate
 on:
   push:
     branches:
-      - main
+      - feat/agent-tab-context
     paths:
       - 'control-center/manager/agent/one_step_replan.js'
       - 'control-center/manager/goal/**'

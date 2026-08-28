@@ -1,0 +1,28 @@
+name: strategy-action-selection-diagnostic
+
+on:
+  push:
+    branches:
+      - feat/agent-tab-context
+    paths:
+      - 'training-collector/tools/diagnose_strategy_action_selection.js'
+      - 'training-collector/tests/strategy_action_selection_diagnostic_contract.js'
+      - 'training-collector/tools/fit_strategy_offline_baseline.js'
+      - 'control-center/manager/strategy/offline_baseline_provider.js'
+      - '.github/workflows/strategy-action-selection-diagnostic.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnostic-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check syntax
+        run: |
+          node --check training-collector/tools/diagnose_strategy_action_selection.js
+          node --check training-collector/tests/strategy_action_selection_diagnostic_contract.js
+      - name: Run action-selection diagnostic privacy contract
+        run: node training-collector/tests/strategy_action_selection_diagnostic_contract.js

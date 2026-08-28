@@ -1,0 +1,51 @@
+name: mission-long-native
+
+on:
+  push:
+    branches: [feat/agent-tab-context]
+    paths:
+      - 'control-center/manager/mission/**'
+      - 'control-center/manager/agent/**'
+      - 'control-center/manager/strategy/**'
+      - 'control-center/manager/execution/**'
+      - 'control-center/script/offline_strategy_fresh_long_mission_gate.js'
+      - 'control-center/script/offline_strategy_fresh_long_harbor_gate.js'
+      - 'training-collector/tests/mission_transient_payload_contract.js'
+      - 'training-collector/tests/recovery_progression_guard_contract.js'
+      - 'training-collector/tests/strategy_fresh_long_mission_contract.js'
+      - 'training-collector/tests/strategy_fresh_long_harbor_contract.js'
+      - 'training-collector/tests/signal_relay_enter_submit_contract.js'
+      - '.github/workflows/mission-long-native.yml'
+  pull_request:
+    paths:
+      - 'control-center/manager/mission/**'
+      - 'control-center/manager/agent/**'
+      - 'control-center/manager/strategy/**'
+      - 'control-center/manager/execution/**'
+      - 'control-center/script/offline_strategy_fresh_long_mission_gate.js'
+      - 'control-center/script/offline_strategy_fresh_long_harbor_gate.js'
+      - 'training-collector/tests/mission_transient_payload_contract.js'
+      - 'training-collector/tests/recovery_progression_guard_contract.js'
+      - 'training-collector/tests/strategy_fresh_long_mission_contract.js'
+      - 'training-collector/tests/strategy_fresh_long_harbor_contract.js'
+      - 'training-collector/tests/signal_relay_enter_submit_contract.js'
+      - '.github/workflows/mission-long-native.yml'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run mission transient payload contract
+        run: node training-collector/tests/mission_transient_payload_contract.js
+      - name: Run recovery planned progression guard contract
+        run: node training-collector/tests/recovery_progression_guard_contract.js
+      - name: Run Signal Relay Enter-submit semantics contract
+        run: node training-collector/tests/signal_relay_enter_submit_contract.js
+      - name: Run Signal Relay long mission regression contract
+        run: node training-collector/tests/strategy_fresh_long_mission_contract.js
+      - name: Run fresh Harbor Dispatch long mission contract
+        run: node training-collector/tests/strategy_fresh_long_harbor_contract.js

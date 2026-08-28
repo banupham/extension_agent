@@ -1,4 +1,4 @@
-# STATUS — 2026-08-27
+# STATUS — 2026-08-26
 
 ## Source of truth
 
@@ -16,14 +16,13 @@ Recent A5 evidence:
 
 ```text
 docs/A5_NATIVE_VALIDATION_2026-08-26.md
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-27_A5_4_REPLAN.md
 ```
 
 Older focused native evidence remains under `docs/PROJECT_JOURNAL_APPENDIX_2026-08-26_*`.
 
 ---
 
-# CURRENT FOCUS — episode/outcome dataset validation after A5.4
+# CURRENT FOCUS — A5.4 explicit one-step replan orchestration
 
 ```text
 A0 Agent/Behavior contracts             COMPLETE
@@ -35,8 +34,7 @@ A4 One-action bridge                    SCOPED FUNCTION MATRIX NATIVE PASS
 A5.1 Semantic Goal Checker              COMPLETE / NATIVE PASS
 A5.2 Outcome → control status           COMPLETE / NATIVE PASS
 A5.3 Step history + episode budgets     COMPLETE / CONTRACT PASS
-A5.4 Explicit one-step replan           COMPLETE / NATIVE PASS
-Episode/outcome dataset validation      NEXT
+A5.4 Explicit one-step replan           NEXT / NOT STARTED
 Autonomous multi-step                   NOT STARTED
 ```
 
@@ -299,25 +297,16 @@ budget_max_replans_reached
 
 Contract coverage includes every exhaustion path plus failure/stall counter resets after successful progress.
 
-## A5.4 Explicit one-step replan — COMPLETE / NATIVE PASS
+## NEXT — A5.4 explicit one-step replan
 
-Contract/source:
-
-```text
-control-center/ONE_STEP_REPLAN_CONTRACT.json
-control-center/manager/agent/one_step_replan.js
-control-center/script/checks/one_step_replan.js
-control-center/script/one_step_replan_gate.js
-```
-
-A5.4 orchestrates one bounded next Strategy decision only after A5.3 returns:
+A5.4 is allowed to orchestrate one bounded next Strategy decision only after A5.3 returns:
 
 ```text
 terminal=false
 shouldReplan=true
 ```
 
-Locked shape:
+Target shape:
 
 ```text
 Task
@@ -329,45 +318,10 @@ Task
 → A5.1 Goal Checker
 → A5.2 Outcome Controller
 → A5.3 Episode Budget Guard
-→ if permitted: ONE explicit Strategy decision
-→ validate semantic Agent Action
-→ return Decision
-→ STOP
+→ if permitted: ONE explicit replan decision
 ```
 
-Native controlled evidence on `http://127.0.0.1:8091`:
-
-```text
-moveTo Submit Target
-→ execution.ok=true
-→ page title remains PAGE_CDP Batch Lab
-→ actionSucceeded=true / taskSucceeded=false
-→ control=continue / shouldReplan=true
-→ budget non-terminal / shouldReplan=true
-→ Strategy called exactly once
-→ returned action=submit with Agent Action contractVersion
-→ nextActionExecuted=false
-→ result=PASS
-```
-
-Enforced invariants:
-
-```text
-boundedStrategyCalls=true
-oneSemanticActionPerLoop=true
-nextActionExecuted=false
-returnedActDecisionUsesSemanticAgentAction=true
-goalCheckerChoseAction=false
-episodeBudgetCalledStrategy=false
-```
-
-Focused A5 CI also passes syntax, contract JSON and A5.1-A5.4 regressions. Full evidence is recorded in:
-
-```text
-docs/PROJECT_JOURNAL_APPENDIX_2026-08-27_A5_4_REPLAN.md
-```
-
-A5.4 is not an autonomous loop. Broader autonomous multi-step remains a later milestone after episode/outcome dataset validation and held-out evaluation.
+A5.4 must not become an unbounded autonomous loop. A broader autonomous multi-step mode remains a later milestone after bounded replan evidence and episode/outcome dataset validation.
 
 ---
 
@@ -534,7 +488,7 @@ human demonstrations
 
 Naturalness remains a Behavior-learning milestone, not a functional executor gate.
 
-A5.4 bounded replan is now validated. The next training-oriented gate is episode/outcome dataset validation and held-out evaluation before broader autonomous execution. Reliable episode records should contain:
+Strategy/Brain training should wait until bounded replan produces reliable episode records with:
 
 ```text
 Task
@@ -546,11 +500,13 @@ Progress
 terminal result
 ```
 
+After A5.4 bounded replan validation, the next training-oriented gate is episode/outcome dataset validation and held-out evaluation before broader autonomous execution.
+
 ---
 
 # Deferred / on-demand gates
 
-These do not block the next episode/outcome dataset gate:
+These do not block A5.4:
 
 ```text
 cross-origin/OOPIF frame observation when a real task requires it

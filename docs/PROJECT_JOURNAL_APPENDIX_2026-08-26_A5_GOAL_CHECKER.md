@@ -48,7 +48,7 @@ errorCode
   = execution/config error only; not private reasoning
 ```
 
-Action correctness and task success stay separate. A successful action can have `actionSucceeded=true` while `taskSucceeded=false` and `progressDelta=0`.
+Action correctness and task success stay separate. A successful click can have `actionSucceeded=true` while `taskSucceeded=false` and `progressDelta=0`.
 
 A5.1 also records:
 
@@ -57,7 +57,7 @@ progressBefore
 progressDelta = progressAfter - progressBefore
 ```
 
-This is required for later Replan to distinguish execution success from actual task progress.
+This is required for later Replan to distinguish action success from actual task progress.
 
 ### Success criteria v0.1.0
 
@@ -85,7 +85,7 @@ browserTab
 
 No selector, coordinate, target geometry, frame path, tabId, raw CDP, raw browser packet, text/password value, cookie/token, clipboard, or credential content belongs in success criteria or Goal Checker evidence.
 
-Observation-bound `targetRef` is intentionally not a task-success identity because a fresh OBSERVE may issue new refs. Goal criteria prefer semantic descriptors.
+Observation-bound `targetRef` is intentionally not a task success identity because a fresh OBSERVE may issue new refs. Goal criteria prefer semantic descriptors.
 
 ### Evidence rule
 
@@ -103,15 +103,29 @@ code
 
 Do not serialize full matched DOM objects into Outcome evidence.
 
-### No-criteria / invalid-criteria rules
+### No-criteria rule
 
-If `successCriteria=[]`, Goal Checker must not invent completion from `execution.ok` alone.
+If `successCriteria=[]`:
 
-Malformed or unsupported criteria remain non-successful and return:
+```text
+actionSucceeded = execution status
+taskSucceeded   = false
+progress        = 0
+progressDelta   = 0
+errorCode       = null (unless execution failed)
+```
+
+Goal Checker must not invent completion from `execution.ok` alone.
+
+### Invalid-criteria rule
+
+Malformed or unsupported criteria do not silently pass. Outcome remains non-successful and returns:
 
 ```text
 errorCode = goal_criteria_invalid
 ```
+
+with compact diagnostic evidence only.
 
 ### A5.1 native evidence — PASS
 
@@ -160,7 +174,7 @@ Outcome
 → done | continue | failed | blocked
 ```
 
-The controller does not inspect selectors, coordinates, CDP plans, Behavior, or target geometry.
+The controller is below Goal Checker and above future Replan orchestration. It does not inspect selectors, coordinates, CDP plans, Behavior, or target geometry.
 
 ### Control semantics v0.1.0
 
@@ -178,13 +192,13 @@ continue
   shouldReplan=true
 
 failed
-  task incomplete and the step/outcome has an execution or goal-check error
+  task not complete and the step/outcome has an execution or goal-check error
   terminal=false at A5.2
   shouldReplan=true
   A5.3 budgets decide when repeated failures become terminal
 
 blocked
-  explicit blocker evidence exists
+  explicit blocker evidence exists (for example human_verification_required)
   terminal=true
   shouldReplan=false
 ```
@@ -198,11 +212,13 @@ Precedence:
 4 otherwise → continue
 ```
 
-A completed goal wins even if an attempted action later reports an error, because no further action is needed.
+A completed goal wins even if the attempted action later reports an error, because no further action is needed.
 
-`progressDelta=0` alone is not a terminal failure; stalled-step limits belong to A5.3.
+A5.2 must not classify `progressDelta=0` as terminal failure by itself. Stalled-step limits belong to A5.3 budgets/history.
 
 ### A5.2 native evidence — PASS
+
+Fixed local surface: `http://127.0.0.1:8091`.
 
 ```text
 moveTo Submit Target
@@ -281,20 +297,19 @@ Do not store selectors, coordinates, CDP plans, browser packets, full observatio
 
 ```text
 maxSteps
+  maximum executed/recorded semantic steps
+
 maxDurationMs
+  maximum elapsed episode time
+
 maxConsecutiveFailures
+  maximum trailing A5.2 `failed` steps before terminal failure
+
 maxReplans
+  maximum permitted requests to enter another Strategy decision
+
 maxStalledSteps
-```
-
-Default values:
-
-```text
-maxSteps                 = 8
-maxDurationMs            = 120000
-maxConsecutiveFailures   = 2
-maxReplans               = 6
-maxStalledSteps          = 3
+  maximum trailing successful `continue` steps with progressDelta <= 0
 ```
 
 A progress-positive `continue` resets the stalled-step counter. A `failed` step is handled by the failure counter rather than also counting as stalled.
@@ -308,7 +323,7 @@ A progress-positive `continue` resets the stalled-step counter. A `failed` step 
 4 otherwise → continue and permit one replan
 ```
 
-Budget exhaustion reason codes:
+Budget exhaustion reason codes are compact and machine-readable:
 
 ```text
 budget_max_duration_reached
@@ -318,46 +333,8 @@ budget_stalled_progress_reached
 budget_max_replans_reached
 ```
 
-### A5.3 contract evidence — PASS
+### Boundary rule
 
-A5.3 is a pure control/history contract; no browser input is required for this gate. The local contract gate was reported PASS and covers:
+A5.3 may say `shouldReplan=true`, but it must never call Strategy itself. A5.4 will own the explicit one-step replan orchestration after A5.3 is contract-validated.
 
-```text
-ordinary continue
-success at step limit
-top-priority blocker
-max steps
-max duration
-consecutive failures
-stalled progress
-stall reset after progress
-max replans
-failure reset after progress
-```
-
-Branch CI run `32990019645` also completed SUCCESS after the A5.3 contract was present on the experimental branch.
-
-Decision: A5.3 contract gate is closed.
-
----
-
-## NEXT — A5.4 explicit one-step replan orchestration
-
-A5.4 may call Strategy only after A5.3 grants:
-
-```text
-terminal=false
-shouldReplan=true
-```
-
-It must preserve:
-
-```text
-one semantic action per loop
-explicit history/budgets
-Goal Checker does not choose action
-Episode Budget does not call Strategy
-no unbounded autonomous loop
-```
-
-Autonomous multi-step remains a later milestone after bounded replan evidence and episode/outcome dataset validation.
+A5.3 is a pure control/history contract and does not require a browser-native pointer gate. Contract tests must cover normal continuation, success, blocker, every budget exhaustion path, and counter reset semantics.

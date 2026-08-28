@@ -2,15 +2,15 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Training Collector V0.8</title>
+  <title>Training Collector V0.8.3</title>
   <style>
     body{font:13px system-ui,sans-serif;margin:14px;width:430px} input,button{box-sizing:border-box;width:100%;margin:5px 0;padding:8px}.row{display:flex;gap:8px}.row button{flex:1}.muted{opacity:.72}.status{margin:8px 0;white-space:pre-wrap}.section{border-top:1px solid #ddd;margin-top:12px;padding-top:10px}.notice{padding:8px;background:#f4f6f8;margin:8px 0;line-height:1.35}pre{max-height:210px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#f6f6f6;padding:8px;font-size:11px}.session-row{border:1px solid #ddd;padding:8px;margin:6px 0}
   </style>
 </head>
 <body>
-  <strong>Training Collector V0.8 Socket Mirror</strong>
-  <div class="muted">Frame-aware physical + semantic capture with IndexedDB safety buffering and continuous localhost WebSocket mirroring.</div>
-  <div class="notice">Primary development data path is now <b>IndexedDB → ws://127.0.0.1:8765/training-collector → local append-only JSONL</b>. Manual JSONL.gz export remains only as a fallback/debug tool.</div>
+  <strong>Training Collector V0.8.3 Socket Mirror</strong>
+  <div class="muted">Frame-aware physical + semantic capture with IndexedDB safety buffering, continuous localhost WebSocket mirroring, and Strategy-safe optional task episode snapshots.</div>
+  <div class="notice">Primary development data path is <b>IndexedDB → ws://127.0.0.1:8765/training-collector → local append-only JSONL</b>. Task Episode export is a separate review source and is not directly training-eligible.</div>
 
   <div class="section">
     <strong>Socket Mirror</strong>
@@ -37,7 +37,7 @@
 
   <div class="section">
     <strong>Optional Task Episode</strong>
-    <div class="muted">Episodes remain top-frame only; all-frame capture applies to continuous raw telemetry.</div>
+    <div class="muted">Episodes remain top-frame only. Exported Task Episodes require semantic/outcome review before Strategy dataset conversion.</div>
     <input id="task" placeholder="Task instruction, e.g. Search Google for OpenAI">
     <button id="start">Start Episode</button>
     <div class="row">
@@ -45,8 +45,12 @@
       <button id="failed">Mark Failed</button>
     </div>
     <button id="stop">Stop Episode</button>
+    <button id="exportEpisode">Export Task Episode for Review</button>
     <div id="status" class="status"></div>
   </div>
+  <script src="core/task_episode_review_export.js"></script>
+  <script src="core/episode_stop_settlement.js"></script>
   <script src="popup.js"></script>
+  <script src="popup_episode_export.js"></script>
 </body>
 </html>

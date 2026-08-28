@@ -21,7 +21,7 @@ function outcome(overrides = {}) {
 }
 
 function main() {
-  assert.equal(OUTCOME_CONTROL_VERSION, '0.1.0');
+  assert.equal(OUTCOME_CONTROL_VERSION, '0.2.0');
   assert.deepEqual([...CONTROL_STATUSES].sort(), ['blocked', 'continue', 'done', 'failed']);
 
   const done = reduceOutcomeToControl({
@@ -44,6 +44,50 @@ function main() {
   assert.equal(unchanged.terminal, false);
   assert.equal(unchanged.shouldReplan, true);
   assert.equal(unchanged.reasonCode, 'goal_not_yet_satisfied');
+
+  const optionalNoEffect = reduceOutcomeToControl({
+    outcome: outcome({
+      metadata: {
+        progressDelta: 0,
+        actionEffectStatus: 'no_effect',
+        actionEffectExpected: false,
+        actionEffectCodes: []
+      }
+    })
+  });
+  assert.equal(optionalNoEffect.status, 'continue');
+  assert.equal(optionalNoEffect.reasonCode, 'goal_not_yet_satisfied');
+
+  const noEffect = reduceOutcomeToControl({
+    outcome: outcome({
+      metadata: {
+        progressDelta: 0,
+        actionEffectStatus: 'no_effect',
+        actionEffectExpected: true,
+        actionEffectCodes: []
+      }
+    })
+  });
+  assert.equal(noEffect.status, 'failed');
+  assert.equal(noEffect.terminal, false);
+  assert.equal(noEffect.shouldReplan, true);
+  assert.equal(noEffect.reasonCode, 'action_no_observable_effect');
+  assert.equal(noEffect.effectStatus, 'no_effect');
+  assert.equal(noEffect.effectExpected, true);
+
+  const observedEffect = reduceOutcomeToControl({
+    outcome: outcome({
+      metadata: {
+        progressDelta: 0,
+        actionEffectStatus: 'effect_observed',
+        actionEffectExpected: true,
+        actionEffectCodes: ['target_disappeared']
+      }
+    })
+  });
+  assert.equal(observedEffect.status, 'continue');
+  assert.equal(observedEffect.reasonCode, 'action_effect_observed');
+  assert.deepEqual(observedEffect.effectCodes, ['target_disappeared']);
 
   const progressed = reduceOutcomeToControl({
     outcome: outcome({ progress: 0.5, metadata: { progressDelta: 0.5 } })

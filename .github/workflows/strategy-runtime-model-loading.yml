@@ -1,0 +1,25 @@
+name: strategy-runtime-model-loading
+
+on:
+  push:
+    branches: [feat/agent-tab-context]
+    paths:
+      - 'control-center/manager/strategy/**'
+      - 'training-collector/tests/strategy_offline_model_loader_contract.js'
+      - '.github/workflows/strategy-runtime-model-loading.yml'
+  pull_request:
+    paths:
+      - 'control-center/manager/strategy/**'
+      - 'training-collector/tests/strategy_offline_model_loader_contract.js'
+      - '.github/workflows/strategy-runtime-model-loading.yml'
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run Strategy offline model loader contract
+        run: node training-collector/tests/strategy_offline_model_loader_contract.js

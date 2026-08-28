@@ -22,34 +22,59 @@ Cấu trúc repo giữ tương thích với gói ZIP V3.8:
 
 Scenario recorder gốc vẫn deterministic; random assignment chỉ chọn scenario, không thay đổi nội dung scenario.
 
-## Agent Mode engineering state
+## Agent Mode — trạng thái sau hợp nhất main
 
-Agent Runtime / one-action execution has closed the scoped 35-action functional matrix. A5 post-action control is now available as separate, bounded contracts:
-
-```text
-one semantic action
-→ settled observe after
-→ A5.1 Goal Checker
-→ A5.2 Outcome Controller
-→ A5.3 Episode Budget Guard
-```
-
-Relevant files:
+Agent production trên `main` hiện có đầy đủ các khối đã được xác nhận trước khi hợp nhất:
 
 ```text
-GOAL_CHECKER_CONTRACT.json
-OUTCOME_CONTROL_CONTRACT.json
-EPISODE_BUDGET_CONTRACT.json
-manager/goal/goal_checker.js
-manager/goal/outcome_controller.js
-manager/goal/episode_budget.js
+Task / Mission
+→ semantic mission + goal resolution
+→ learned Strategy / recovery / self-experience
+→ 35-action Agent Action Contract
+→ Behavior policy
+→ PAGE_CDP hoặc BROWSER_NATIVE
+→ observe-after
+→ Goal Checker / Semantic Effect / Outcome Controller
+→ Episode Budget / bounded replan
 ```
 
-A5.1/A5.2 have controlled native PASS evidence and A5.3 has contract/budget PASS evidence. The next milestone is **A5.4 explicit one-step replan orchestration**. Autonomous multi-step remains disabled/not started.
+Các năng lực đã nằm trong cơ thể Agent trên `main` gồm:
 
-Experimental Browser UI/OS control and `targetTracking=follow-live` remain isolated on `feat/agent-tab-context`; they are not ordinary `main` Runtime execution.
+- semantic Strategy + model loading/training pipeline;
+- mission/subgoal, world state, recovery và bounded replan;
+- pointer/keyboard/scroll/form/media semantic actions;
+- target tracking `follow-live` cho mục tiêu di chuyển;
+- browser-native `switchTab`, `openNewTab`, `closeTab` với semantic tab targeting;
+- Goal Checker, semantic effect evaluation và outcome feedback;
+- continuous-learning pipeline có privacy/noise filtering và explicit human approval.
 
-See repository `STATUS.md` and `docs/A5_NATIVE_VALIDATION_2026-08-26.md` for current evidence and boundaries.
+## Execution surface boundary
+
+`main` chỉ cho phép hai execution surface:
+
+```text
+PAGE_CDP
+BROWSER_NATIVE
+```
+
+Subsystem sau **cố ý ở ngoài cơ thể Agent production**:
+
+```text
+Browser UI / OS Control
+→ Windows UI Automation
+→ Win32 SendInput
+→ physical Windows pointer/keyboard ownership
+→ browser chrome/tab-strip UI
+```
+
+Các probe/spike của subsystem này được giữ trên branch `feat/agent-tab-context` làm bằng chứng thử nghiệm, nhưng `main` không có route execution `browser-ui-os` và không chứa các spike executable của nó.
+
+Xem:
+
+- `docs/MAIN_INTEGRATION_2026-08-28.md`
+- `docs/AGENT_EXECUTION_SURFACES.md`
+- `docs/TAB_LIFECYCLE_AGENT_INTEGRATION_2026-08-28.md`
+- repository `STATUS.md`
 
 ## Chạy
 

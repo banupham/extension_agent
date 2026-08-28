@@ -1,14 +1,24 @@
 'use strict';
 
-importScripts('core/episode_builder.js', 'core/raw_session_store.js', 'core/indexeddb_chunk_store.js', 'core/socket_mirror.js');
+importScripts(
+  'core/episode_builder.js',
+  'core/episode_capture_gate.js',
+  'core/episode_state_queue.js',
+  'core/raw_session_store.js',
+  'core/indexeddb_chunk_store.js',
+  'core/socket_mirror.js'
+);
 
 const EPISODE_STATE_KEY = 'trainingCollectorStateV03';
 const RECENT_SESSION_LIMIT = 20;
 const SOCKET_ENDPOINT = 'ws://127.0.0.1:8765/training-collector';
 const EpisodeBuilder = globalThis.TrainingCollectorV02.EpisodeBuilder;
+const EpisodeCaptureGate = globalThis.TrainingCollectorV09.EpisodeCaptureGate;
+const EpisodeStateQueueFactory = globalThis.TrainingCollectorV12.EpisodeStateQueue;
 const RawStore = globalThis.TrainingCollectorV03.RawSessionStore;
 const ChunkStore = globalThis.TrainingCollectorV06.IndexedDbChunkStore.createChunkStore({ chunkSize: RawStore.CHUNK_SIZE });
 const SocketMirrorFactory = globalThis.TrainingCollectorV08.SocketMirror;
+const EpisodeStateQueue = EpisodeStateQueueFactory?.createEpisodeStateQueue?.() || null;
 const EMPTY = { active: false, episode: null };
 let browserSessionInitPromise = null;
 let rawAppendChain = Promise.resolve();
@@ -22,6 +32,46 @@ async function loadEpisodeState() {
 async function saveEpisodeState(state) {
   await chrome.storage.local.set({ [EPISODE_STATE_KEY]: state });
   return state;
+}
+function queueEpisodeMutation(job) {
+  return EpisodeStateQueue?.enqueue ? EpisodeStateQueue.enqueue(job) : job();
+}
+async function consistentEpisodeState() {
+  await EpisodeStateQueue?.drain?.();
+  return loadEpisodeState();
+}
+function transitionTargetLabel(transition) {
+  const ref = transition?.action?.targetRef || null;
+  const observation = transition?.strategyObservationBefore || null;
+  if (!ref || !observation) return null;
+  if (observation.focusedElement?.ref === ref) return observation.focusedElement.label || null;
+  const match = (observation.interactiveElements || []).find(item => item?.ref === ref);
+  return match?.label || null;
+}
+function episodeDiagnostic(state) {
+  const transitions = Array.isArray(state?.episode?.transitions) ? state.episode.transitions : [];
+  const pending = transitions.filter(item => item?.status === 'pending').map(item => ({
+    transitionId: item.transitionId || null,
+    startedAtMs: Number(item.startedAtMs || 0),
+    actionKind: item.action?.kind || null,
+    operation: item.action?.operation || null,
+    targetLabel: transitionTargetLabel(item)
+  }));
+  return {
+    active: !!state?.active,
+    episodeId: state?.episode?.episodeId || null,
+    transitionCount: transitions.length,
+    completeTransitionCount: transitions.filter(item => item?.status === 'complete').length,
+    pendingTransitionCount: pending.length,
+    pending,
+    queue: EpisodeStateQueue?.status?.() || null,
+    privacy: {
+      selectorsIncluded: false,
+      coordinatesIncluded: false,
+      tabIdsIncluded: false,
+      rawTextValuesIncluded: false
+    }
+  };
 }
 async function activeTab() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -254,32 +304,47 @@ async function verifyRawSession(sessionId, full = false) {
   return { session, integrity };
 }
 
-async function startEpisode(task) {
+async function startEpisodeUnlocked(task) {
   const tab = await activeTab();
   if (!tab?.id || !/^https?:/i.test(tab.url || '')) {
     throw new Error('Open a normal http/https page before starting an episode');
   }
+
   const initial = await requestSnapshot(tab.id);
+  const initialObservation = EpisodeCaptureGate.assertSnapshotReady(initial);
   const state = {
     active: true,
     episode: EpisodeBuilder.createEpisode({
       task,
       tabId: tab.id,
-      initialObservation: initial?.observation || null,
+      initialObservation,
       now: nowIso()
     })
   };
+
   await saveEpisodeState(state);
-  await chrome.tabs.sendMessage(tab.id, {
-    scope: 'TRAINING_COLLECTOR_V03',
-    type: 'START_EPISODE_CAPTURE'
-  }, { frameId: 0 }).catch(() => {});
+  try {
+    const capture = await chrome.tabs.sendMessage(tab.id, {
+      scope: 'TRAINING_COLLECTOR_V03',
+      type: 'START_EPISODE_CAPTURE'
+    }, { frameId: 0 });
+    EpisodeCaptureGate.assertCaptureArmed(capture);
+  } catch (error) {
+    await saveEpisodeState({ ...EMPTY });
+    throw new Error(`episode_capture_start_failed: ${String(error?.message || error)}`);
+  }
   return state;
 }
+function startEpisode(task) {
+  return queueEpisodeMutation(() => startEpisodeUnlocked(task));
+}
 
-async function stopEpisode(outcome) {
+async function stopEpisodeUnlocked(outcome) {
   const state = await loadEpisodeState();
   if (!state.active || !state.episode) return state;
+
+  EpisodeCaptureGate.assertStopAllowed(state.episode, outcome);
+
   const tabId = state.episode.tabId;
   if (tabId) {
     await chrome.tabs.sendMessage(tabId, {
@@ -292,8 +357,11 @@ async function stopEpisode(outcome) {
   state.episode.finalOutcome = outcome || { status: 'stopped' };
   return saveEpisodeState(state);
 }
+function stopEpisode(outcome) {
+  return queueEpisodeMutation(() => stopEpisodeUnlocked(outcome));
+}
 
-async function transitionStart(sender, transition) {
+async function transitionStartUnlocked(sender, transition) {
   const state = await loadEpisodeState();
   if (sender.frameId !== 0 || !state.active || !state.episode || sender.tab?.id !== state.episode.tabId) {
     return { ok: true, ignored: true };
@@ -303,8 +371,11 @@ async function transitionStart(sender, transition) {
   await saveEpisodeState(state);
   return { ok: true };
 }
+function transitionStart(sender, transition) {
+  return queueEpisodeMutation(() => transitionStartUnlocked(sender, transition));
+}
 
-async function transitionEnd(sender, transition) {
+async function transitionEndUnlocked(sender, transition) {
   const state = await loadEpisodeState();
   if (sender.frameId !== 0 || !state.active || !state.episode || sender.tab?.id !== state.episode.tabId) {
     return { ok: true, ignored: true };
@@ -312,6 +383,48 @@ async function transitionEnd(sender, transition) {
   const matched = EpisodeBuilder.finishTransition(state.episode, transition || {});
   await saveEpisodeState(state);
   return { ok: true, matched };
+}
+function transitionEnd(sender, transition) {
+  return queueEpisodeMutation(() => transitionEndUnlocked(sender, transition));
+}
+
+async function episodeDocumentReadyUnlocked(sender, payload = {}) {
+  const state = await loadEpisodeState();
+  if (sender.frameId !== 0 || !state.active || !state.episode || sender.tab?.id !== state.episode.tabId) {
+    return { ok: true, ignored: true, settled: 0 };
+  }
+
+  const pageInstanceId = String(payload.pageInstanceId || '').trim();
+  const stateAfter = payload.observation && typeof payload.observation === 'object' ? payload.observation : null;
+  const strategyObservationAfter = payload.strategyObservation && typeof payload.strategyObservation === 'object'
+    ? payload.strategyObservation
+    : null;
+  if (!pageInstanceId || !stateAfter || !strategyObservationAfter) {
+    return { ok: false, error: 'episode_document_ready_snapshot_required', settled: 0 };
+  }
+
+  let settled = 0;
+  for (const transition of state.episode.transitions || []) {
+    if (transition?.status !== 'pending') continue;
+    if (String(transition.transitionId || '').startsWith(`${pageInstanceId}-`)) continue;
+    const matched = EpisodeBuilder.finishTransition(state.episode, {
+      transitionId: transition.transitionId,
+      endedAtMs: Number(payload.observedAtMs || 0),
+      stateAfter,
+      strategyObservationAfter,
+      actionSucceeded: true,
+      outcome: {
+        documentChanged: true,
+        settlementReason: 'next_document_ready'
+      }
+    });
+    if (matched) settled += 1;
+  }
+  if (settled > 0) await saveEpisodeState(state);
+  return { ok: true, ignored: false, settled };
+}
+function episodeDocumentReady(sender, payload) {
+  return queueEpisodeMutation(() => episodeDocumentReadyUnlocked(sender, payload));
 }
 
 function bootstrap() {
@@ -330,7 +443,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     if (message.type === 'HELLO') {
       const session = await ensureBrowserSession();
-      const episodeState = await loadEpisodeState();
+      const episodeState = await consistentEpisodeState();
       return {
         ok: true,
         browserSessionId: session.sessionId,
@@ -361,14 +474,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'GET_SOCKET_STATUS') return { ok: true, socket: SocketMirror?.status?.() || { state: 'unavailable' } };
     if (message.type === 'GET_STATE') return {
       ok: true,
-      state: await loadEpisodeState(),
+      state: await consistentEpisodeState(),
       rawSession: await ensureBrowserSession(),
       socket: SocketMirror?.status?.() || null
     };
+    if (message.type === 'GET_EPISODE_DIAGNOSTIC') {
+      const state = await consistentEpisodeState();
+      return { ok: true, diagnostic: episodeDiagnostic(state) };
+    }
     if (message.type === 'START_EPISODE') return { ok: true, state: await startEpisode(message.task || {}) };
     if (message.type === 'STOP_EPISODE') return { ok: true, state: await stopEpisode(message.outcome) };
     if (message.type === 'TRANSITION_START') return transitionStart(sender, message.transition);
     if (message.type === 'TRANSITION_END') return transitionEnd(sender, message.transition);
+    if (message.type === 'EPISODE_DOCUMENT_READY') return episodeDocumentReady(sender, message);
     return { ok: false, error: 'unknown_message' };
   })().then(sendResponse).catch(error => sendResponse({ ok: false, error: String(error?.message || error) }));
   return true;

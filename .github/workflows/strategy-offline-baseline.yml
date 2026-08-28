@@ -1,0 +1,234 @@
+name: strategy-offline-baseline
+
+on:
+  push:
+    branches:
+      - feat/agent-tab-context
+    paths:
+      - 'training-collector/tools/fit_strategy_offline_baseline.js'
+      - 'training-collector/tools/check_strategy_baseline_readiness.js'
+      - 'training-collector/tools/process_strategy_multistep_play_mute.js'
+      - 'training-collector/tools/process_strategy_multistep_play_mute_unmute.js'
+      - 'training-collector/tests/strategy_offline_baseline_contract.js'
+      - 'training-collector/tests/strategy_history_baseline_contract.js'
+      - 'training-collector/tests/strategy_multistep_play_mute_contract.js'
+      - 'training-collector/tests/strategy_multistep_play_mute_unmute_contract.js'
+      - 'control-center/manager/world/semantic_world_model.js'
+      - 'control-center/manager/mission/mission_plan.js'
+      - 'control-center/manager/mission/mission_executor.js'
+      - 'control-center/manager/mission/semantic_mission_interpreter.js'
+      - 'control-center/manager/mission/semantic_goal_resolver.js'
+      - 'control-center/manager/mission/mission_strategy_executor.js'
+      - 'control-center/manager/strategy/offline_baseline_provider.js'
+      - 'control-center/manager/strategy/self_experience_memory.js'
+      - 'control-center/manager/strategy/self_exploration_provider.js'
+      - 'control-center/manager/strategy/recovery_policy_memory.js'
+      - 'control-center/manager/strategy/recovery_exploration_provider.js'
+      - 'control-center/manager/strategy/recovery_outcome_memory.js'
+      - 'control-center/manager/strategy/recovery_memory_consolidation.js'
+      - 'control-center/manager/strategy/adaptive_recovery_provider.js'
+      - 'control-center/manager/strategy/recovery_transfer_provider.js'
+      - 'control-center/manager/strategy/index.js'
+      - 'control-center/manager/goal/semantic_effect_evaluator.js'
+      - 'control-center/manager/goal/outcome_controller.js'
+      - 'control-center/manager/agent/one_action_bridge.js'
+      - 'control-center/manager/agent/bounded_two_step_execution.js'
+      - 'control-center/manager/agent/bounded_episode_loop.js'
+      - 'control-center/manager/agent/self_learning_episode.js'
+      - 'control-center/manager/agent/recovery_exploration_learning.js'
+      - 'control-center/script/page_cdp_test_lab.js'
+      - 'control-center/script/recovery_memory_maintenance.js'
+      - 'control-center/script/offline_strategy_native_one_action_gate.js'
+      - 'control-center/script/offline_strategy_replan_gate.js'
+      - 'control-center/script/offline_strategy_bounded_two_step_gate.js'
+      - 'control-center/script/offline_strategy_bounded_episode_loop_gate.js'
+      - 'control-center/script/offline_strategy_history_multistep_gate.js'
+      - 'control-center/script/offline_strategy_history_three_step_gate.js'
+      - 'control-center/script/offline_strategy_compositional_unseen_gate.js'
+      - 'control-center/script/offline_strategy_self_experience_gate.js'
+      - 'control-center/script/offline_strategy_self_exploration_gate.js'
+      - 'control-center/script/offline_strategy_recovery_self_learning_gate.js'
+      - 'control-center/script/offline_strategy_recovery_transfer_gate.js'
+      - 'control-center/script/checks/mission_hierarchical_plan.js'
+      - 'control-center/script/checks/mission_hierarchical_execution.js'
+      - 'control-center/script/checks/semantic_mission_interpreter.js'
+      - 'control-center/script/checks/semantic_world_model.js'
+      - 'control-center/script/checks/semantic_goal_resolver.js'
+      - 'control-center/script/checks/mission_strategy_execution.js'
+      - 'control-center/script/checks/mission_semantic_goal_execution.js'
+      - 'control-center/script/checks/one_action_semantic_settle.js'
+      - 'control-center/script/checks/semantic_action_effect.js'
+      - 'control-center/script/checks/adaptive_outcome_feedback.js'
+      - 'control-center/script/checks/recovery_policy_learning.js'
+      - 'control-center/script/checks/persistent_recovery_memory.js'
+      - 'control-center/script/checks/recovery_self_exploration_learning.js'
+      - 'control-center/script/checks/recovery_outcome_confidence.js'
+      - 'control-center/script/checks/recovery_memory_consolidation.js'
+      - 'control-center/script/checks/generalized_recovery_transfer.js'
+      - 'control-center/script/checks/adaptive_recovery_drift.js'
+      - 'control-center/script/checks/outcome_controller.js'
+      - 'control-center/script/checks/offline_strategy_provider.js'
+      - 'control-center/script/checks/offline_strategy_history_provider.js'
+      - 'control-center/script/checks/offline_strategy_compositional_unseen.js'
+      - 'control-center/script/checks/offline_strategy_self_experience.js'
+      - 'control-center/script/checks/offline_strategy_self_experience_gate.js'
+      - 'control-center/script/checks/offline_strategy_self_exploration.js'
+      - 'control-center/script/checks/offline_strategy_native_one_action.js'
+      - 'control-center/script/checks/offline_strategy_replan.js'
+      - 'control-center/script/checks/offline_strategy_bounded_two_step.js'
+      - 'control-center/script/checks/offline_strategy_bounded_episode_loop.js'
+      - 'control-center/script/checks/offline_strategy_history_multistep.js'
+      - 'control-center/script/checks/offline_strategy_history_three_step.js'
+      - '.github/workflows/strategy-offline-baseline.yml'
+  workflow_dispatch:
+
+jobs:
+  baseline-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check syntax
+        run: |
+          node --check training-collector/tools/fit_strategy_offline_baseline.js
+          node --check training-collector/tools/process_strategy_multistep_play_mute.js
+          node --check training-collector/tools/process_strategy_multistep_play_mute_unmute.js
+          node --check training-collector/tests/strategy_offline_baseline_contract.js
+          node --check training-collector/tests/strategy_history_baseline_contract.js
+          node --check training-collector/tests/strategy_multistep_play_mute_contract.js
+          node --check training-collector/tests/strategy_multistep_play_mute_unmute_contract.js
+          node --check control-center/manager/world/semantic_world_model.js
+          node --check control-center/manager/mission/mission_plan.js
+          node --check control-center/manager/mission/mission_executor.js
+          node --check control-center/manager/mission/semantic_mission_interpreter.js
+          node --check control-center/manager/mission/semantic_goal_resolver.js
+          node --check control-center/manager/mission/mission_strategy_executor.js
+          node --check control-center/manager/strategy/offline_baseline_provider.js
+          node --check control-center/manager/strategy/self_experience_memory.js
+          node --check control-center/manager/strategy/self_exploration_provider.js
+          node --check control-center/manager/strategy/recovery_policy_memory.js
+          node --check control-center/manager/strategy/recovery_exploration_provider.js
+          node --check control-center/manager/strategy/recovery_outcome_memory.js
+          node --check control-center/manager/strategy/recovery_memory_consolidation.js
+          node --check control-center/manager/strategy/adaptive_recovery_provider.js
+          node --check control-center/manager/strategy/recovery_transfer_provider.js
+          node --check control-center/manager/goal/semantic_effect_evaluator.js
+          node --check control-center/manager/goal/outcome_controller.js
+          node --check control-center/manager/agent/one_action_bridge.js
+          node --check control-center/manager/agent/bounded_two_step_execution.js
+          node --check control-center/manager/agent/bounded_episode_loop.js
+          node --check control-center/manager/agent/self_learning_episode.js
+          node --check control-center/manager/agent/recovery_exploration_learning.js
+          node --check control-center/script/page_cdp_test_lab.js
+          node --check control-center/script/recovery_memory_maintenance.js
+          node --check control-center/script/checks/mission_hierarchical_plan.js
+          node --check control-center/script/checks/mission_hierarchical_execution.js
+          node --check control-center/script/checks/semantic_mission_interpreter.js
+          node --check control-center/script/checks/semantic_world_model.js
+          node --check control-center/script/checks/semantic_goal_resolver.js
+          node --check control-center/script/checks/mission_strategy_execution.js
+          node --check control-center/script/checks/mission_semantic_goal_execution.js
+          node --check control-center/script/checks/one_action_semantic_settle.js
+          node --check control-center/script/checks/semantic_action_effect.js
+          node --check control-center/script/checks/adaptive_outcome_feedback.js
+          node --check control-center/script/checks/recovery_policy_learning.js
+          node --check control-center/script/checks/persistent_recovery_memory.js
+          node --check control-center/script/checks/recovery_self_exploration_learning.js
+          node --check control-center/script/checks/recovery_outcome_confidence.js
+          node --check control-center/script/checks/recovery_memory_consolidation.js
+          node --check control-center/script/checks/generalized_recovery_transfer.js
+          node --check control-center/script/checks/adaptive_recovery_drift.js
+          node --check control-center/script/checks/outcome_controller.js
+          node --check control-center/script/checks/offline_strategy_provider.js
+          node --check control-center/script/checks/offline_strategy_history_provider.js
+          node --check control-center/script/checks/offline_strategy_compositional_unseen.js
+          node --check control-center/script/checks/offline_strategy_self_experience.js
+          node --check control-center/script/checks/offline_strategy_self_experience_gate.js
+          node --check control-center/script/checks/offline_strategy_self_exploration.js
+          node --check control-center/script/offline_strategy_native_one_action_gate.js
+          node --check control-center/script/checks/offline_strategy_native_one_action.js
+          node --check control-center/script/offline_strategy_replan_gate.js
+          node --check control-center/script/checks/offline_strategy_replan.js
+          node --check control-center/script/offline_strategy_bounded_two_step_gate.js
+          node --check control-center/script/checks/offline_strategy_bounded_two_step.js
+          node --check control-center/script/offline_strategy_bounded_episode_loop_gate.js
+          node --check control-center/script/checks/offline_strategy_bounded_episode_loop.js
+          node --check control-center/script/offline_strategy_history_multistep_gate.js
+          node --check control-center/script/checks/offline_strategy_history_multistep.js
+          node --check control-center/script/offline_strategy_history_three_step_gate.js
+          node --check control-center/script/checks/offline_strategy_history_three_step.js
+          node --check control-center/script/offline_strategy_compositional_unseen_gate.js
+          node --check control-center/script/offline_strategy_self_experience_gate.js
+          node --check control-center/script/offline_strategy_self_exploration_gate.js
+          node --check control-center/script/offline_strategy_recovery_self_learning_gate.js
+          node --check control-center/script/offline_strategy_recovery_transfer_gate.js
+      - name: Run hierarchical mission plan contract
+        run: node control-center/script/checks/mission_hierarchical_plan.js
+      - name: Run hierarchical mission execution contract
+        run: node control-center/script/checks/mission_hierarchical_execution.js
+      - name: Run semantic mission interpreter contract
+        run: node control-center/script/checks/semantic_mission_interpreter.js
+      - name: Run semantic world model contract
+        run: node control-center/script/checks/semantic_world_model.js
+      - name: Run semantic goal resolver contract
+        run: node control-center/script/checks/semantic_goal_resolver.js
+      - name: Run mission Strategy execution bridge contract
+        run: node control-center/script/checks/mission_strategy_execution.js
+      - name: Run mission semantic goal execution contract
+        run: node control-center/script/checks/mission_semantic_goal_execution.js
+      - name: Run semantic post-action settle contract
+        run: node control-center/script/checks/one_action_semantic_settle.js
+      - name: Run semantic action effect contract
+        run: node control-center/script/checks/semantic_action_effect.js
+      - name: Run outcome controller contract
+        run: node control-center/script/checks/outcome_controller.js
+      - name: Run adaptive outcome feedback contract
+        run: node control-center/script/checks/adaptive_outcome_feedback.js
+      - name: Run learned recovery policy contract
+        run: node control-center/script/checks/recovery_policy_learning.js
+      - name: Run persistent recovery self-learning contract
+        run: node control-center/script/checks/persistent_recovery_memory.js
+      - name: Run recovery self-exploration learning contract
+        run: node control-center/script/checks/recovery_self_exploration_learning.js
+      - name: Run recovery outcome confidence contract
+        run: node control-center/script/checks/recovery_outcome_confidence.js
+      - name: Run recovery memory consolidation contract
+        run: node control-center/script/checks/recovery_memory_consolidation.js
+      - name: Run generalized recovery transfer contract
+        run: node control-center/script/checks/generalized_recovery_transfer.js
+      - name: Run adaptive recovery drift contract
+        run: node control-center/script/checks/adaptive_recovery_drift.js
+      - name: Run offline Strategy baseline contract
+        run: node training-collector/tests/strategy_offline_baseline_contract.js
+      - name: Run history-aware Strategy baseline contract
+        run: node training-collector/tests/strategy_history_baseline_contract.js
+      - name: Run multistep review processor contract
+        run: node training-collector/tests/strategy_multistep_play_mute_contract.js
+      - name: Run three-step review processor contract
+        run: node training-collector/tests/strategy_multistep_play_mute_unmute_contract.js
+      - name: Run offline Strategy provider contract
+        run: node control-center/script/checks/offline_strategy_provider.js
+      - name: Run offline Strategy history provider contract
+        run: node control-center/script/checks/offline_strategy_history_provider.js
+      - name: Run unseen compositional Strategy contract
+        run: node control-center/script/checks/offline_strategy_compositional_unseen.js
+      - name: Run self-experience memory contract
+        run: node control-center/script/checks/offline_strategy_self_experience.js
+      - name: Run self-experience gate contract
+        run: node control-center/script/checks/offline_strategy_self_experience_gate.js
+      - name: Run self-exploration provider contract
+        run: node control-center/script/checks/offline_strategy_self_exploration.js
+      - name: Run native offline Strategy one-action contract
+        run: node control-center/script/checks/offline_strategy_native_one_action.js
+      - name: Run offline Strategy one-step replan contract
+        run: node control-center/script/checks/offline_strategy_replan.js
+      - name: Run offline Strategy bounded two-step contract
+        run: node control-center/script/checks/offline_strategy_bounded_two_step.js
+      - name: Run offline Strategy bounded episode loop contract
+        run: node control-center/script/checks/offline_strategy_bounded_episode_loop.js
+      - name: Run offline Strategy history multistep contract
+        run: node control-center/script/checks/offline_strategy_history_multistep.js
+      - name: Run offline Strategy history three-step contract
+        run: node control-center/script/checks/offline_strategy_history_three_step.js

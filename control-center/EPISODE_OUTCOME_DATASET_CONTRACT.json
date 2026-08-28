@@ -1,0 +1,144 @@
+{
+  "contractVersion": "0.1.0",
+  "name": "agent-episode-outcome-dataset",
+  "purpose": "Validate privacy-safe, outcome-labeled Agent episodes before Strategy/Brain training and held-out evaluation.",
+  "recordShape": {
+    "required": [
+      "contractVersion",
+      "episodeId",
+      "source",
+      "task",
+      "steps",
+      "terminalResult",
+      "split",
+      "splitGroup",
+      "privacy",
+      "trainingEligibility"
+    ],
+    "stepRequired": [
+      "stepIndex",
+      "observation",
+      "decision",
+      "action",
+      "outcome",
+      "control",
+      "budget",
+      "progress"
+    ]
+  },
+  "semanticBoundary": {
+    "strategyInput": ["Task", "Observation", "compact prior step history"],
+    "strategyLabel": "Decision with semantic Agent Action only",
+    "postActionLabels": ["Outcome", "Control", "Episode Budget", "Progress"],
+    "terminalLabel": "terminalResult",
+    "forbidSelectorCoordinateOrRawCdpInDecisionAndAction": true,
+    "observationGeometryAllowed": true,
+    "tabIdIsTrainingFeature": false,
+    "behaviorTrajectoryIsStrategyFeature": false,
+    "privateReasoningStored": false
+  },
+  "sourceKinds": [
+    "human-demonstration",
+    "approved-controller",
+    "agent-runtime",
+    "controlled-native",
+    "test-fixture"
+  ],
+  "trainingPolicy": {
+    "eligibleLabelSources": ["human-demonstration", "approved-controller"],
+    "eligibleEvaluationSources": ["human-demonstration", "approved-controller"],
+    "agentRuntimeSelfLabelsEligibleByDefault": false,
+    "controlledNativeEligibleByDefault": false,
+    "testFixtureEligible": false,
+    "requiresVerifiedOutcome": true,
+    "requiresTerminalEpisode": true,
+    "requiresPrivacyRedacted": true,
+    "requiresNoForbiddenFields": true,
+    "requiresAssignedTrainSplitForModelFit": true,
+    "offlineBaselineFitAllowedAfterDatasetGate": true,
+    "heldOutEvaluationRequiredBeforeBroaderTrainingOrAutonomousUse": true
+  },
+  "splits": ["unassigned", "train", "validation", "test"],
+  "splitInvariant": "One splitGroup must never appear in more than one assigned split.",
+  "splitPolicy": {
+    "defaultSeed": "strategy-episode-v0",
+    "defaultRatios": {
+      "train": 0.8,
+      "validation": 0.1,
+      "test": 0.1
+    },
+    "minimumDistinctGroups": 3,
+    "minimumGroupsPerAssignedSplit": 1,
+    "automaticAssignmentRequiresAllInputRecordsUnassigned": true,
+    "assignmentIsBySplitGroup": true,
+    "persistAssignedSplitInsteadOfRecomputingDuringTraining": true
+  },
+  "datasetReadiness": {
+    "requiresNoInvalidRecords": true,
+    "requiresNoUnassignedRecords": true,
+    "requiresTrainValidationTestCoverage": true,
+    "requiresTrustedVerifiedLabelsAcrossAllAssignedSplits": true,
+    "requiresAtLeastOneTrainingEligibleTrainRecord": true,
+    "requiresNoSplitGroupLeakage": true
+  },
+  "terminalStatuses": ["done", "blocked", "failed"],
+  "labelConsistency": [
+    "control.status=done implies outcome.taskSucceeded=true",
+    "outcome.taskSucceeded=true implies control.status=done and control.terminal=true",
+    "control.status=blocked implies control.terminal=true",
+    "budget.terminal=true with unsuccessful task implies terminalResult.status=failed unless blocked",
+    "progress.delta equals progress.after - progress.before within numeric tolerance",
+    "executed step decision.status must be act and decision.action must equal the semantic action label"
+  ],
+  "privacy": {
+    "requiresObservationPrivacyRedacted": true,
+    "forbiddenKeysAnywhere": [
+      "selector",
+      "selectors",
+      "cdpPlan",
+      "cdpPacket",
+      "rawCdp",
+      "tabId",
+      "password",
+      "cookie",
+      "cookies",
+      "authorization",
+      "accessToken",
+      "refreshToken",
+      "clipboard",
+      "paymentSecret",
+      "privateReasoning",
+      "chainOfThought"
+    ],
+    "forbiddenDecisionOrActionKeys": [
+      "coordinate",
+      "coordinates",
+      "clientX",
+      "clientY",
+      "screenX",
+      "screenY",
+      "clickX",
+      "clickY",
+      "cdpMethod"
+    ],
+    "urlPolicy": "training records must not contain URL query values or fragments",
+    "credentialsOrSecretsAllowed": false
+  },
+  "exportPolicy": {
+    "format": "jsonl",
+    "trainExportContainsOnlyTrainingEligibleTrainRecords": true,
+    "validationAndTestAreNeverIncludedInTrainExport": true,
+    "manifestContainsSplitCountsAndEpisodeIdsOnly": true,
+    "controlledNativeOrTestFixtureMustNeverAppearInModelFitExport": true
+  },
+  "usageGate": [
+    "contract and validator CI PASS",
+    "controlled native episode label-consistency PASS",
+    "representative dataset privacy/quality PASS",
+    "leakage-safe train/validation/test split PASS",
+    "export individually eligible train records",
+    "fit the first offline Strategy baseline on train split only",
+    "held-out validation/test evaluation PASS",
+    "only then consider broader training or autonomous multi-step integration"
+  ]
+}

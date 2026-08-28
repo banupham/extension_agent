@@ -1,0 +1,20 @@
+{
+  "manifestVersion": "0.1.0",
+  "purpose": "exclude-already-processed-human-demonstrations-from-post-v0.3.3-incremental-ingestion",
+  "strategyBaselineVersion": "0.3.3",
+  "processedEpisodeIds": [
+    "ep-1787826569158",
+    "ep-1787826618214",
+    "ep-1787826766003",
+    "ep-1787828642619",
+    "ep-1787831377719",
+    "ep-1787828809498"
+  ],
+  "policy": {
+    "semanticEpisodeIdsOnly": true,
+    "containsRawUserData": false,
+    "containsTypedValues": false,
+    "containsSelectorsOrCoordinates": false,
+    "usedForExclusionOnly": true
+  }
+}

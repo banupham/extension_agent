@@ -10,6 +10,67 @@
   const fallbackRefs = new WeakMap();
   let fallbackNextRef = 1;
 
+  const NON_TEXT_INPUT_TYPES = new Set([
+    'button',
+    'checkbox',
+    'color',
+    'file',
+    'hidden',
+    'image',
+    'radio',
+    'range',
+    'reset',
+    'submit'
+  ]);
+
+  function normalizedInputType(value) {
+    const type = String(value || '').trim().toLowerCase();
+    return type || 'text';
+  }
+
+  function textEntryEditableFromSemantics({ tag, inputType = null, isContentEditable = false } = {}) {
+    const normalizedTag = String(tag || '').trim().toLowerCase();
+    if (isContentEditable === true) return true;
+    if (normalizedTag === 'textarea') return true;
+    if (normalizedTag !== 'input') return false;
+    return !NON_TEXT_INPUT_TYPES.has(normalizedInputType(inputType));
+  }
+
+  function normalizeAccessibleText(value) {
+    return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 160) : '';
+  }
+
+  function labelFromParts(parts = {}) {
+    return normalizeAccessibleText(
+      parts.ariaLabel || parts.ariaLabelledBy || parts.associatedLabel || parts.placeholder ||
+      parts.title || parts.imageAlt || parts.visibleText || ''
+    );
+  }
+
+  function labelledByText(el) {
+    const ids = String(el.getAttribute('aria-labelledby') || '').trim().split(/\s+/).filter(Boolean);
+    return normalizeAccessibleText(ids.map(id => document.getElementById(id)?.textContent || '').filter(Boolean).join(' '));
+  }
+
+  function semanticAccessibleLabel(el, meta) {
+    const tag = el.tagName.toLowerCase();
+    const editable = textEntryEditableFromSemantics({
+      tag,
+      inputType: tag === 'input' ? normalizedInputType(meta.type) : null,
+      isContentEditable: el.isContentEditable === true
+    });
+    const mayUseVisibleText = !editable && ['a', 'button', 'summary', 'option'].includes(tag);
+    return labelFromParts({
+      ariaLabel: meta.ariaLabel,
+      ariaLabelledBy: labelledByText(el),
+      associatedLabel: meta.label,
+      placeholder: meta.placeholder,
+      title: el.getAttribute('title'),
+      imageAlt: el.getAttribute('alt') || el.querySelector?.('img[alt]')?.getAttribute('alt'),
+      visibleText: mayUseVisibleText ? (el.innerText || el.textContent || '') : ''
+    });
+  }
+
   function getRef(el) {
     if (!(el instanceof Element)) return null;
     if (registry) return registry.getRef(el);
@@ -64,24 +125,34 @@
     };
   }
 
-  function privacyFor(el) { return Privacy.classifyElementMeta(rawMeta(el)); }
+  function privacyFor(el) {
+    const meta = rawMeta(el);
+    return Privacy.classifyElementMeta({ ...meta, label: semanticAccessibleLabel(el, meta) || meta.label });
+  }
   function isSensitive(el) { return !!privacyFor(el).sensitive; }
 
   function semanticElement(el) {
     if (!(el instanceof Element)) return null;
     const meta = rawMeta(el);
-    if (Privacy.classifyElementMeta(meta).sensitive) return null;
+    const accessibleLabel = semanticAccessibleLabel(el, meta);
+    if (Privacy.classifyElementMeta({ ...meta, label: accessibleLabel || meta.label }).sensitive) return null;
     const rect = el.getBoundingClientRect();
     const state = renderState(el);
-    const label = meta.ariaLabel || meta.placeholder || meta.label || '';
+    const label = accessibleLabel;
     const tag = el.tagName.toLowerCase();
+    const inputType = tag === 'input' ? normalizedInputType(meta.type) : null;
     const candidates = selectorCandidates(el);
     return {
       ref: getRef(el),
       tag,
       role: el.getAttribute('role') || null,
       label: Privacy.redactText(label, false),
-      editable: !!(el.isContentEditable || ['input', 'textarea', 'select'].includes(tag)),
+      editable: textEntryEditableFromSemantics({
+        tag,
+        inputType,
+        isContentEditable: el.isContentEditable === true
+      }),
+      inputType,
       enabled: state.enabled,
       rendered: state.rendered,
       inViewport: state.inViewport,
@@ -101,7 +172,7 @@
       .filter(el => renderState(el).rendered).slice(0, 500);
     const active = document.activeElement && document.activeElement !== document.body && !isSensitive(document.activeElement) ? document.activeElement : null;
     return {
-      schemaVersion: '0.5.0',
+      schemaVersion: '0.5.1',
       pageInstanceId: NS2.pageInstanceId,
       page: Privacy.sanitizeUrl(location.href),
       titleMetrics: Privacy.safePageTitle(document.title),
@@ -113,5 +184,22 @@
     };
   }
 
-  NS2.SemanticObserver = { getRef, semanticElement, snapshot, cssSelector, selectorCandidates, renderState, isSensitive };
+  NS2.SemanticObserver = {
+    getRef,
+    semanticElement,
+    snapshot,
+    cssSelector,
+    selectorCandidates,
+    renderState,
+    isSensitive,
+    normalizedInputType,
+    textEntryEditableFromSemantics,
+    normalizeAccessibleText,
+    labelFromParts,
+    semanticAccessibleLabel
+  };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { normalizeAccessibleText, labelFromParts };
+  }
 })(typeof globalThis !== 'undefined' ? globalThis : this);

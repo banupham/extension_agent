@@ -1,0 +1,39 @@
+{
+  "contractVersion": "0.2.0",
+  "purpose": "Execution surfaces below Strategy. Main Agent supports only renderer-level CDP and browser-native control. Browser UI / OS physical input remains an external experimental subsystem.",
+  "surfaces": {
+    "page-cdp": {
+      "scope": "webpage-renderer",
+      "default": true,
+      "exclusiveDesktopInput": false,
+      "consentRequired": false,
+      "notes": "In-page pointer/keyboard/scroll/form/media execution through allowlisted CDP primitives."
+    },
+    "browser-native": {
+      "scope": "browser-control-plane",
+      "default": false,
+      "exclusiveDesktopInput": false,
+      "consentRequired": false,
+      "notes": "Deterministic browser/tab/navigation control through CDP Page domain and browser control-plane APIs."
+    }
+  },
+  "browserNativeDefaultActions": [
+    "navigate",
+    "back",
+    "forward",
+    "reload",
+    "switchTab",
+    "openNewTab",
+    "closeTab"
+  ],
+  "selectionRule": "Use page-cdp for webpage interaction and browser-native for browser/tab/navigation control. Main Agent must not escalate to physical Browser UI / OS input.",
+  "strategyBoundary": "Strategy must not emit executionSurface, surface, executionVariant, mechanism, controlLease, HWND, screen coordinates, raw tab/window identity, or raw protocol packets.",
+  "externalSurfaces": {
+    "browser-ui-os": {
+      "status": "external-to-main-agent",
+      "preservedOnBranch": "feat/agent-tab-context",
+      "scope": "windows-desktop-input",
+      "reason": "Windows UI Automation + Win32 SendInput owns shared physical desktop input and remains outside the production Agent boundary until a separate explicit integration decision."
+    }
+  }
+}

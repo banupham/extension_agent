@@ -9,6 +9,8 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   const NS5 = window.TrainingCollectorV05 = window.TrainingCollectorV05 || {};
   const NS6 = window.TrainingCollectorV06 = window.TrainingCollectorV06 || {};
   const NS7 = window.TrainingCollectorV07 = window.TrainingCollectorV07 || {};
+  const NS9 = window.TrainingCollectorV09 = window.TrainingCollectorV09 || {};
+  const NS11 = window.TrainingCollectorV11 = window.TrainingCollectorV11 || {};
   NS2.pageInstanceId = `page-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const Observer = NS2.SemanticObserver;
@@ -22,6 +24,8 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
   const TargetResolverFactory = NS7.ActionTargetResolver;
   const HoverTraceFactory = NS7.HoverTrace;
   const RouteTraceFactory = NS7.RouteTrace;
+  const StrategyEpisodeView = NS9.StrategyEpisodeView;
+  const EpisodeTransitionOrderFactory = NS11.EpisodeTransitionOrder;
   const IS_TOP_FRAME = window === window.top;
   const HEALTH_INTERVAL_MS = 10000;
 
@@ -47,12 +51,21 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     routeTrace: null,
     correlator: null,
     targetResolver: null,
-    rawSender: null
+    rawSender: null,
+    transitionOrder: EpisodeTransitionOrderFactory?.createTransitionOrder?.() || null
   };
 
   function relTime() { return Math.max(0, performance.now() - S.startedAt); }
   function send(type, payload = {}) {
     return chrome.runtime.sendMessage({ scope: 'TRAINING_COLLECTOR_V03', type, ...payload }).catch(() => null);
+  }
+
+  function strategyObservation(snapshot, transitionIdValue, phase) {
+    if (!StrategyEpisodeView?.sanitizeSnapshot) return null;
+    return StrategyEpisodeView.sanitizeSnapshot(snapshot, {
+      observationId: `${transitionIdValue}-${phase}`,
+      capturedAt: new Date().toISOString()
+    });
   }
 
   function decorateEvent(event, source = 'unknown') {
@@ -116,32 +129,39 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     const action = Normalizer.normalize({ ...rawAction, t: Math.round(relTime()) });
     const canDiff = !!(StateDiff?.diffObservation && S.lastEpisodeState && S.lastEpisodeState.pageInstanceId === currentBefore.pageInstanceId);
     S.transitionBefore.set(id, currentBefore);
-    send('TRANSITION_START', { transition: {
+    const startPromise = send('TRANSITION_START', { transition: {
       transitionId: id,
       startedAtMs: Math.round(relTime()),
       stateBefore: canDiff ? null : currentBefore,
       stateBeforeDiff: canDiff ? StateDiff.diffObservation(S.lastEpisodeState, currentBefore) : null,
+      strategyObservationBefore: strategyObservation(currentBefore, id, 'before'),
       action
     } });
+    S.transitionOrder?.registerStart?.(id, startPromise);
     return id;
   }
 
   function finish(id, delay = 0) {
     if (!id) return;
-    setTimeout(() => {
+    setTimeout(async () => {
       if (!S.episodeActive || !IS_TOP_FRAME) return;
-      const before = S.transitionBefore.get(id) || null;
-      const after = Observer.snapshot();
-      const canDiff = !!(before && StateDiff?.diffObservation && before.pageInstanceId === after.pageInstanceId);
-      send('TRANSITION_END', { transition: {
-        transitionId: id,
-        endedAtMs: Math.round(relTime()),
-        stateAfter: canDiff ? null : after,
-        stateAfterDiff: canDiff ? StateDiff.diffObservation(before, after) : null,
-        actionSucceeded: true
-      } });
-      S.transitionBefore.delete(id);
-      S.lastEpisodeState = after;
+      const completeTransition = async () => {
+        const before = S.transitionBefore.get(id) || null;
+        const after = Observer.snapshot();
+        const canDiff = !!(before && StateDiff?.diffObservation && before.pageInstanceId === after.pageInstanceId);
+        await send('TRANSITION_END', { transition: {
+          transitionId: id,
+          endedAtMs: Math.round(relTime()),
+          stateAfter: canDiff ? null : after,
+          stateAfterDiff: canDiff ? StateDiff.diffObservation(before, after) : null,
+          strategyObservationAfter: strategyObservation(after, id, 'after'),
+          actionSucceeded: true
+        } });
+        S.transitionBefore.delete(id);
+        S.lastEpisodeState = after;
+      };
+      if (S.transitionOrder?.afterStart) await S.transitionOrder.afterStart(id, completeTransition);
+      else await completeTransition();
     }, delay);
   }
 
@@ -310,6 +330,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       S.episodeActive = true;
       S.lastEpisodeState = Observer.snapshot();
       S.transitionBefore.clear();
+      S.transitionOrder?.clear?.();
       sendResponse({ ok: true, pageInstanceId: NS2.pageInstanceId });
       return false;
     }
@@ -317,6 +338,7 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
       S.episodeActive = false;
       S.lastEpisodeState = null;
       S.transitionBefore.clear();
+      S.transitionOrder?.clear?.();
       sendResponse({ ok: true });
       return false;
     }
@@ -338,7 +360,15 @@ if (!window.__TRAINING_COLLECTOR_V072__) {
     if (!response?.ok) return;
     S.browserSessionId = response.browserSessionId || null;
     S.episodeActive = IS_TOP_FRAME && !!response.episodeActive;
-    if (S.episodeActive) S.lastEpisodeState = Observer.snapshot();
+    if (S.episodeActive) {
+      S.lastEpisodeState = Observer.snapshot();
+      await send('EPISODE_DOCUMENT_READY', {
+        pageInstanceId: NS2.pageInstanceId,
+        observedAtMs: Math.round(relTime()),
+        observation: S.lastEpisodeState,
+        strategyObservation: strategyObservation(S.lastEpisodeState, `${NS2.pageInstanceId}-navigation`, 'after')
+      });
+    }
     S.rawSender = ReliableSender?.createReliableSender?.({
       send,
       journalKey: `tcRawPendingV072:${NS2.pageInstanceId}`,

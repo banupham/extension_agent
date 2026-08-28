@@ -28,36 +28,31 @@ jobs:
           node --check control-center/extension/agent-runtime-extension/cdp_plan_dispatcher.js
           node --check control-center/extension/agent-runtime-extension/broker_client.js
           node --check control-center/extension/agent-runtime-extension/background.js
+          node --check control-center/extension/agent-runtime-extension/tab_context.js
+          node --check control-center/extension/agent-runtime-extension/follow_live_pointer.js
           node --check control-center/manager/control_center.js
           node --check control-center/manager/public/app.js
           node --check control-center/manager/strategy/index.js
           node --check control-center/manager/strategy/contracts.js
           node --check control-center/manager/strategy/baseline_strategy.js
           node --check control-center/manager/strategy/agent_action_contract.js
+          node --check control-center/manager/strategy/execution_surface_contract.js
           node --check control-center/manager/strategy/execution_behavior_contract.js
+          node --check control-center/manager/strategy/tab_lifecycle_provider.js
           node --check control-center/manager/behavior/empirical_policy.js
           node --check control-center/manager/execution/cdp_plan.js
           node --check control-center/manager/execution/form_plan.js
           node --check control-center/manager/execution/media_plan.js
-          node --check control-center/manager/goal/goal_checker.js
-          node --check control-center/manager/goal/outcome_controller.js
-          node --check control-center/manager/goal/episode_budget.js
           node --check control-center/manager/agent/one_action_bridge.js
-          node --check control-center/manager/agent/one_step_replan.js
+          node --check control-center/manager/agent/bounded_episode_loop.js
           node --check control-center/manager/agent/broker_runtime_client.js
+          node --check control-center/manager/mission/semantic_goal_resolver.js
           node --check control-center/server/server.js
           node --check control-center/script/agent_one_action.js
           node --check control-center/script/page_cdp_test_lab.js
-          node --check control-center/script/goal_checker_gate.js
-          node --check control-center/script/outcome_control_gate.js
-          node --check control-center/script/one_step_replan_gate.js
           node --check control-center/script/checks/run_check.js
           node --check control-center/script/checks/device_behavior.js
           node --check control-center/script/checks/strategy_contract.js
-          node --check control-center/script/checks/goal_checker.js
-          node --check control-center/script/checks/outcome_controller.js
-          node --check control-center/script/checks/episode_budget.js
-          node --check control-center/script/checks/one_step_replan.js
           node --check control-center/script/checks/agent_action_contract.js
           node --check control-center/script/checks/empirical_behavior_policy.js
           node --check control-center/script/checks/agent_runtime_target_registry.js
@@ -70,6 +65,7 @@ jobs:
           node --check control-center/script/checks/cdp_plan_dispatcher.js
           node --check control-center/script/checks/one_action_bridge.js
           node --check control-center/script/checks/tab_lifecycle_bridge.js
+          node --check control-center/script/checks/tab_lifecycle_agent_integration.js
           node --check control-center/script/checks/agent_runtime_broker_client.js
           node --check control-center/script/checks/broker_runtime_client.js
           node --check control-center/script/checks/agent_one_action_cli.js
@@ -118,11 +114,9 @@ jobs:
           node --check training-collector/tests/behavior_feature_analysis_contract.js
       - name: Validate extension manifests and Agent contracts JSON
         run: |
-          node -e "const fs=require('fs'); ['training-collector/manifest.json','control-center/extension/agent-runtime-extension/manifest.json','control-center/AGENT_ACTION_CONTRACT.json','control-center/GOAL_CHECKER_CONTRACT.json','control-center/OUTCOME_CONTROL_CONTRACT.json','control-center/EPISODE_BUDGET_CONTRACT.json','control-center/ONE_STEP_REPLAN_CONTRACT.json'].forEach(p=>JSON.parse(fs.readFileSync(p,'utf8')))"
-      - name: Run strategy + A5.1-A5.3 contract smoke test
+          node -e "JSON.parse(require('fs').readFileSync('training-collector/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/extension/agent-runtime-extension/manifest.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/AGENT_ACTION_CONTRACT.json','utf8')); JSON.parse(require('fs').readFileSync('control-center/EXECUTION_SURFACE_CONTRACT.json','utf8'))"
+      - name: Run strategy contract smoke test
         run: node control-center/script/checks/strategy_contract.js
-      - name: Run A5.4 explicit one-step replan contract test
-        run: node control-center/script/checks/one_step_replan.js
       - name: Run Agent action + behavior contract smoke test
         run: node control-center/script/checks/agent_action_contract.js
       - name: Run A3 empirical behavior policy contract test
@@ -147,6 +141,8 @@ jobs:
         run: node control-center/script/checks/one_action_bridge.js
       - name: Run tab lifecycle one-action bridge contract test
         run: node control-center/script/checks/tab_lifecycle_bridge.js
+      - name: Run semantic tab lifecycle Agent integration test
+        run: node control-center/script/checks/tab_lifecycle_agent_integration.js
       - name: Run Agent Runtime broker client contract test
         run: node control-center/script/checks/agent_runtime_broker_client.js
       - name: Run Manager broker runtime adapter contract test

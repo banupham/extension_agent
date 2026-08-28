@@ -2,7 +2,14 @@
 
 const { validateExecutionBehavior } = require('../strategy/execution_behavior_contract');
 
-const POLICY_VERSION = '0.1.1';
+const POLICY_VERSION = '0.3.0';
+
+function normalizeBaseline(baseline) {
+  if (!baseline || typeof baseline !== 'object') return null;
+  if (baseline.behaviorBaselineVersion && baseline.families) return baseline;
+  if (baseline.model?.behaviorBaselineVersion && baseline.model?.families) return baseline.model;
+  return null;
+}
 
 function targetSizeBucket(target) {
   const width = Number(target?.rect?.width ?? target?.widthPx);
@@ -31,11 +38,13 @@ function sampleQuantiles(metric, rng = Math.random) {
 }
 
 function baselineFamilyFor(behaviorFamily) {
-  return behaviorFamily === 'focus-acquisition' ? 'pointer-click' : behaviorFamily;
+  if (behaviorFamily === 'focus-acquisition' || behaviorFamily === 'form-control') return 'form-control';
+  return behaviorFamily;
 }
 
 function chooseProfile(baseline, behaviorFamily, target) {
-  const family = baseline?.families?.[baselineFamilyFor(behaviorFamily)];
+  const normalized = normalizeBaseline(baseline);
+  const family = normalized?.families?.[baselineFamilyFor(behaviorFamily)];
   if (!family) return null;
   const bucket = targetSizeBucket(target);
   return family.contexts?.[`targetSize:${bucket}`] || family.global || null;
@@ -65,12 +74,31 @@ function pointerClickBehavior(profile, rng) {
   };
 }
 
+function formControlPointer(profile, rng) {
+  return {
+    profile: profile ? 'empirical' : 'fallback',
+    targetAcquisition: 'adaptive',
+    dwellBeforeDownMs: null,
+    holdMs: null,
+    trajectorySeed: null,
+    constraints: {
+      approachDurationMs: finiteOrNull(sampleQuantiles(profile?.pointerApproachDurationMs, rng)),
+      straightness: finiteOrNull(sampleQuantiles(profile?.pointerStraightness, rng)),
+      meanSpeedPxS: finiteOrNull(sampleQuantiles(profile?.pointerMeanSpeedPxS, rng)),
+      meanAbsTurnDeg: finiteOrNull(sampleQuantiles(profile?.pointerMeanAbsTurnDeg, rng)),
+      leadInDurationMs: finiteOrNull(sampleQuantiles(profile?.leadInDurationMs, rng)),
+      leadInGapMedianMs: finiteOrNull(sampleQuantiles(profile?.leadInGapMedianMs, rng))
+    }
+  };
+}
+
 function sampledBehavior({ baseline, mappedAction, target = null, rng = Math.random }) {
   if (!mappedAction?.type) throw new Error('mappedAction required');
+  const normalizedBaseline = normalizeBaseline(baseline);
   const family = mappedAction.behaviorFamily || 'generic';
   const baselineFamily = baselineFamilyFor(family);
-  const profile = chooseProfile(baseline, family, target);
-  const sparse = !!baseline?.families?.[baselineFamily]?.sparse;
+  const profile = chooseProfile(normalizedBaseline, family, target);
+  const sparse = !!normalizedBaseline?.families?.[baselineFamily]?.sparse;
 
   const out = {
     actionId: mappedAction.actionId || null,
@@ -82,14 +110,17 @@ function sampledBehavior({ baseline, mappedAction, target = null, rng = Math.ran
       policyVersion: POLICY_VERSION,
       behaviorFamily: family,
       baselineFamily,
-      baselineVersion: baseline?.behaviorBaselineVersion || null,
+      baselineVersion: normalizedBaseline?.behaviorBaselineVersion || null,
+      batchBaselineVersion: baseline?.batchBehaviorBaselineVersion || null,
       sparseFamily: sparse,
       literalTrajectoryReplay: false
     }
   };
 
-  if (family === 'pointer-click' || family === 'focus-acquisition') {
+  if (family === 'pointer-click') {
     out.pointer = pointerClickBehavior(profile, rng);
+  } else if (family === 'focus-acquisition' || family === 'form-control') {
+    out.pointer = formControlPointer(profile, rng);
   } else if (family === 'pointer-hover') {
     out.pointer = {
       profile: profile ? 'empirical' : 'fallback', targetAcquisition: 'adaptive', dwellBeforeDownMs: null, holdMs: null, trajectorySeed: null,
@@ -130,4 +161,4 @@ function sampledBehavior({ baseline, mappedAction, target = null, rng = Math.ran
   return validateExecutionBehavior(out);
 }
 
-module.exports = { POLICY_VERSION, targetSizeBucket, baselineFamilyFor, sampleQuantiles, chooseProfile, sampledBehavior };
+module.exports = { POLICY_VERSION, normalizeBaseline, targetSizeBucket, baselineFamilyFor, sampleQuantiles, chooseProfile, pointerClickBehavior, formControlPointer, sampledBehavior };

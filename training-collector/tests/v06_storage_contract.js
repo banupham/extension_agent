@@ -14,9 +14,10 @@ const background = read('background.js');
 const popup = read('popup.js');
 const manifest = JSON.parse(read('manifest.json'));
 
-assert.strictEqual(manifest.version, '0.8.0');
+assert.strictEqual(manifest.version, '0.8.3');
 assert.ok(manifest.name.includes('V0.8'));
 assert.ok(manifest.content_scripts[0].js.includes('core/reliable_sender.js'));
+assert.ok(manifest.content_scripts[0].js.includes('core/strategy_episode_view.js'));
 assert.ok(!manifest.permissions.includes('offscreen'));
 assert.ok(!manifest.permissions.includes('downloads'));
 assert.ok(!manifest.permissions.includes('alarms'));
@@ -37,7 +38,15 @@ assert.ok(sender.includes('res?.ack'));
 assert.ok(sender.includes('chrome.storage.session'));
 assert.ok(sender.includes('retryMs'));
 
-assert.ok(background.includes("importScripts('core/episode_builder.js', 'core/raw_session_store.js', 'core/indexeddb_chunk_store.js', 'core/socket_mirror.js')"));
+for (const script of [
+  'core/episode_builder.js',
+  'core/episode_capture_gate.js',
+  'core/raw_session_store.js',
+  'core/indexeddb_chunk_store.js',
+  'core/socket_mirror.js'
+]) {
+  assert.ok(background.includes(`'${script}'`), `background must import ${script}`);
+}
 assert.ok(background.includes('ChunkStore.append'));
 assert.ok(background.includes('GET_RAW_EXPORT_CHUNK'));
 assert.ok(background.includes('VERIFY_RAW_SESSION'));
@@ -58,4 +67,4 @@ assert.ok(popup.includes('GET_RECENT_RAW_SESSIONS'));
 assert.ok(popup.includes('GET_SOCKET_STATUS'));
 assert.ok(!popup.includes('RETRY_AUTO_EXPORT'));
 
-console.log('Training Collector inherited IndexedDB reliability + V0.8 fallback export contract OK');
+console.log('Training Collector inherited IndexedDB reliability + V0.8.3 task episode capture contract OK');
