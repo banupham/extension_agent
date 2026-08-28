@@ -255,7 +255,8 @@ async function runTabEpisode(instruction, initialTabs, expectedAction) {
   });
   assert.strictEqual(result.steps.length, 1);
   assert.strictEqual(result.steps[0].action.type, expectedAction);
-  assert.strictEqual(result.steps[0].effect.status, 'meaningful');
+  assert.strictEqual(result.steps[0].effect.status, 'effect_observed');
+  assert.ok(result.steps[0].effect.meaningfulCodes.includes('browser_context_changed'));
   assert.strictEqual(result.finalOutcome.taskSucceeded, true);
   assert.strictEqual(result.finalBudget.reasonCode, 'goal_satisfied');
   assert.strictEqual(result.finalBudget.terminal, true);
