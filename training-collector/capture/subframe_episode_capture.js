@@ -232,6 +232,12 @@
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local' || !changes?.[EPISODE_STATE_KEY]) return;
+    const change = changes[EPISODE_STATE_KEY];
+    const oldActive = change.oldValue?.active === true;
+    const newActive = change.newValue?.active === true;
+    const oldEpisodeId = String(change.oldValue?.episode?.episodeId || '');
+    const newEpisodeId = String(change.newValue?.episode?.episodeId || '');
+    if (oldActive === newActive && oldEpisodeId === newEpisodeId) return;
     void refreshStatus();
   });
 
