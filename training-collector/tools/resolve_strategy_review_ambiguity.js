@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { validateAgentAction } = require('../../control-center/manager/strategy/agent_action_contract.js');
 
-const AMBIGUITY_RESOLVER_VERSION = '0.1.0';
+const AMBIGUITY_RESOLVER_VERSION = '0.2.0';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -56,11 +56,14 @@ function semanticTarget(element) {
     label: typeof element.label === 'string' ? element.label : null,
     role: typeof element.role === 'string' ? element.role : null,
     tag: typeof element.tag === 'string' ? element.tag : null,
+    inputType: typeof element.inputType === 'string' ? element.inputType : null,
     editable: element.editable === true,
     enabled: element.enabled !== false,
     visible: element.visible !== false && element.rendered !== false,
     checked: typeof element.checked === 'boolean' ? element.checked : null,
-    selected: typeof element.selected === 'boolean' ? element.selected : null
+    selected: typeof element.selected === 'boolean' ? element.selected : null,
+    selectedIndex: Number.isInteger(Number(element.selectedIndex)) ? Number(element.selectedIndex) : null,
+    rangeValue: Number.isFinite(Number(element.rangeValue)) ? Number(element.rangeValue) : null
   };
 }
 
@@ -96,8 +99,8 @@ function finiteCandidate(...values) {
 }
 
 function scrollDirection(rawAction = {}) {
-  const dx = finiteCandidate(rawAction.deltaX, rawAction.dx, rawAction.wheelDeltaX);
-  const dy = finiteCandidate(rawAction.deltaY, rawAction.dy, rawAction.wheelDeltaY);
+  const dx = finiteCandidate(rawAction.deltaX, rawAction.dx, rawAction.wheelDeltaX, rawAction?.scroll?.deltaX);
+  const dy = finiteCandidate(rawAction.deltaY, rawAction.dy, rawAction.wheelDeltaY, rawAction?.scroll?.deltaY);
   if (Math.abs(dx) > Math.abs(dy) && dx !== 0) return 'horizontal';
   if (dy !== 0) return 'vertical';
   const op = String(rawAction.operation || rawAction.kind || '').toLowerCase();
@@ -109,9 +112,11 @@ function scrollDirection(rawAction = {}) {
 function targetKind(element) {
   const role = String(element?.role || '').toLowerCase();
   const tag = String(element?.tag || '').toLowerCase();
-  if (role === 'checkbox' || role === 'switch') return 'toggle';
-  if (role === 'radio') return 'radio';
+  const inputType = String(element?.inputType || '').toLowerCase();
+  if (role === 'checkbox' || role === 'switch' || (tag === 'input' && inputType === 'checkbox')) return 'toggle';
+  if (role === 'radio' || (tag === 'input' && inputType === 'radio')) return 'radio';
   if (tag === 'select' || role === 'combobox' || role === 'listbox') return 'select';
+  if (tag === 'input' && inputType === 'range') return 'range';
   if (element?.editable === true || role === 'textbox' || role === 'searchbox' || tag === 'textarea') return 'editable';
   return 'other';
 }
@@ -170,13 +175,27 @@ function resolveAmbiguousTransition({ proposal, transition, task }) {
 
   if (!capturedSuccess) return unresolved(transitionId, hint, target, 'captured_action_failure_requires_human_review');
 
+  if (hint === 'doubleClick') {
+    if (!ref) return unresolved(transitionId, hint, target, 'double_click_target_required', 'doubleClick');
+    return resolved(transitionId, hint, safeAction('doubleClick', ref, {}, 'captured-semantic-double-click'), target, 'captured_double_click_with_semantic_target');
+  }
+
+  if (hint === 'drag') {
+    const destinationRef = typeof transition?.rawAction?.destinationRef === 'string'
+      ? transition.rawAction.destinationRef.trim()
+      : '';
+    if (!ref) return unresolved(transitionId, hint, target, 'drag_source_target_required', 'drag');
+    if (!destinationRef || destinationRef === ref) return unresolved(transitionId, hint, target, 'drag_destination_target_required', 'drag');
+    return resolved(transitionId, hint, safeAction('drag', ref, { destinationRef }, 'captured-semantic-drag'), target, 'captured_drag_source_and_destination_refs');
+  }
+
   if (hint === 'form-control-review-required') {
     const kind = targetKind(element || target || {});
     if (kind === 'toggle' && ref) {
       return resolved(transitionId, hint, safeAction('toggle', ref), target, 'checkable_control_semantic_toggle');
     }
     if (kind === 'radio' && ref) {
-      return resolved(transitionId, hint, safeAction('setChecked', ref, { checked: true }), target, 'radio_control_semantic_set_checked');
+      return resolved(transitionId, hint, safeAction('setChecked', ref, { value: true }), target, 'radio_control_semantic_set_checked');
     }
     if (kind === 'select') {
       return unresolved(transitionId, hint, target, 'selection_value_requires_human_review', 'selectOption');
@@ -311,6 +330,8 @@ function resolveReviewPack(packFile, triageFile, outputDir) {
       reviewAidOnly: true,
       noRawTextValuesStored: true,
       arbitraryKeyboardCharactersNeverStored: true,
+      capturedDoubleClickCanResolveWithSemanticTarget: true,
+      capturedDragRequiresSourceAndDestinationRefs: true,
       incidentalScrollDefaultsToHowNoiseUnlessTaskExplicitlyRequestsScroll: true,
       textContentRequiresHumanReviewBecauseValueIsRedacted: true,
       autoTrainEligible: false
