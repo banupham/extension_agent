@@ -3,16 +3,17 @@
 
 const fs = require('fs');
 const path = require('path');
+const Base = require('./resolve_strategy_review_ambiguity.js');
 
-const TRIAGE_VERSION = '0.1.0';
-const DIRECT_ACTION_HINTS = new Set(['click', 'focus', 'submit', 'hoverAndObserve']);
-const TARGET_REQUIRED = new Set(['click', 'focus', 'submit', 'hoverAndObserve']);
+const TRIAGE_VERSION = '0.2.0';
+const DIRECT_ACTION_HINTS = new Set(['click', 'focus', 'submit']);
+const TARGET_REQUIRED = new Set(['click', 'focus', 'submit', 'hoverAndObserve', 'doubleClick', 'drag']);
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-function scoreProposal(proposal) {
+function scoreProposal(proposal, task = null) {
   const hint = proposal?.proposal?.actionTypeHint || null;
   const target = proposal?.evidence?.targetBefore || null;
   const capturedSuccess = proposal?.evidence?.actionSucceededCaptured === true;
@@ -21,11 +22,14 @@ function scoreProposal(proposal) {
 
   if (!hint) {
     reasons.push('missing_action_type_hint');
+  } else if (hint === 'click' && Base.taskRequestsDoubleClick(task || {})) {
+    reasons.push('click_may_be_component_of_explicit_double_click');
+    labelConfidence = 0.4;
   } else if (!DIRECT_ACTION_HINTS.has(hint)) {
     reasons.push('ambiguous_action_type_hint');
-    labelConfidence = 0.35;
+    labelConfidence = hint === 'hoverAndObserve' ? 0.65 : hint === 'doubleClick' || hint === 'drag' ? 0.7 : 0.35;
   } else {
-    labelConfidence = hint === 'click' ? 0.95 : hint === 'hoverAndObserve' ? 0.9 : 0.85;
+    labelConfidence = hint === 'click' ? 0.95 : 0.85;
   }
 
   if (TARGET_REQUIRED.has(hint)) {
@@ -52,7 +56,7 @@ function scoreProposal(proposal) {
 }
 
 function scoreItem(item) {
-  const scores = (Array.isArray(item?.proposals) ? item.proposals : []).map(scoreProposal);
+  const scores = (Array.isArray(item?.proposals) ? item.proposals : []).map(proposal => scoreProposal(proposal, item?.task || null));
   const fast = scores.filter(score => score.fastLabelReviewCandidate).length;
   const ambiguous = scores.length - fast;
   return {
@@ -92,6 +96,8 @@ function scoreReviewPack(packFile) {
       proposalsNeverAutoVerifyHumanReview: true,
       outcomesAlwaysRequireHumanReview: true,
       progressAlwaysRequiresHumanReview: true,
+      hoverRequiresSemanticStateChangeResolution: true,
+      explicitDoubleClickComponentClicksRequireResolution: true,
       autoTrainEligible: false
     },
     items
