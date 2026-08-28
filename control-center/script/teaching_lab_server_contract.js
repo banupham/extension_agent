@@ -1,20 +1,22 @@
 'use strict';
 
 const assert = require('assert');
-const fs = require('fs');
 const path = require('path');
 
-const file = path.join(__dirname, 'teaching_lab_server.js');
-const src = fs.readFileSync(file, 'utf8');
-const required = [
-  '/teaching/delay-confirm-1500','/teaching/delay-next-3000','/teaching/delay-result-2000','/teaching/delay-save-ready','/teaching/delay-menu-load',
-  '/teaching/replace-target','/teaching/button-renamed','/teaching/card-replaced','/teaching/stale-target','/teaching/re-render-list',
-  '/teaching/ambiguous-identical','/teaching/ambiguous-context','/teaching/same-label-different-role','/teaching/same-label-disabled','/teaching/same-label-context-insufficient',
-  '/teaching/moving-horizontal','/teaching/moving-vertical','/teaching/moving-with-distractor','/teaching/moving-then-stop','/teaching/moving-switch-position',
-  '/teaching/no-effect-first-click','/teaching/effect-delayed','/teaching/retry-different-action','/teaching/menu-close-recover','/teaching/target-not-found-until-scroll'
-];
+const lab = require(path.join(__dirname, 'teaching_lab_server.js'));
+const ids = Object.keys(lab.SCENARIOS);
+const families = ids.map(id => lab.SCENARIOS[id].family);
 
-assert(src.includes("const PORT = Number(process.env.TEACHING_LAB_PORT || 8791)"), 'Teaching Lab must default to port 8791');
-for (const route of required) assert(src.includes(`'${route}'`), `missing Teaching Lab route: ${route}`);
-assert.strictEqual(required.length, 25);
-console.log('Teaching Lab server contract: PASS (25 routes on default port 8791)');
+assert.strictEqual(lab.PORT, 8791, 'Teaching Lab must default to port 8791');
+assert.deepStrictEqual(ids, ['TL01', 'TL02', 'TL03', 'TL04', 'TL05']);
+assert.deepStrictEqual(families, ['DELAY', 'REPLACE', 'AMBIGUITY', 'MOVING', 'RECOVERY']);
+assert.strictEqual(new Set(families).size, 5, 'each core scenario must teach a distinct capability');
+
+for (const id of ids) {
+  const scenario = lab.SCENARIOS[id];
+  assert(scenario.task && scenario.expected && scenario.type, `${id} must be a complete data-driven scenario`);
+  const html = lab.renderScenario(id, scenario);
+  assert(html.includes(`${id} | ${scenario.task}`), `${id} page must expose the exact Task Episode instruction`);
+}
+
+console.log('Teaching Lab server contract: PASS (5 structured core scenarios on port 8791)');
