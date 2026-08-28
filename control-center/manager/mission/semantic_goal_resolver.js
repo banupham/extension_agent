@@ -1,8 +1,9 @@
 'use strict';
 
 const { normalizeMissionText } = require('./mission_plan.js');
+const { extractTabIntent } = require('../strategy/tab_lifecycle_provider.js');
 
-const SEMANTIC_GOAL_RESOLVER_VERSION = '0.2.0';
+const SEMANTIC_GOAL_RESOLVER_VERSION = '0.3.0';
 
 function uniqueCriteria(criteria) {
   const seen = new Set();
@@ -41,7 +42,8 @@ function semanticGoalStateFor(semantic = {}) {
     requestedLocationObserved: kinds.has('retrieve_information') ? normalizeMissionText(semantic.location) || null : null,
     requestedTemporalWindowObserved: kinds.has('retrieve_information') ? temporalEvidencePhrase(semantic.temporalWindow) : null,
     contextualInteractionCompleted: kinds.has('interact_contextually'),
-    featureExplorationCompleted: kinds.has('explore_interface')
+    featureExplorationCompleted: kinds.has('explore_interface'),
+    tabLifecycle: semantic.tabIntent && typeof semantic.tabIntent === 'object' ? { ...semantic.tabIntent } : null
   };
 }
 
@@ -99,6 +101,23 @@ function compileGoalState(goalState = {}) {
     criteria.push({ type: 'pageSignal', key: 'featureExplorationCompleted', operator: 'equals', value: true });
   }
 
+  if (goalState.tabLifecycle) {
+    const tab = goalState.tabLifecycle;
+    if (tab.actionType === 'openNewTab' && tab.url) {
+      criteria.push({
+        type: 'browserTab',
+        match: { urlIncludes: String(tab.url).replace(/\/$/, '') },
+        expect: { exists: true, active: true }
+      });
+    } else if (tab.actionType === 'switchTab' && tab.match) {
+      criteria.push({ type: 'browserTab', match: { ...tab.match }, expect: { exists: true, active: true } });
+    } else if (tab.actionType === 'closeTab' && tab.match) {
+      criteria.push({ type: 'browserTab', match: { ...tab.match }, expect: { exists: false } });
+    } else {
+      unresolved.push('tab_lifecycle_goal_unresolvable');
+    }
+  }
+
   return { criteria: uniqueCriteria(criteria), unresolved };
 }
 
@@ -108,22 +127,42 @@ function semanticCriteriaFor(semantic = {}) {
   return { ...compiled, goalState };
 }
 
+function taskArgsForTabIntent(tabIntent) {
+  if (!tabIntent || tabIntent.error) return {};
+  if (tabIntent.actionType === 'openNewTab') {
+    return { tabAction: tabIntent.actionType, url: tabIntent.url };
+  }
+  return { tabAction: tabIntent.actionType, tabMatch: { ...tabIntent.match } };
+}
+
 function heuristicResolveSubgoalTask({ subgoal, semantic } = {}) {
   if (!subgoal || typeof subgoal !== 'object') throw new Error('semantic_goal_subgoal_required');
   if (!semantic || typeof semantic !== 'object') throw new Error('semantic_goal_semantic_required');
-  const resolution = semanticCriteriaFor(semantic);
+
+  const tabIntent = extractTabIntent({ instruction: subgoal.instruction, args: {} });
+  const semanticWithTab = tabIntent && !tabIntent.error
+    ? { ...semantic, tabIntent }
+    : semantic;
+  const resolution = semanticCriteriaFor(semanticWithTab);
+
   return {
     taskId: `semantic-${String(subgoal.subgoalId || Date.now())}`,
-    type: 'semantic-mission-subgoal',
+    type: tabIntent && !tabIntent.error ? 'semantic-tab-lifecycle' : 'semantic-mission-subgoal',
     instruction: subgoal.instruction,
-    args: {},
+    args: taskArgsForTabIntent(tabIntent),
     successCriteria: resolution.criteria,
     constraints: {},
     metadata: {
       semanticGoalResolverVersion: SEMANTIC_GOAL_RESOLVER_VERSION,
-      semanticGoalResolutionSource: 'heuristic-semantic-goal',
+      semanticGoalResolutionSource: tabIntent && !tabIntent.error
+        ? 'heuristic-tab-lifecycle-goal'
+        : 'heuristic-semantic-goal',
       semanticGoalState: resolution.goalState,
-      unresolved: resolution.unresolved,
+      tabIntent: tabIntent || null,
+      unresolved: [
+        ...resolution.unresolved,
+        ...(tabIntent?.error ? [tabIntent.error] : [])
+      ],
       titlePassCriterionRequired: false
     }
   };
@@ -167,6 +206,7 @@ module.exports = {
   semanticGoalStateFor,
   compileGoalState,
   semanticCriteriaFor,
+  taskArgsForTabIntent,
   heuristicResolveSubgoalTask,
   createHeuristicSemanticGoalProvider,
   createSemanticGoalResolver
