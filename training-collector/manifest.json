@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "minimum_chrome_version": "116",
-  "name": "Training Collector V0.8 Socket Mirror",
-  "version": "0.8.5",
-  "description": "Privacy-first frame-aware continuous capture with runtime pause/resume control, IndexedDB safety buffering, reliable localhost WebSocket mirroring, and frame-aware optional Task Episodes.",
+  "name": "Training Collector V0.8 Socket Mirror + Task Pipeline",
+  "version": "0.8.6",
+  "description": "Privacy-first frame-aware capture with IndexedDB safety buffering, reliable localhost WebSocket mirroring, durable Task Episode review delivery, and fail-closed machine training eligibility.",
   "permissions": ["activeTab", "tabs", "storage", "unlimitedStorage"],
   "host_permissions": ["http://*/*", "https://*/*"],
   "background": {"service_worker": "background_entry.js"},
