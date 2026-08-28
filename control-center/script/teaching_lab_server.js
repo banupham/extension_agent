@@ -65,6 +65,10 @@ const SCENARIOS = Object.freeze({
   }
 });
 
+function successTitleFor(scenarioId) {
+  return `PASS_${String(scenarioId || '').trim().toUpperCase()}`;
+}
+
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -72,6 +76,7 @@ function esc(value) {
 }
 
 function layout(scenarioId, scenario, stageHtml, script = '') {
+  const successTitle = successTitleFor(scenarioId);
   return `<!doctype html>
 <html lang="vi">
 <head>
@@ -91,7 +96,7 @@ function layout(scenarioId, scenario, stageHtml, script = '') {
   a{color:#175cd3}
 </style>
 </head>
-<body>
+<body data-teaching-scenario="${esc(scenarioId)}">
 <main>
   <p><a href="/teaching">← Teaching Lab</a></p>
   <section class="card">
@@ -104,7 +109,7 @@ function layout(scenarioId, scenario, stageHtml, script = '') {
   </section>
 </main>
 <script>
-function success(text){const el=document.getElementById('result');el.textContent=text;el.style.display='block';document.body.dataset.success='true';}
+function success(text){const el=document.getElementById('result');el.textContent=text;el.style.display='block';document.body.dataset.success='true';document.title=${JSON.stringify(successTitle)};}
 ${script}
 </script>
 </body>
@@ -262,11 +267,14 @@ function runSelfTest() {
   assert.ok(SCENARIOS && typeof SCENARIOS === 'object', 'Teaching Lab must expose SCENARIOS');
   assert.deepStrictEqual(Object.keys(SCENARIOS), ['TL01', 'TL02', 'TL03', 'TL04', 'TL05']);
   assert.deepStrictEqual(Object.values(SCENARIOS).map(item => item.type), ['delay', 'replace', 'ambiguity', 'moving', 'recovery']);
+  assert.strictEqual(successTitleFor('TL01'), 'PASS_TL01');
+  assert.ok(renderScenario('TL01', SCENARIOS.TL01).includes("document.title=\"PASS_TL01\""));
+  assert.ok(!renderScenario('TL03', SCENARIOS.TL03).includes('success(' + JSON.stringify(SCENARIOS.TL03.expected)));
   const fixture = strategyTeachingFixtureHtml();
   assert.ok(fixture.includes('aria-label="Topic Search"'));
   assert.ok(fixture.includes('aria-label="Message Composer"'));
   assert.ok(fixture.includes('aria-label="Teaching Confirm"'));
-  console.log(`Teaching Lab self-test: PASS (${Object.keys(SCENARIOS).length} core scenarios + shared strategy fixture on port ${DEFAULT_PORT})`);
+  console.log(`Teaching Lab self-test: PASS (${Object.keys(SCENARIOS).length} core scenarios + deterministic PASS evidence + shared strategy fixture on port ${DEFAULT_PORT})`);
   return true;
 }
 
@@ -289,6 +297,7 @@ module.exports = {
   DEFAULT_PORT,
   PORT,
   SCENARIOS,
+  successTitleFor,
   renderScenario,
   strategyTeachingFixtureHtml,
   indexPage,
