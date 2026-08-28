@@ -37,8 +37,9 @@ assert.ok(content.includes('strategyObservationAfter'));
 assert.ok(routeTrace.includes("type: 'route-change'"));
 assert.ok(routeTrace.includes("snapshotReason: 'route-change'"));
 assert.ok(routeTrace.includes("const POLL_MS = 500"));
-assert.ok(routeTrace.includes("addEventListener('popstate'"));
-assert.ok(routeTrace.includes("addEventListener('hashchange'"));
+assert.ok(routeTrace.includes("on(globalThis, 'popstate'"), 'route trace must observe browser history navigation');
+assert.ok(routeTrace.includes("on(globalThis, 'hashchange'"), 'route trace must observe hash navigation');
+assert.ok(routeTrace.includes('removeEventListener'), 'route listeners must be removable on stop');
 
 assert.ok(background.includes('documentId: sender.documentId || null'));
 assert.ok(background.includes('documentLifecycle: sender.documentLifecycle || null'));
