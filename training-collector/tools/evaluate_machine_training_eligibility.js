@@ -11,13 +11,37 @@ const {
   successSignalLabelFor
 } = require('../../control-center/script/teaching_lab_server.js');
 
-const MACHINE_TRAINING_ELIGIBILITY_VERSION = '0.3.0';
+const MACHINE_TRAINING_ELIGIBILITY_VERSION = '0.3.1';
 const MACHINE_STATUSES = Object.freeze(['accept', 'quarantine', 'reject']);
+const TEACHING_TASK_STOPWORDS = new Set([
+  'a', 'an', 'the', 'to', 'in', 'on', 'at', 'and', 'then',
+  'bang', 'cach', 'roi', 'sau', 'khi', 'vao', 'sang', 'vung', 'trang', 'o', 'no',
+  'mot', 'va', 'the', 'tu', 'den', 'cho', 'luc', 'de', 'trong'
+]);
 
 function readJson(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
 function resolveFile(file) { if (!file) return null; return path.isAbsolute(file) ? file : path.resolve(file); }
 function byEpisode(items) { return new Map((Array.isArray(items) ? items : []).map(item => [String(item?.episodeId || ''), item]).filter(([id]) => !!id)); }
-function normalizeText(value) { return String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+function normalizeText(value) {
+  return String(value || '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function teachingTaskTokens(value) {
+  return normalizeText(value).split(' ').filter(token => token.length > 1 && !TEACHING_TASK_STOPWORDS.has(token));
+}
+function teachingTaskSimilarity(instructionValue, canonicalValue) {
+  const instructionTokens = [...new Set(teachingTaskTokens(instructionValue))];
+  const canonicalTokens = [...new Set(teachingTaskTokens(canonicalValue))];
+  if (!instructionTokens.length || !canonicalTokens.length) return { matched: 0, instructionCoverage: 0, canonicalCoverage: 0, ok: false };
+  const canonicalSet = new Set(canonicalTokens);
+  const matched = instructionTokens.filter(token => canonicalSet.has(token)).length;
+  const instructionCoverage = matched / instructionTokens.length;
+  const canonicalCoverage = matched / canonicalTokens.length;
+  const ok = matched >= 2 && (instructionCoverage >= 0.5 || canonicalCoverage >= 0.5);
+  return { matched, instructionCoverage, canonicalCoverage, ok };
+}
 
 function observationElements(observation) {
   const direct = Array.isArray(observation?.interactiveElements) ? observation.interactiveElements : [];
@@ -93,7 +117,8 @@ function teachingTaskMatchesScenario(task, scenarioId) {
   if (!instruction) return false;
   const id = normalizeText(scenarioId);
   const canonical = normalizeText(scenario.task);
-  return instruction.includes(id) || instruction === canonical || instruction.includes(canonical);
+  if (instruction.includes(id) || instruction === canonical || instruction.includes(canonical)) return true;
+  return teachingTaskSimilarity(instruction, canonical).ok;
 }
 function teachingLabOutcomeVerification(review) {
   const transitions = Array.isArray(review?.transitions) ? review.transitions : [];
@@ -182,7 +207,7 @@ function evaluateMachineTrainingEligibility({ manifest, reviewPack, resolution, 
   return {
     machineTrainingEligibilityVersion: MACHINE_TRAINING_ELIGIBILITY_VERSION,
     generatedAt: new Date().toISOString(),
-    policy: { failClosed: true, userTaskLevelOutcomeIsNotSemanticLabelApproval: true, independentOutcomeVerificationRequiredForAccept: true, deterministicTeachingLabSignalSupported: true, deterministicMotorTeachingSignalSupported: true, capturedSuccessTrustRequiresUpstreamCandidatePolicy: true, unresolvedSemanticAmbiguityQuarantined: true, privacyOrInvalidReviewRejected: true, supportedButUnverifiedOutcomeQuarantined: true, productionPromotionAllowed: false },
+    policy: { failClosed: true, userTaskLevelOutcomeIsNotSemanticLabelApproval: true, independentOutcomeVerificationRequiredForAccept: true, deterministicTeachingLabSignalSupported: true, deterministicMotorTeachingSignalSupported: true, naturalTeachingTaskParaphrasesSupportedWithTokenOverlapGate: true, capturedSuccessTrustRequiresUpstreamCandidatePolicy: true, unresolvedSemanticAmbiguityQuarantined: true, privacyOrInvalidReviewRejected: true, supportedButUnverifiedOutcomeQuarantined: true, productionPromotionAllowed: false },
     counts,
     machineAcceptEpisodeIds: items.filter(item => item.status === 'accept').map(item => item.episodeId),
     quarantineEpisodeIds: items.filter(item => item.status === 'quarantine').map(item => item.episodeId),
@@ -191,4 +216,4 @@ function evaluateMachineTrainingEligibility({ manifest, reviewPack, resolution, 
   };
 }
 
-module.exports = { MACHINE_TRAINING_ELIGIBILITY_VERSION, MACHINE_STATUSES, readJson, resolveFile, byEpisode, normalizeText, observationElements, observationHasElementLabel, observationFingerprint, semanticStateChanged, explicitSuccessCriteriaVerification, declaredMachineSignalVerification, teachingScenarioFromUrl, teachingTaskMatchesScenario, teachingLabOutcomeVerification, genericOutcomeSupport, verifyTaskOutcome, candidateSemanticSafety, classifyEpisode, evaluateMachineTrainingEligibility, SCENARIOS, MOTOR_SCENARIOS };
+module.exports = { MACHINE_TRAINING_ELIGIBILITY_VERSION, MACHINE_STATUSES, TEACHING_TASK_STOPWORDS, readJson, resolveFile, byEpisode, normalizeText, teachingTaskTokens, teachingTaskSimilarity, observationElements, observationHasElementLabel, observationFingerprint, semanticStateChanged, explicitSuccessCriteriaVerification, declaredMachineSignalVerification, teachingScenarioFromUrl, teachingTaskMatchesScenario, teachingLabOutcomeVerification, genericOutcomeSupport, verifyTaskOutcome, candidateSemanticSafety, classifyEpisode, evaluateMachineTrainingEligibility, SCENARIOS, MOTOR_SCENARIOS };
