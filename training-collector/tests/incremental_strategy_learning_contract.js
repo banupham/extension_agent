@@ -7,6 +7,7 @@ const path = require('path');
 const {
   prepareIncrementalStrategyLearning,
   finalizeIncrementalStrategyLearning,
+  finalizeMachineAcceptedStrategyLearning,
   resolveReviewInput,
   nextPatchVersion,
   INCREMENTAL_STRATEGY_LEARNING_VERSION
@@ -285,6 +286,7 @@ function main() {
     assert.equal(bundle.machineAcceptEpisodeCount, 1);
     assert.equal(bundle.machineQuarantineEpisodeCount, 1);
     assert.equal(bundle.machineRejectEpisodeCount, 1);
+    assert.equal(bundle.machineFinalizationAvailable, true);
     assert.deepEqual(prepared.machineEligibility.machineAcceptEpisodeIds, [teachingId]);
     assert.deepEqual(prepared.machineEligibility.quarantineEpisodeIds, [newId]);
     assert.deepEqual(prepared.machineEligibility.rejectEpisodeIds, [unsafeId]);
@@ -307,6 +309,7 @@ function main() {
     assert.equal(bundle.invariants.machineEligibilityGateApplied, true);
     assert.equal(bundle.invariants.machineEligibilityFailClosed, true);
     assert.equal(bundle.invariants.machineAcceptedEpisodesAutoTrained, false);
+    assert.equal(bundle.invariants.machineAcceptPathHumanApprovalRequired, false);
     assert.equal(bundle.invariants.explicitHumanDigestApprovalRequired, true);
     assert.equal(bundle.invariants.approvalApplied, false);
     assert.equal(bundle.invariants.datasetBuilt, false);
@@ -324,6 +327,7 @@ function main() {
 
     const outputs = allFiles(out).map(file => path.basename(file));
     assert.equal(outputs.some(name => /\.strategy-review\.approved\.json$/i.test(name)), false);
+    assert.equal(outputs.some(name => /\.strategy-review\.machine-verified\.json$/i.test(name)), false);
     assert.equal(outputs.some(name => /^model\.json$/i.test(name)), false);
     assert.equal(outputs.some(name => /approval-receipt\.json$/i.test(name)), false);
     assert.equal(outputs.some(name => /^train\.jsonl$/i.test(name) || /^validation\.jsonl$/i.test(name) || /^test\.jsonl$/i.test(name)), false);
@@ -351,6 +355,7 @@ function main() {
     assert.equal(e2ePrepared.bundle.candidateEpisodeCount, 1);
     assert.equal(e2ePrepared.bundle.machineAcceptEpisodeCount, 0);
     assert.equal(e2ePrepared.bundle.machineQuarantineEpisodeCount, 1);
+    assert.equal(e2ePrepared.bundle.machineFinalizationAvailable, false);
     assert.equal(e2ePrepared.bundle.invariants.baseDatasetEpisodesExcludedBeforeReviewPack, true);
 
     const finalized = finalizeIncrementalStrategyLearning(e2ePrepared, {
@@ -359,11 +364,15 @@ function main() {
       confirmationPhrase: HUMAN_CONFIRMATION_PHRASE
     });
     assert.equal(finalized.finalManifest.status, 'candidate-awaiting-runtime-protection');
+    assert.equal(finalized.finalManifest.finalizationMode, 'human-digest-approval');
     assert.equal(finalized.finalManifest.approvedEpisodeCount, 1);
     assert.equal(finalized.finalManifest.baseModel.modelVersion, '0.3.5');
     assert.equal(finalized.finalManifest.baseModel.mutated, false);
     assert.equal(finalized.finalManifest.candidateModel.modelVersion, '0.3.6');
     assert.equal(finalized.finalManifest.candidateModel.heldOutPass, true);
+    assert.equal(finalized.finalManifest.dataset.verificationMode, 'human');
+    assert.equal(finalized.finalManifest.dataset.newApprovedEpisodeCount, 1);
+    assert.equal(finalized.finalManifest.dataset.newMachineVerifiedEpisodeCount, 0);
     assert.equal(finalized.finalManifest.dataset.baseSplitAssignmentsPreserved, true);
     assert.equal(finalized.finalManifest.promotion.applied, false);
     assert.equal(finalized.finalManifest.promotion.runtimeRegressionPerformed, false);
@@ -372,6 +381,51 @@ function main() {
     assert.equal(fs.existsSync(finalized.candidate.modelFile), true);
     assert.equal(fs.existsSync(finalized.dataset.manifestFile), true);
     assert.equal(fs.existsSync(finalized.finalManifestFile), true);
+
+    const machineReviews = path.join(temp, 'machine-e2e-reviews');
+    const machineOut = path.join(temp, 'machine-e2e-out');
+    fs.mkdirSync(machineReviews, { recursive: true });
+    writeReview(machineReviews, '01-teaching.task-episode-review.json', teachingReview('ep-machine-e2e'));
+
+    const machinePrepared = prepareIncrementalStrategyLearning({
+      reviewRoot: machineReviews,
+      baseDatasetDir: baseDataset,
+      outputDir: machineOut
+    });
+    assert.equal(machinePrepared.bundle.candidateEpisodeCount, 1);
+    assert.equal(machinePrepared.bundle.machineAcceptEpisodeCount, 1);
+    assert.equal(machinePrepared.bundle.machineQuarantineEpisodeCount, 0);
+    assert.equal(machinePrepared.bundle.machineRejectEpisodeCount, 0);
+    assert.equal(machinePrepared.bundle.machineFinalizationAvailable, true);
+
+    const machineFinalized = finalizeMachineAcceptedStrategyLearning(machinePrepared, {
+      baseDatasetDir: baseDataset,
+      baseModelFile
+    });
+    assert.equal(machineFinalized.finalManifest.status, 'candidate-awaiting-runtime-protection');
+    assert.equal(machineFinalized.finalManifest.finalizationMode, 'machine-eligibility');
+    assert.equal(machineFinalized.finalManifest.machineAcceptedEpisodeCount, 1);
+    assert.equal(machineFinalized.finalManifest.machineQuarantineEpisodeCount, 0);
+    assert.equal(machineFinalized.finalManifest.machineRejectEpisodeCount, 0);
+    assert.equal(machineFinalized.finalManifest.baseModel.modelVersion, '0.3.5');
+    assert.equal(machineFinalized.finalManifest.baseModel.mutated, false);
+    assert.equal(machineFinalized.finalManifest.candidateModel.modelVersion, '0.3.6');
+    assert.equal(machineFinalized.finalManifest.candidateModel.heldOutPass, true);
+    assert.equal(machineFinalized.finalManifest.dataset.verificationMode, 'machine');
+    assert.equal(machineFinalized.finalManifest.dataset.newVerifiedEpisodeCount, 1);
+    assert.equal(machineFinalized.finalManifest.dataset.newApprovedEpisodeCount, 0);
+    assert.equal(machineFinalized.finalManifest.dataset.newMachineVerifiedEpisodeCount, 1);
+    assert.equal(machineFinalized.finalManifest.dataset.baseSplitAssignmentsPreserved, true);
+    assert.equal(machineFinalized.finalManifest.verification.explicitHumanConfirmationVerified, false);
+    assert.equal(machineFinalized.finalManifest.verification.humanApprovalClaimed, false);
+    assert.equal(machineFinalized.finalManifest.promotion.applied, false);
+    assert.equal(machineFinalized.finalManifest.promotion.runtimeRegressionPerformed, false);
+    assert.equal(machineFinalized.finalManifest.promotion.freshUnseenPerformed, false);
+    assert.equal(fs.readFileSync(baseModelFile, 'utf8'), baseModelBefore);
+    assert.equal(fs.existsSync(machineFinalized.verified.receiptFile), true);
+    assert.equal(fs.existsSync(machineFinalized.candidate.modelFile), true);
+    assert.equal(fs.existsSync(machineFinalized.dataset.manifestFile), true);
+    assert.equal(fs.existsSync(machineFinalized.finalManifestFile), true);
 
     console.log('Incremental Strategy learning contract: PASS');
   } finally {
