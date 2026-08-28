@@ -70,6 +70,10 @@ function successTitleFor(scenarioId) {
   return `PASS_${String(scenarioId || '').trim().toUpperCase()}`;
 }
 
+function successSignalLabelFor(scenarioId) {
+  return `TEACHING_SUCCESS_${String(scenarioId || '').trim().toUpperCase()}`;
+}
+
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -78,6 +82,7 @@ function esc(value) {
 
 function layout(scenarioId, scenario, stageHtml, script = '') {
   const successTitle = successTitleFor(scenarioId);
+  const successSignalLabel = successSignalLabelFor(scenarioId);
   return `<!doctype html>
 <html lang="vi">
 <head>
@@ -105,12 +110,12 @@ function layout(scenarioId, scenario, stageHtml, script = '') {
     <h1>${esc(scenario.title)}</h1>
     <div class="task"><b>Task Episode:</b> ${esc(scenarioId)} | ${esc(scenario.task)}</div>
     <div class="stage">${stageHtml}</div>
-    <div id="result" class="result"></div>
+    <div id="result" class="result" role="status"></div>
     <p class="meta"><b>Expected:</b> ${esc(scenario.expected)}</p>
   </section>
 </main>
 <script>
-function success(text){const el=document.getElementById('result');el.textContent=text;el.style.display='block';document.body.dataset.success='true';document.title=${JSON.stringify(successTitle)};}
+function success(text){const el=document.getElementById('result');el.textContent=text;el.setAttribute('aria-label',${JSON.stringify(successSignalLabel)});el.style.display='block';document.body.dataset.success='true';document.title=${JSON.stringify(successTitle)};}
 ${script}
 </script>
 </body>
@@ -270,7 +275,9 @@ function runSelfTest() {
   assert.deepStrictEqual(Object.values(SCENARIOS).map(item => item.type), ['delay', 'replace', 'ambiguity', 'moving', 'recovery']);
   assert.strictEqual(SCENARIOS.TL04.moveIntervalMs, 1200, 'TL04 must remain human-operable while teaching moving-target behavior');
   assert.strictEqual(successTitleFor('TL01'), 'PASS_TL01');
+  assert.strictEqual(successSignalLabelFor('TL01'), 'TEACHING_SUCCESS_TL01');
   assert.ok(renderScenario('TL01', SCENARIOS.TL01).includes("document.title=\"PASS_TL01\""));
+  assert.ok(renderScenario('TL01', SCENARIOS.TL01).includes('TEACHING_SUCCESS_TL01'));
   assert.ok(!renderScenario('TL03', SCENARIOS.TL03).includes('success(' + JSON.stringify(SCENARIOS.TL03.expected)));
   const fixture = strategyTeachingFixtureHtml();
   assert.ok(fixture.includes('aria-label="Topic Search"'));
@@ -300,6 +307,7 @@ module.exports = {
   PORT,
   SCENARIOS,
   successTitleFor,
+  successSignalLabelFor,
   renderScenario,
   strategyTeachingFixtureHtml,
   indexPage,
