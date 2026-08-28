@@ -66,17 +66,13 @@ echo AGENT RUNTIME EXTENSION CHECK
 echo ============================================================
 call :run "Agent Runtime connected and tabs observable" node script\agent_one_action.js --tabs
 
-if /I "%MODEL_VERSION%"=="0.3.3" (
-  call :run "Native text + submit regression (Cargo)" node script\offline_strategy_fresh_native_text_gate.js --model "%MODEL%"
-  call :run "Long mission + recovery regression (Signal Relay)" node script\offline_strategy_fresh_long_mission_gate.js --model "%MODEL%"
-  call :run "Long fresh-unseen historical regression (Harbor)" node script\offline_strategy_fresh_long_harbor_gate.js --model "%MODEL%"
-) else (
-  echo.
-  echo [SKIP] Three historical native gates currently assert provider version 0.3.3.
-  echo        Model version is %MODEL_VERSION%.
-  echo        They are not run because a version assertion failure would not measure capability.
-  set /a SKIP+=3
-)
+echo.
+echo ============================================================
+echo BROWSER-NATIVE STRATEGY REGRESSION
+echo ============================================================
+call :run "Native text + submit regression (Cargo)" node script\native_regression_model_compat.js --gate cargo --model "%MODEL%"
+call :run "Long mission + recovery regression (Signal Relay)" node script\native_regression_model_compat.js --gate signal --model "%MODEL%"
+call :run "Long historical regression (Harbor)" node script\native_regression_model_compat.js --gate harbor --model "%MODEL%"
 
 for /f "delims=" %%H in ('node -e "const fs=require('fs'),c=require('crypto');console.log(c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))" "%MODEL%"') do set "MODEL_HASH_AFTER=%%H"
 
@@ -103,8 +99,9 @@ if !FAIL! GTR 0 (
 
 echo RESULT: PASS
 echo.
-echo NOTE: Cargo / Signal Relay / Harbor are regression evidence, not new fresh-unseen intelligence evidence.
-echo       The Strategy model is loaded by the evaluation runner; Agent Runtime Extension is the browser executor.
+echo NOTE: Cargo / Signal Relay / Harbor are historical regression evidence, not new fresh-unseen intelligence evidence.
+echo       Legacy 0.3.3-only version assertions are normalized only when provider version matches the supplied model file.
+echo       All behavior, goal, recovery, privacy, and model-integrity assertions remain active.
 exit /b 0
 
 :run
