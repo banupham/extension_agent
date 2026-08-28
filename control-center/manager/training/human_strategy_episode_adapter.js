@@ -7,6 +7,7 @@ const { evaluateEpisodeBudget } = require('../goal/episode_budget.js');
 const { buildEpisodeRecord } = require('./episode_outcome_dataset.js');
 
 const HUMAN_REVIEW_CONTRACT_VERSION = REVIEW_CONTRACT.contractVersion;
+const MACHINE_VERIFICATION_KIND = 'machine-verified';
 
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -70,14 +71,33 @@ function normalizeReviewConfirmations(annotation) {
   return review;
 }
 
-function normalizeReviewedOutcome(input, previousProgress, index) {
+function normalizeMachineVerification(annotation) {
+  if (!isPlainObject(annotation)) throw new Error('annotation object required');
+  if (annotation.contractVersion !== HUMAN_REVIEW_CONTRACT_VERSION) {
+    throw new Error(`annotation.contractVersion must equal ${HUMAN_REVIEW_CONTRACT_VERSION}`);
+  }
+  const proof = isPlainObject(annotation.machineVerification) ? annotation.machineVerification : {};
+  if (proof.method !== 'machine-eligibility-gate') throw new Error('annotation.machineVerification.method must be machine-eligibility-gate');
+  if (proof.status !== 'accept') throw new Error('annotation.machineVerification.status must be accept');
+  for (const key of ['taskPrivacyVerified', 'semanticLabelsVerified', 'outcomeVerified', 'credentialsExcluded', 'secretsExcluded']) {
+    if (proof[key] !== true) throw new Error(`annotation.machineVerification.${key} must be true`);
+  }
+  requireString(proof.eligibilityVersion, 'annotation.machineVerification.eligibilityVersion');
+  requireString(proof.eligibilityDigest, 'annotation.machineVerification.eligibilityDigest');
+  requireString(proof.sourceCandidateDigest, 'annotation.machineVerification.sourceCandidateDigest');
+  const outcome = isPlainObject(proof.outcomeVerification) ? proof.outcomeVerification : {};
+  if (outcome.status !== 'verified') throw new Error('annotation.machineVerification.outcomeVerification.status must be verified');
+  return proof;
+}
+
+function normalizeReviewedOutcome(input, previousProgress, index, options = {}) {
   if (!isPlainObject(input)) throw new Error(`annotations.steps[${index}].outcome must be an object`);
   const progress = finite01(input.progress, `annotations.steps[${index}].outcome.progress`);
   const progressDelta = progress - previousProgress;
   const metadata = isPlainObject(input.metadata) ? { ...input.metadata } : {};
   metadata.progressBefore = previousProgress;
   metadata.progressDelta = progressDelta;
-  metadata.labelSource = 'verified-human-review';
+  metadata.labelSource = options.labelSource || 'verified-human-review';
   return {
     actionSucceeded: input.actionSucceeded === true,
     taskSucceeded: input.taskSucceeded === true,
@@ -102,7 +122,7 @@ function monotonicTimes(transitions) {
 }
 
 function terminalResultFromStep(step) {
-  if (!step) throw new Error('final reviewed step required');
+  if (!step) throw new Error('final verified step required');
   if (step.budget.status === 'done' || step.control.status === 'done') {
     return { status: 'done', reasonCode: step.budget.reasonCode || step.control.reasonCode || 'goal_satisfied', taskSucceeded: true, finalProgress: step.progress.after, verified: true };
   }
@@ -112,15 +132,15 @@ function terminalResultFromStep(step) {
   if (step.budget.status === 'failed' && step.budget.terminal === true) {
     return { status: 'failed', reasonCode: step.budget.reasonCode || 'episode_budget_failed', taskSucceeded: false, finalProgress: step.progress.after, verified: true };
   }
-  throw new Error('reviewed episode is not terminal under A5.2/A5.3 controls');
+  throw new Error('verified episode is not terminal under A5.2/A5.3 controls');
 }
 
 function assertReviewFinalOutcome(reviewExport, terminalResult) {
   const status = String(reviewExport?.finalOutcome?.status || '').trim().toLowerCase();
   if (!status) throw new Error('reviewExport.finalOutcome.status required');
-  if (status === 'success' && terminalResult.status !== 'done') throw new Error('human finalOutcome success requires terminal done Strategy record');
-  if (status === 'failed' && terminalResult.status === 'done') throw new Error('human finalOutcome failed cannot produce terminal done Strategy record');
-  if (status === 'stopped') throw new Error('stopped human episode is not training-review terminal evidence');
+  if (status === 'success' && terminalResult.status !== 'done') throw new Error('finalOutcome success requires terminal done Strategy record');
+  if (status === 'failed' && terminalResult.status === 'done') throw new Error('finalOutcome failed cannot produce terminal done Strategy record');
+  if (status === 'stopped') throw new Error('stopped episode is not training terminal evidence');
 }
 
 function normalizeTransitionReviews(transitions, annotation) {
@@ -141,9 +161,35 @@ function normalizeTransitionReviews(transitions, annotation) {
   return byTransitionId;
 }
 
-function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {}) {
+function verificationProfile(annotation, options = {}) {
+  const kind = options.verificationKind === MACHINE_VERIFICATION_KIND ? MACHINE_VERIFICATION_KIND : 'human';
+  if (kind === MACHINE_VERIFICATION_KIND) {
+    const proof = normalizeMachineVerification(annotation);
+    return {
+      kind,
+      proof,
+      sourceKind: 'approved-controller',
+      labelSource: 'verified-machine-evidence',
+      decisionReasonCode: 'verified_machine_demonstration',
+      episodeIdPrefix: 'machine-',
+      privacyPolicyVersion: `machine-eligibility-${proof.eligibilityVersion}`
+    };
+  }
+  const proof = normalizeReviewConfirmations(annotation);
+  return {
+    kind: 'human',
+    proof,
+    sourceKind: 'human-demonstration',
+    labelSource: 'verified-human-review',
+    decisionReasonCode: 'verified_human_demonstration',
+    episodeIdPrefix: 'human-',
+    privacyPolicyVersion: `human-strategy-review-${HUMAN_REVIEW_CONTRACT_VERSION}`
+  };
+}
+
+function adaptVerifiedReviewToStrategyEpisode(reviewExport, annotation, options = {}) {
   const { episodeId, transitions } = assertReviewExport(reviewExport);
-  normalizeReviewConfirmations(annotation);
+  const profile = verificationProfile(annotation, options);
   if (requireString(annotation.episodeId, 'annotation.episodeId') !== episodeId) throw new Error('annotation.episodeId must match review export episodeId');
   const splitGroup = requireString(annotation.splitGroup, 'annotation.splitGroup');
   const byTransitionId = normalizeTransitionReviews(transitions, annotation);
@@ -162,7 +208,7 @@ function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {
     }
 
     const action = validateAgentAction(reviewed.action);
-    const outcome = normalizeReviewedOutcome(reviewed.outcome, previousProgress, sourceIndex);
+    const outcome = normalizeReviewedOutcome(reviewed.outcome, previousProgress, sourceIndex, { labelSource: profile.labelSource });
     const blocker = reviewed.blocker == null ? null : reviewed.blocker;
     const control = reduceOutcomeToControl({ outcome, blocker });
     const budget = evaluateEpisodeBudget({
@@ -186,10 +232,12 @@ function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {
         action,
         targetRef: action.targetRef,
         confidence: 1,
-        reasonCode: typeof reviewed.decisionReasonCode === 'string' && reviewed.decisionReasonCode.trim() ? reviewed.decisionReasonCode.trim() : 'verified_human_demonstration',
+        reasonCode: typeof reviewed.decisionReasonCode === 'string' && reviewed.decisionReasonCode.trim()
+          ? reviewed.decisionReasonCode.trim()
+          : profile.decisionReasonCode,
         expectedOutcome: action.expectedOutcome || {},
         recovery: {},
-        metadata: { labelSource: 'verified-human-review', transitionId: transition.transitionId }
+        metadata: { labelSource: profile.labelSource, transitionId: transition.transitionId }
       },
       action,
       outcome,
@@ -199,29 +247,41 @@ function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {
     });
   });
 
-  if (!steps.length) throw new Error('at least one reviewed transition must be included as a Strategy step');
+  if (!steps.length) throw new Error('at least one verified transition must be included as a Strategy step');
 
   const terminalResult = terminalResultFromStep(steps.at(-1));
   assertReviewFinalOutcome(reviewExport, terminalResult);
   const task = isPlainObject(annotation.taskOverride) ? annotation.taskOverride : reviewExport.task;
   const record = buildEpisodeRecord({
-    episodeId: `human-${episodeId}`,
-    source: { kind: 'human-demonstration', labelVerified: true, outcomeVerified: true, provenanceId: episodeId, collectedAt: reviewExport.exportedAt || reviewExport.endedAt || null },
+    episodeId: `${profile.episodeIdPrefix}${episodeId}`,
+    source: {
+      kind: profile.sourceKind,
+      labelVerified: true,
+      outcomeVerified: true,
+      provenanceId: episodeId,
+      collectedAt: reviewExport.exportedAt || reviewExport.endedAt || null
+    },
     task,
     steps,
     terminalResult,
     split: 'unassigned',
     splitGroup,
-    privacy: { redacted: true, credentialsExcluded: true, secretsExcluded: true, policyVersion: `human-strategy-review-${HUMAN_REVIEW_CONTRACT_VERSION}` }
+    privacy: {
+      redacted: true,
+      credentialsExcluded: true,
+      secretsExcluded: true,
+      policyVersion: profile.privacyPolicyVersion
+    }
   });
 
   return {
     adapterVersion: HUMAN_REVIEW_CONTRACT_VERSION,
+    verificationKind: profile.kind,
     provenance: {
       reviewExportVersion: reviewExport.reviewExportVersion,
       sourceEpisodeId: episodeId,
       rawTelemetryPreservedExternally: true,
-      reviewedTransitionCount: transitions.length,
+      verifiedTransitionCount: transitions.length,
       includedTransitionCount: steps.length,
       excludedTransitions
     },
@@ -229,12 +289,21 @@ function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {
   };
 }
 
+function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {}) {
+  return adaptVerifiedReviewToStrategyEpisode(reviewExport, annotation, { ...options, verificationKind: 'human' });
+}
+
 module.exports = {
   HUMAN_REVIEW_CONTRACT_VERSION,
+  MACHINE_VERIFICATION_KIND,
   assertReviewExport,
+  normalizeReviewConfirmations,
+  normalizeMachineVerification,
   normalizeReviewedOutcome,
   monotonicTimes,
   terminalResultFromStep,
   normalizeTransitionReviews,
+  verificationProfile,
+  adaptVerifiedReviewToStrategyEpisode,
   adaptHumanReviewToStrategyEpisode
 };
