@@ -9,11 +9,11 @@ const {
   candidateForItem
 } = require('../tools/prepare_strategy_approval_candidates.js');
 
-function observation(ref, element) {
+function observation(ref, element, url = 'http://review.test/') {
   return {
     observationId: `obs-${ref || 'none'}`,
     capturedAt: '2026-08-27T00:00:00.000Z',
-    url: 'http://review.test/',
+    url,
     title: 'Review',
     interactiveElements: element ? [{ ref, rendered: true, visible: true, enabled: true, ...element }] : [],
     pageSignals: {},
@@ -39,6 +39,16 @@ function transition(id, rawAction, element, outcome = true) {
   };
 }
 
+function browserTransition(id, operation, beforeUrl, afterUrl) {
+  return {
+    transitionId: id,
+    rawAction: { kind: 'browser', operation },
+    strategyObservationBefore: observation(null, null, beforeUrl),
+    strategyObservationAfter: observation(null, null, afterUrl),
+    outcome: { actionSucceeded: true, partial: false }
+  };
+}
+
 function draftStep(id, reviewClass, semanticTarget, suggestedAction = null) {
   return {
     transitionId: id,
@@ -57,17 +67,19 @@ function draftStep(id, reviewClass, semanticTarget, suggestedAction = null) {
 }
 
 function main() {
-  const checkbox = { label: 'Remember setting', role: 'checkbox', tag: 'input', editable: false, checked: false };
+  const checkbox = { label: 'Remember setting', role: 'checkbox', tag: 'input', inputType: 'checkbox', editable: false, checked: false };
   const toggleProposal = proposal('toggle:t1', 'form-control-review-required', checkbox);
-  const toggleTransition = transition('toggle:t1', { kind: 'dom-change', targetRef: 'e1' }, checkbox);
+  const toggleTransition = transition('toggle:t1', { kind: 'dom-change', targetRef: 'e1', checked: true }, checkbox);
+  toggleTransition.strategyObservationAfter = observation('e1', { ...checkbox, checked: true });
   const toggleResolution = resolveAmbiguousTransition({
     proposal: toggleProposal,
     transition: toggleTransition,
     task: { instruction: 'Enable remember setting' }
   });
   assert.equal(toggleResolution.status, 'resolved-semantic-action');
-  assert.equal(toggleResolution.suggestedAction.type, 'toggle');
+  assert.equal(toggleResolution.suggestedAction.type, 'setChecked');
   assert.equal(toggleResolution.suggestedAction.targetRef, 'e1');
+  assert.equal(toggleResolution.suggestedAction.args.value, true);
   assert.equal(toggleResolution.autoTrainEligible, false);
 
   const toggleItem = {
@@ -83,7 +95,7 @@ function main() {
   const toggleAid = { episodeId: 'ep-toggle', resolutions: [toggleResolution] };
   assert.deepEqual(candidateBlockReasons(toggleItem, toggleDraft, toggleAid), []);
   const toggleCandidate = candidateForItem(toggleItem, toggleDraft, toggleAid);
-  assert.equal(toggleCandidate.proposedSteps[0].proposedAction.type, 'toggle');
+  assert.equal(toggleCandidate.proposedSteps[0].proposedAction.type, 'setChecked');
   assert.equal(toggleCandidate.ambiguityResolvedStrategyStepCount, 1);
 
   const scrollProposal = proposal('scroll:t1', 'scroll-direction-review-required', null);
@@ -150,8 +162,92 @@ function main() {
   const textReasons = candidateBlockReasons(textItem, textDraft, { episodeId: 'ep-text', resolutions: [textResolution] });
   assert.equal(textReasons.includes('unresolved_ambiguous_transition'), true);
 
-  assert.equal([toggleResolution, scrollResolution, textResolution].every(item => item.requiresHumanConfirmation === true), true);
-  assert.equal([toggleResolution, scrollResolution, textResolution].every(item => item.autoTrainEligible === false), true);
+  const waitProposal = proposal('wait:t1', 'waitAndObserve-review-required', null);
+  const waitBefore = observation(null, null, 'http://127.0.0.1:8791/teaching/motor/M18');
+  const waitAfter = observation('ready-1', { label: 'Result Ready', role: 'status', tag: 'div', editable: false }, 'http://127.0.0.1:8791/teaching/motor/M18');
+  const waitTransition = {
+    transitionId: 'wait:t1',
+    rawAction: { kind: 'observe', operation: 'wait', waitedMs: 820 },
+    strategyObservationBefore: waitBefore,
+    strategyObservationAfter: waitAfter,
+    outcome: { actionSucceeded: true, partial: false }
+  };
+  const waitResolution = resolveAmbiguousTransition({
+    proposal: waitProposal,
+    transition: waitTransition,
+    task: { instruction: 'Bắt đầu kiểm tra rồi mở kết quả khi nó sẵn sàng.' }
+  });
+  assert.equal(waitResolution.status, 'resolved-semantic-action');
+  assert.equal(waitResolution.suggestedAction.type, 'waitAndObserve');
+
+  const unchangedWait = resolveAmbiguousTransition({
+    proposal: waitProposal,
+    transition: { ...waitTransition, strategyObservationAfter: waitBefore },
+    task: { instruction: 'Bắt đầu kiểm tra rồi mở kết quả khi nó sẵn sàng.' }
+  });
+  assert.equal(unchangedWait.status, 'capture-noise');
+  assert.equal(unchangedWait.reasonCode, 'wait_without_semantic_state_change_how_not_strategy');
+
+  const shortWait = resolveAmbiguousTransition({
+    proposal: waitProposal,
+    transition: { ...waitTransition, rawAction: { ...waitTransition.rawAction, waitedMs: 300 } },
+    task: { instruction: 'Bắt đầu kiểm tra rồi mở kết quả khi nó sẵn sàng.' }
+  });
+  assert.equal(shortWait.status, 'needs-human-review');
+  assert.equal(shortWait.semanticActionType, 'waitAndObserve');
+
+  const incidentalWait = resolveAmbiguousTransition({
+    proposal: waitProposal,
+    transition: waitTransition,
+    task: { instruction: 'Mở Details.' }
+  });
+  assert.equal(incidentalWait.status, 'capture-noise');
+  assert.equal(incidentalWait.reasonCode, 'delayed_change_not_explicitly_part_of_task');
+
+  const tabProposal = id => proposal(id, 'tab-lifecycle-review-required', null);
+  const m14Task = { instruction: 'Mở trang Help ở tab mới, xem xong rồi quay lại.' };
+  const m14Close = resolveAmbiguousTransition({
+    proposal: tabProposal('m14:close'),
+    transition: browserTransition('m14:close', 'closeTab', 'http://127.0.0.1:8791/help', 'http://127.0.0.1:8791/teaching/motor/M14'),
+    task: m14Task
+  });
+  assert.equal(m14Close.status, 'resolved-semantic-action');
+  assert.equal(m14Close.suggestedAction.type, 'closeTab');
+  assert.equal(m14Close.reasonCode, 'captured_temporary_tab_return_close');
+
+  const vagueReturnClose = resolveAmbiguousTransition({
+    proposal: tabProposal('m14:vague-close'),
+    transition: browserTransition('m14:vague-close', 'closeTab', 'http://review.test/help', 'http://review.test/'),
+    task: { instruction: 'Quay lại trang chính.' }
+  });
+  assert.equal(vagueReturnClose.status, 'needs-human-review');
+  assert.equal(vagueReturnClose.reasonCode, 'close_tab_not_explicit_in_task');
+
+  const m22Task = { instruction: 'Mở trang Report ở tab mới, chuyển sang đó, quay lại trang trước, đi tới lại, reload, sau đó đóng tab Report.' };
+  const m22Cases = [
+    ['openNewTab', 'http://review.test/', 'http://review.test/report'],
+    ['switchTab', 'http://review.test/', 'http://review.test/report'],
+    ['back', 'http://review.test/report?page=2', 'http://review.test/report?page=1'],
+    ['forward', 'http://review.test/report?page=1', 'http://review.test/report?page=2'],
+    ['reload', 'http://review.test/report?page=2', 'http://review.test/report?page=2'],
+    ['closeTab', 'http://review.test/report', 'http://review.test/']
+  ];
+  for (const [operation, beforeUrl, afterUrl] of m22Cases) {
+    const id = `m22:${operation}`;
+    const resolution = resolveAmbiguousTransition({
+      proposal: tabProposal(id),
+      transition: browserTransition(id, operation, beforeUrl, afterUrl),
+      task: m22Task
+    });
+    assert.equal(resolution.status, 'resolved-semantic-action', `${operation} should resolve`);
+    assert.equal(resolution.suggestedAction.type, operation);
+    assert.equal(Object.prototype.hasOwnProperty.call(resolution.suggestedAction.args || {}, 'tabId'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(resolution.suggestedAction.args || {}, 'windowId'), false);
+  }
+
+  const guarded = [toggleResolution, scrollResolution, textResolution, waitResolution, m14Close];
+  assert.equal(guarded.every(item => item.requiresHumanConfirmation === true), true);
+  assert.equal(guarded.every(item => item.autoTrainEligible === false), true);
   console.log('Strategy ambiguity resolver contract: PASS');
 }
 
@@ -163,4 +259,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { observation, proposal, transition, draftStep, main };
+module.exports = { observation, proposal, transition, browserTransition, draftStep, main };
