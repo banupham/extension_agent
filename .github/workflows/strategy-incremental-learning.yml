@@ -2,7 +2,7 @@ name: strategy-incremental-learning
 
 on:
   push:
-    branches: [feat/agent-tab-context]
+    branches: [main, feat/agent-tab-context]
     paths:
       - 'training-collector/tools/prepare_incremental_strategy_learning.js'
       - 'training-collector/tools/build_incremental_strategy_dataset.js'
@@ -14,6 +14,8 @@ on:
       - 'training-collector/tools/prepare_strategy_approval_candidates.js'
       - 'training-collector/tools/apply_strategy_approval_candidates.js'
       - 'training-collector/tools/build_strategy_dataset_from_approvals.js'
+      - 'training-collector/tools/check_strategy_baseline_readiness.js'
+      - 'training-collector/tools/fit_strategy_offline_baseline.js'
       - 'training-collector/tests/incremental_strategy_learning_contract.js'
       - 'training-collector/tests/incremental_strategy_dataset_contract.js'
       - 'training-collector/tests/human_learning_batch_contract.js'
@@ -32,6 +34,8 @@ on:
       - 'training-collector/tools/prepare_strategy_approval_candidates.js'
       - 'training-collector/tools/apply_strategy_approval_candidates.js'
       - 'training-collector/tools/build_strategy_dataset_from_approvals.js'
+      - 'training-collector/tools/check_strategy_baseline_readiness.js'
+      - 'training-collector/tools/fit_strategy_offline_baseline.js'
       - 'training-collector/tests/incremental_strategy_learning_contract.js'
       - 'training-collector/tests/incremental_strategy_dataset_contract.js'
       - 'training-collector/tests/human_learning_batch_contract.js'
@@ -47,6 +51,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Check incremental pipeline syntax
+        run: node --check training-collector/tools/prepare_incremental_strategy_learning.js
       - name: Run incremental Strategy learning boundary contract
         run: node training-collector/tests/incremental_strategy_learning_contract.js
       - name: Run incremental Strategy dataset split-preservation contract
