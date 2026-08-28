@@ -13,7 +13,7 @@ on:
       - 'control-center/manager/behavior/baseline_loader.js'
       - 'control-center/manager/strategy/agent_action_contract.js'
       - 'control-center/manager/strategy/execution_behavior_contract.js'
-      - 'control-center/script/page_semantic_mission_lab.js'
+      - 'control-center/script/page_cdp_test_lab.js'
       - 'control-center/script/offline_strategy_semantic_mission_gate.js'
       - 'control-center/script/checks/semantic_goal_resolver.js'
       - 'control-center/script/checks/mission_semantic_goal_execution.js'
@@ -72,7 +72,7 @@ jobs:
           node --check control-center/manager/behavior/baseline_loader.js
           node --check control-center/manager/strategy/agent_action_contract.js
           node --check control-center/manager/strategy/execution_behavior_contract.js
-          node --check control-center/script/page_semantic_mission_lab.js
+          node --check control-center/script/page_cdp_test_lab.js
           node --check control-center/script/offline_strategy_semantic_mission_gate.js
           node --check control-center/script/checks/offline_strategy_semantic_mission.js
           node --check control-center/script/checks/empirical_behavior_policy.js
