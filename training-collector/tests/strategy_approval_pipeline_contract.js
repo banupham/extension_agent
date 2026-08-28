@@ -25,6 +25,10 @@ const {
   fitBaseline,
   evaluateHeldOut
 } = require('../tools/fit_strategy_offline_baseline.js');
+const {
+  CANDIDATE_PROTECTION_VERSION,
+  evaluateCandidateProtection
+} = require('../../control-center/script/native_regression_model_compat.js');
 
 function observation(id, label) {
   return {
@@ -162,6 +166,10 @@ function mediaItem(episodeId, instruction) {
   };
 }
 
+function benchmark(total, dimensions, safeBlocked = true, ok = true) {
+  return { ok, score: { total, dimensions: { ...dimensions } }, safetyScenario: { safeBlocked } };
+}
+
 function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'strategy-approval-pipeline-'));
   const oldCwd = process.cwd();
@@ -291,6 +299,49 @@ function main() {
     assert.equal(new Set(mediaCandidates.map(candidate => candidate.splitGroup)).size, 1);
     assert.equal(mediaCandidates[0].splitGroup, 'semantic-sequence:play:media-play>mute:media-mute>unmute:media-unmute');
 
+    const nativePass = { cargo: { ok: true }, signal: { ok: true }, harbor: { ok: true } };
+    const baseDimensions = {
+      goalCompletion: 30,
+      actionUnderstanding: 15,
+      targetGrounding: 15,
+      planQuality: 10,
+      recovery: 10,
+      unseenGeneralization: 10,
+      efficiency: 5,
+      safeBlock: 5
+    };
+    const protectedDecision = evaluateCandidateProtection({
+      nativeResults: nativePass,
+      baseBenchmark: benchmark(100, baseDimensions),
+      candidateBenchmark: benchmark(100, baseDimensions),
+      minimumBenchmarkScore: 90
+    });
+    assert.equal(protectedDecision.candidateProtectionVersion, CANDIDATE_PROTECTION_VERSION);
+    assert.equal(protectedDecision.pass, true);
+    assert.equal(protectedDecision.status, 'candidate-protected-ready-for-manual-promotion');
+    assert.equal(protectedDecision.productionPromotionApplied, false);
+
+    const regressedDimensions = { ...baseDimensions, recovery: 0 };
+    const rejectedDecision = evaluateCandidateProtection({
+      nativeResults: nativePass,
+      baseBenchmark: benchmark(100, baseDimensions),
+      candidateBenchmark: benchmark(90, regressedDimensions),
+      minimumBenchmarkScore: 90
+    });
+    assert.equal(rejectedDecision.pass, false);
+    assert.equal(rejectedDecision.status, 'candidate-rejected-runtime-regression');
+    assert.equal(rejectedDecision.reasons.some(reason => reason.startsWith('candidate_total_regression:')), true);
+    assert.equal(rejectedDecision.reasons.some(reason => reason.startsWith('candidate_dimension_regression:recovery:')), true);
+
+    const blockedDecision = evaluateCandidateProtection({
+      nativeResults: nativePass,
+      baseBenchmark: benchmark(0, {}, true, false),
+      candidateBenchmark: benchmark(100, baseDimensions),
+      minimumBenchmarkScore: 90
+    });
+    assert.equal(blockedDecision.pass, false);
+    assert.equal(blockedDecision.status, 'candidate-protection-blocked-environment');
+
     console.log('Strategy approval pipeline contract: PASS');
   } finally {
     process.chdir(oldCwd);
@@ -306,4 +357,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { observation, reviewExport, draft, mediaDraft, mediaItem, main };
+module.exports = { observation, reviewExport, draft, mediaDraft, mediaItem, benchmark, main };
