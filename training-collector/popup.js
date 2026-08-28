@@ -6,6 +6,7 @@ const rawStatusEl = document.getElementById('rawStatus');
 const previewEl = document.getElementById('preview');
 const sessionsEl = document.getElementById('sessions');
 const socketStatusEl = document.getElementById('socketStatus');
+const pipelineStatusEl = document.getElementById('pipelineStatus');
 const captureControlStatusEl = document.getElementById('captureControlStatus');
 const captureToggleEl = document.getElementById('captureToggle');
 const EpisodeStopSettlement = globalThis.TrainingCollectorV10?.EpisodeStopSettlement || null;
@@ -45,8 +46,9 @@ function showEpisode(state, error) {
     `Transitions: ${counts.total}`,
     `Complete: ${counts.complete}`,
     `Pending: ${counts.pending}`,
-    `Outcome: ${episode.finalOutcome?.status || '-'}`
-  ].join('\n');
+    `Outcome: ${episode.finalOutcome?.status || '-'}`,
+    !state.active && episode.finalOutcome?.status === 'success' ? 'Pipeline: queued automatically' : null
+  ].filter(Boolean).join('\n');
 }
 
 function showPendingDiagnostic(error, diagnostic) {
@@ -78,9 +80,52 @@ function showRaw(session, error) {
   ].join('\n');
 }
 
+function showPipeline(socket, error) {
+  if (!pipelineStatusEl) return;
+  if (error) {
+    pipelineStatusEl.textContent = `Pipeline error: ${error}`;
+    return;
+  }
+  const pipeline = socket?.pipeline || null;
+  const outbox = Number(socket?.taskReviewOutboxCount || 0);
+  if (!pipeline) {
+    pipelineStatusEl.textContent = [
+      'Backend pipeline status unavailable',
+      `Extension review outbox: ${outbox}`,
+      socket?.state === 'connected' ? 'Waiting for pipeline-status response...' : 'Start/reconnect the local socket server.'
+    ].join('\n');
+    return;
+  }
+  const counts = pipeline.counts || {};
+  const candidate = pipeline.candidate || null;
+  const baseReady = pipeline.baseDatasetConfigured === true && pipeline.baseModelConfigured === true;
+  pipelineStatusEl.textContent = [
+    `Pipeline: ${pipeline.enabled === false ? 'DISABLED' : 'ON'}`,
+    `Extension review outbox: ${outbox}`,
+    `Processed reviews: ${Number(pipeline.processedReviewCount || 0)}`,
+    `ACCEPT: ${Number(counts.accept || 0)} | QUARANTINE: ${Number(counts.quarantine || 0)} | REJECT: ${Number(counts.reject || 0)}`,
+    `Duplicate: ${Number(counts.duplicate || 0)} | Error: ${Number(counts.error || 0)}`,
+    `Candidate buffer: ${Number(pipeline.unassignedAcceptCount || 0)}/${Number(pipeline.batchThreshold || 0)} ACCEPT`,
+    `Training config: ${baseReady ? 'READY' : 'WAITING'} (dataset=${pipeline.baseDatasetConfigured ? 'yes' : 'no'}, model=${pipeline.baseModelConfigured ? 'yes' : 'no'})`,
+    candidate ? `Candidate: ${candidate.status || '-'} · ${candidate.modelVersion || '-'} · episodes=${Number(candidate.episodeCount || 0)}` : 'Candidate: none',
+    candidate ? `Protection: ${candidate.protectionPass ? 'PASS' : (candidate.status === 'candidate-awaiting-runtime-protection' ? 'PENDING' : 'not passed')}` : null,
+    'Production promotion: MANUAL ONLY',
+    pipeline.lastResult?.status ? `Last result: ${pipeline.lastResult.status}${pipeline.lastResult.episodeId ? ` · ${pipeline.lastResult.episodeId}` : ''}` : null,
+    pipeline.lastError ? `Last error: ${pipeline.lastError}` : null
+  ].filter(Boolean).join('\n');
+}
+
 function showSocket(socket, error) {
-  if (error) { socketStatusEl.textContent = `Socket error: ${error}`; return; }
-  if (!socket) { socketStatusEl.textContent = 'Socket mirror unavailable'; return; }
+  if (error) {
+    socketStatusEl.textContent = `Socket error: ${error}`;
+    showPipeline(null, error);
+    return;
+  }
+  if (!socket) {
+    socketStatusEl.textContent = 'Socket mirror unavailable';
+    showPipeline(null);
+    return;
+  }
   const sessionRows = Object.entries(socket.sessions || {}).map(([sessionId, row]) =>
     `${sessionId}\n  ack=${row.ackedThrough || 0}/${row.eventCount || 0} sent=${row.sentThrough || 0} queued=${row.queuedBatches || 0}`
   );
@@ -89,9 +134,11 @@ function showSocket(socket, error) {
     `Endpoint: ${socket.endpoint || '-'}`,
     `Connected: ${socket.connectedAt || '-'}`,
     `Last server message: ${socket.lastMessageAt || '-'}`,
+    `Task review outbox: ${Number(socket.taskReviewOutboxCount || 0)}`,
     socket.lastError ? `Last error: ${socket.lastError}` : null,
     ...sessionRows.slice(0, 4)
   ].filter(Boolean).join('\n');
+  showPipeline(socket);
 }
 
 function showCaptureControl(enabled) {
@@ -241,6 +288,10 @@ async function stopWithOutcome(status) {
     return res;
   }
   showEpisode(res?.state, res?.error);
+  if (status === 'success' && res?.ok) {
+    await loadSocket().catch(() => {});
+    setTimeout(() => loadSocket().catch(() => {}), 750);
+  }
   return res;
 }
 
