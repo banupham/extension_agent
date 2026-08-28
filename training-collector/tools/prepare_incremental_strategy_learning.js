@@ -11,13 +11,14 @@ const { buildReviewPack } = require('./prepare_strategy_review_pack.js');
 const { scoreReviewPack } = require('./score_strategy_review_pack.js');
 const { prepareReviewDrafts } = require('./prepare_strategy_review_drafts.js');
 const { resolveTeachingBatch } = require('./resolve_strategy_teaching_batch.js');
+const { evaluateMachineTrainingEligibility } = require('./evaluate_machine_training_eligibility.js');
 const {
   prepareApprovalCandidates,
   verifyDigest,
   HUMAN_CONFIRMATION_PHRASE
 } = require('./prepare_strategy_approval_candidates.js');
 
-const INCREMENTAL_STRATEGY_LEARNING_VERSION = '0.2.0';
+const INCREMENTAL_STRATEGY_LEARNING_VERSION = '0.3.0';
 const BASE_DATASET_SPLITS = Object.freeze(['train.jsonl', 'validation.jsonl', 'test.jsonl']);
 
 function readJson(file) {
@@ -276,6 +277,9 @@ function markdownForBundle(bundle) {
     `Bundle version: ${bundle.incrementalStrategyLearningVersion}`,
     `Status: ${bundle.status}`,
     `Candidate episodes: ${bundle.candidateEpisodeCount}`,
+    `Machine ACCEPT: ${bundle.machineAcceptEpisodeCount}`,
+    `Machine QUARANTINE: ${bundle.machineQuarantineEpisodeCount}`,
+    `Machine REJECT: ${bundle.machineRejectEpisodeCount}`,
     `Blocked episodes: ${bundle.blockedEpisodeCount}`,
     `Excluded previously processed episodes: ${bundle.excludedPreviouslyProcessedCount}`,
     `Duplicate current episode exports: ${bundle.duplicateCurrentEpisodeCount}`,
@@ -284,8 +288,9 @@ function markdownForBundle(bundle) {
     `Approval digest: \`${bundle.digestHash || '<none>'}\``,
     `Required confirmation phrase: \`${HUMAN_CONFIRMATION_PHRASE}\``,
     '',
-    '> This bundle is review-only until explicit interactive approval.',
-    '> Raw interaction never becomes Strategy training data without explicit digest-bound human approval.',
+    '> Machine eligibility is fail-closed: only independently verified outcomes can be ACCEPT.',
+    '> QUARANTINE keeps uncertain data out of training without deleting it.',
+    '> This bundle remains review-only until the later auto-training boundary is explicitly enabled.',
     '> Interactive finalization creates a candidate model only; it never overwrites or promotes the base model.',
     ''
   ];
@@ -328,6 +333,17 @@ function prepareIncrementalStrategyLearning(options = {}) {
   if (!verifyDigest(candidates.result)) throw new Error('incremental_candidate_digest_integrity_failed');
   if (candidates.result?.policy?.autoTrainEligible !== false) throw new Error('incremental_candidate_auto_train_boundary_failed');
 
+  const machineEligibility = evaluateMachineTrainingEligibility({
+    manifest: filteredManifest,
+    reviewPack: readJson(reviewPack.packFile),
+    resolution: resolution.result,
+    candidates: candidates.result
+  });
+  const machineEligibilityFile = writeJson(
+    path.join(outDir, '07-approval-candidates', 'machine-eligibility.json'),
+    machineEligibility
+  );
+
   const imported = forbiddenTrainingModulesImported();
   if (imported.approvalApplicator) throw new Error('incremental_approval_applicator_must_not_be_imported');
   if (imported.datasetBuilder) throw new Error('incremental_dataset_builder_must_not_be_imported');
@@ -352,6 +368,9 @@ function prepareIncrementalStrategyLearning(options = {}) {
     excludedPreviouslyProcessedCount: Number(filteredManifest?.incrementalFilter?.excludedPreviouslyProcessedCount || 0),
     duplicateCurrentEpisodeCount: Number(filteredManifest?.incrementalFilter?.duplicateCurrentEpisodeCount || 0),
     candidateEpisodeCount,
+    machineAcceptEpisodeCount: Number(machineEligibility.counts?.accept || 0),
+    machineQuarantineEpisodeCount: Number(machineEligibility.counts?.quarantine || 0),
+    machineRejectEpisodeCount: Number(machineEligibility.counts?.reject || 0),
     blockedEpisodeCount: Number(candidates.result?.blockedEpisodeCount || 0),
     unresolvedHumanReviewCount: Number(resolution.result?.unresolvedHumanReviewCount || 0),
     fullyResolvedEpisodeCount: Number(resolution.result?.fullyResolvedEpisodeCount || 0),
@@ -365,7 +384,8 @@ function prepareIncrementalStrategyLearning(options = {}) {
       reviewDraftDigest: relativeToCwd(drafts.digestFile),
       ambiguityResolution: relativeToCwd(resolution.jsonFile),
       approvalCandidates: relativeToCwd(candidates.jsonFile),
-      approvalCandidateMarkdown: relativeToCwd(candidates.markdownFile)
+      approvalCandidateMarkdown: relativeToCwd(candidates.markdownFile),
+      machineEligibility: relativeToCwd(machineEligibilityFile)
     },
     invariants: {
       rawInteractionAutoPromotedToStrategyTraining: false,
@@ -375,6 +395,9 @@ function prepareIncrementalStrategyLearning(options = {}) {
       duplicateCurrentEpisodeExportsDeduplicated: true,
       resolverOutputsAreReviewAidsOnly: resolution.result?.policy?.reviewAidOnly === true,
       candidateDigestVerified: true,
+      machineEligibilityGateApplied: true,
+      machineEligibilityFailClosed: machineEligibility.policy?.failClosed === true,
+      machineAcceptedEpisodesAutoTrained: false,
       explicitHumanDigestApprovalRequired: true,
       approvalApplied: false,
       datasetBuilt: false,
@@ -389,7 +412,7 @@ function prepareIncrementalStrategyLearning(options = {}) {
   const bundleFile = writeJson(path.join(outDir, 'incremental-strategy-learning-manifest.json'), bundle);
   const markdownFile = path.join(outDir, 'incremental-strategy-learning-review.md');
   fs.writeFileSync(markdownFile, markdownForBundle(bundle), 'utf8');
-  return { bundle, bundleFile, markdownFile, candidates, outputDir: outDir };
+  return { bundle, bundleFile, markdownFile, candidates, machineEligibility, machineEligibilityFile, outputDir: outDir };
 }
 
 function fitCandidateDataset(datasetDir, outputDir, modelVersion) {
@@ -453,10 +476,16 @@ function finalizeIncrementalStrategyLearning(prepared, options = {}) {
   const finalManifest = {
     incrementalStrategyLearningVersion: INCREMENTAL_STRATEGY_LEARNING_VERSION,
     finalizedAt: new Date().toISOString(),
-    status: 'candidate-ready-offline-heldout-pass',
+    status: 'candidate-awaiting-runtime-protection',
     sourceCandidateDigest: prepared.bundle.digestHash,
     approvedEpisodeCount: approved.receipt.approvedEpisodeCount,
     blockedEpisodeCount: prepared.bundle.blockedEpisodeCount,
+    machineEligibility: {
+      accept: prepared.bundle.machineAcceptEpisodeCount,
+      quarantine: prepared.bundle.machineQuarantineEpisodeCount,
+      reject: prepared.bundle.machineRejectEpisodeCount,
+      autoTrainingApplied: false
+    },
     baseDataset: relativeToCwd(options.baseDatasetDir),
     baseModel: {
       file: relativeToCwd(baseModelFile),
@@ -548,12 +577,16 @@ async function main(argv = process.argv.slice(2)) {
       excludedPreviouslyProcessedCount: prepared.bundle.excludedPreviouslyProcessedCount,
       duplicateCurrentEpisodeCount: prepared.bundle.duplicateCurrentEpisodeCount,
       candidateEpisodeCount: prepared.bundle.candidateEpisodeCount,
+      machineAcceptEpisodeCount: prepared.bundle.machineAcceptEpisodeCount,
+      machineQuarantineEpisodeCount: prepared.bundle.machineQuarantineEpisodeCount,
+      machineRejectEpisodeCount: prepared.bundle.machineRejectEpisodeCount,
       blockedEpisodeCount: prepared.bundle.blockedEpisodeCount,
       unresolvedHumanReviewCount: prepared.bundle.unresolvedHumanReviewCount,
       digestHash: prepared.bundle.digestHash,
       manifest: path.resolve(prepared.bundleFile),
       review: path.resolve(prepared.markdownFile),
-      approvalCandidates: path.resolve(prepared.candidates.jsonFile)
+      approvalCandidates: path.resolve(prepared.candidates.jsonFile),
+      machineEligibility: path.resolve(prepared.machineEligibilityFile)
     };
 
     if (!args['interactive-approve']) {
@@ -576,7 +609,7 @@ async function main(argv = process.argv.slice(2)) {
 
     console.log(JSON.stringify(summary, null, 2));
     console.log(`\nReview candidate digest: ${path.resolve(prepared.candidates.markdownFile)}`);
-    console.log(`Eligible episodes: ${prepared.bundle.candidateEpisodeCount}; blocked: ${prepared.bundle.blockedEpisodeCount}; unresolved review aids: ${prepared.bundle.unresolvedHumanReviewCount}`);
+    console.log(`Eligible episodes: ${prepared.bundle.candidateEpisodeCount}; machine ACCEPT: ${prepared.bundle.machineAcceptEpisodeCount}; QUARANTINE: ${prepared.bundle.machineQuarantineEpisodeCount}; REJECT: ${prepared.bundle.machineRejectEpisodeCount}`);
     console.log('No production model will be overwritten. A new candidate model will be written under the output directory.');
     const confirmation = await askConfirmation(`\nAfter reviewing the digest, type exactly ${HUMAN_CONFIRMATION_PHRASE} to approve this batch: `);
     if (confirmation !== HUMAN_CONFIRMATION_PHRASE) throw new Error('human_approval_not_confirmed');
