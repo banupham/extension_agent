@@ -43,7 +43,7 @@ assert.ok(routeTrace.includes('removeEventListener'), 'route listeners must be r
 
 assert.ok(background.includes('documentId: sender.documentId || null'));
 assert.ok(background.includes('documentLifecycle: sender.documentLifecycle || null'));
-assert.ok(background.includes('sender.frameId === 0'));
+assert.match(background, /sender\.frameId\s*!==\s*0|sender\.frameId\s*===\s*0/, 'episode transition gate must explicitly enforce top-frame semantics');
 assert.ok(background.includes('schema_upgrade_to_'));
 
 assert.ok(rawStore.includes("const VERSION = '0.7.2'"));
