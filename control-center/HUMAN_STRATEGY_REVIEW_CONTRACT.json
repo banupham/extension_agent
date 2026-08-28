@@ -4,6 +4,7 @@
   "purpose": "Convert privacy-safe Human Task Episode review exports into verified Strategy episode records without teaching raw behavior trajectories or incidental human noise to Strategy.",
   "input": {
     "reviewExportVersion": "0.1.0",
+    "reviewExportVersions": ["0.1.0", "0.2.0"],
     "requiresStrategyReadyReviewExport": true,
     "requiresTaskPrivacyReviewed": true,
     "requiresSemanticLabelsVerified": true,
