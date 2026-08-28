@@ -1,6 +1,6 @@
 'use strict';
 
-const TAB_LIFECYCLE_PROVIDER_VERSION = '0.1.0';
+const TAB_LIFECYCLE_PROVIDER_VERSION = '0.1.1';
 const TAB_ACTION_TYPES = new Set(['switchTab', 'openNewTab', 'closeTab']);
 const TAB_MATCH_KEYS = new Set(['title', 'titleIncludes', 'url', 'urlIncludes']);
 
@@ -155,34 +155,36 @@ function createTabLifecycleProvider(fallbackProvider) {
         };
       }
 
-      const matches = matchingTabs(context.browserContext, intent.match);
-      if (matches.length === 0) {
-        return {
-          status: 'blocked',
-          confidence: 0.97,
-          reasonCode: 'tab_semantic_target_not_found',
-          recovery: { suggested: 'reobserve_browser_context' },
-          metadata: { decisionSource: 'tab-lifecycle-provider', tabAction: intent.actionType, match: intent.match }
-        };
-      }
-      if (matches.length > 1) {
-        return {
-          status: 'blocked',
-          confidence: 0.97,
-          reasonCode: 'tab_semantic_target_ambiguous',
-          recovery: { suggested: 'request_more_specific_tab_target' },
-          metadata: { decisionSource: 'tab-lifecycle-provider', tabAction: intent.actionType, match: intent.match, matchCount: matches.length }
-        };
-      }
-
-      if (intent.actionType === 'switchTab' && matches[0].active === true) {
-        return {
-          status: 'done',
-          confidence: 0.99,
-          reasonCode: 'tab_already_active',
-          expectedOutcome: { taskSucceeded: true },
-          metadata: { decisionSource: 'tab-lifecycle-provider', semanticTargeting: true }
-        };
+      const inventoryAvailable = Array.isArray(context.browserContext?.tabs) && context.browserContext.tabs.length > 0;
+      if (inventoryAvailable) {
+        const matches = matchingTabs(context.browserContext, intent.match);
+        if (matches.length === 0) {
+          return {
+            status: 'blocked',
+            confidence: 0.97,
+            reasonCode: 'tab_semantic_target_not_found',
+            recovery: { suggested: 'reobserve_browser_context' },
+            metadata: { decisionSource: 'tab-lifecycle-provider', tabAction: intent.actionType, match: intent.match }
+          };
+        }
+        if (matches.length > 1) {
+          return {
+            status: 'blocked',
+            confidence: 0.97,
+            reasonCode: 'tab_semantic_target_ambiguous',
+            recovery: { suggested: 'request_more_specific_tab_target' },
+            metadata: { decisionSource: 'tab-lifecycle-provider', tabAction: intent.actionType, match: intent.match, matchCount: matches.length }
+          };
+        }
+        if (intent.actionType === 'switchTab' && matches[0].active === true) {
+          return {
+            status: 'done',
+            confidence: 0.99,
+            reasonCode: 'tab_already_active',
+            expectedOutcome: { taskSucceeded: true },
+            metadata: { decisionSource: 'tab-lifecycle-provider', semanticTargeting: true }
+          };
+        }
       }
 
       return {
