@@ -114,6 +114,102 @@ function recoveryHtml(url) {
 </html>`;
 }
 
+function movingGuardHtml() {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TARGET GUARD LAB</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:20px;line-height:1.35}
+    #state{position:sticky;top:0;background:#fffbe6;border:1px solid #cc9;padding:8px;z-index:10}
+    .lane{position:relative;height:74px;max-width:760px;border:1px solid #aaa;border-radius:8px;margin:14px 0;overflow:hidden}
+    .lane-label{position:absolute;left:8px;top:8px;font-size:12px;color:#555}
+    .mover{position:absolute;left:8px;top:30px;will-change:transform}
+    input{width:180px}
+    button,input{min-height:28px}
+  </style>
+</head>
+<body>
+  <h1>MOVING TARGET GUARD LAB</h1>
+  <div id="state">TARGET GUARD ARMED</div>
+  <div class="lane">
+    <span class="lane-label">replaceText</span>
+    <input class="mover" data-moving-target id="guardReplace" aria-label="Guard Replace Target" value="OLD">
+  </div>
+  <div class="lane">
+    <span class="lane-label">clear</span>
+    <input class="mover" data-moving-target id="guardClear" aria-label="Guard Clear Target" value="TOCLEAR">
+  </div>
+  <div class="lane">
+    <span class="lane-label">submit</span>
+    <form class="mover" data-moving-target id="guardSubmitForm">
+      <button type="submit" aria-label="Guard Submit Target">Guard Submit Target</button>
+    </form>
+  </div>
+  <div class="lane">
+    <span class="lane-label">hoverAndObserve</span>
+    <button class="mover" data-moving-target id="guardHover" aria-label="Guard Hover Target">Guard Hover Target</button>
+  </div>
+  <script>
+    const state = document.getElementById('state');
+    const mark = text => { state.textContent = text; document.body.dataset.result = text; };
+    document.getElementById('guardReplace').addEventListener('input', e => mark('REPLACE MUTATED:' + e.target.value));
+    document.getElementById('guardClear').addEventListener('input', e => mark('CLEAR MUTATED:' + e.target.value));
+    document.getElementById('guardSubmitForm').addEventListener('submit', e => { e.preventDefault(); mark('SUBMIT MUTATED'); });
+    document.getElementById('guardHover').addEventListener('mouseenter', () => mark('HOVER MUTATED'));
+    const movers = [...document.querySelectorAll('[data-moving-target]')];
+    const started = performance.now();
+    function animate(now) {
+      const elapsed = now - started;
+      const phase = (elapsed * 0.12) % 420;
+      const dx = phase <= 210 ? phase : 420 - phase;
+      movers.forEach(element => { element.style.transform = 'translateX(' + dx.toFixed(2) + 'px)'; });
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>`;
+}
+
+function semanticMissionHtml() {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Semantic Mission Lab</title>
+  <style>
+    body{font-family:Arial,sans-serif;margin:24px;line-height:1.4}
+    button,a{display:inline-block;margin:8px;padding:10px 14px}
+    #evidence{margin-top:18px;padding:12px;border:1px solid #aaa;min-height:60px}
+  </style>
+</head>
+<body>
+  <h1>Semantic Mission Lab</h1>
+  <div id="controls">
+    <button id="atlas" aria-label="Mission Atlas">Mission Atlas</button>
+    <button id="orion" aria-label="Mission Orion">Mission Orion</button>
+  </div>
+  <div id="evidence" aria-label="Mission Evidence"></div>
+  <script>
+    const evidence = document.getElementById('evidence');
+    document.getElementById('atlas').addEventListener('click', () => {
+      history.pushState({}, '', '/mission/atlas');
+      evidence.innerHTML = '<a href="#robotics" aria-label="Robotics field guide">Robotics field guide</a>';
+    });
+    document.getElementById('orion').addEventListener('click', () => {
+      history.pushState({}, '', '/mission/orion');
+      evidence.innerHTML = [
+        '<a href="#hcm" aria-label="Hồ Chí Minh forecast">Hồ Chí Minh forecast</a>',
+        '<a href="#three-days" aria-label="3 ngày tới">3 ngày tới</a>'
+      ].join(' ');
+    });
+  </script>
+</body>
+</html>`;
+}
+
 function mainHtml(url) {
   const waitCase = url.searchParams.get('case') === 'wait';
   const tabCase = String(url.searchParams.get('tab') || '').trim().toLowerCase();
@@ -286,24 +382,47 @@ function mainHtml(url) {
 </html>`;
 }
 
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url || '/', `http://${HOST}:${PORT}`);
-  if (url.pathname === '/frame') return sendHtml(res, frameHtml());
-  if (url.pathname === '/frame-level1') return sendHtml(res, nestedFrameLevel1Html());
-  if (url.pathname === '/frame-level2') return sendHtml(res, nestedFrameLevel2Html());
-  if (url.pathname === '/recovery') return sendHtml(res, recoveryHtml(url));
-  if (url.pathname === '/' || url.pathname === '/lab') return sendHtml(res, mainHtml(url));
-  res.statusCode = 404;
-  res.end('not found');
-});
+function createServer() {
+  return http.createServer((req, res) => {
+    const url = new URL(req.url || '/', `http://${HOST}:${PORT}`);
+    if (url.pathname === '/frame') return sendHtml(res, frameHtml());
+    if (url.pathname === '/frame-level1') return sendHtml(res, nestedFrameLevel1Html());
+    if (url.pathname === '/frame-level2') return sendHtml(res, nestedFrameLevel2Html());
+    if (url.pathname === '/recovery') return sendHtml(res, recoveryHtml(url));
+    if (url.pathname === '/guard') return sendHtml(res, movingGuardHtml());
+    if (url.pathname === '/mission' || url.pathname.startsWith('/mission/')) return sendHtml(res, semanticMissionHtml());
+    if (url.pathname === '/' || url.pathname === '/lab') return sendHtml(res, mainHtml(url));
+    res.statusCode = 404;
+    res.end('not found');
+  });
+}
 
-server.listen(PORT, HOST, () => {
-  console.log(`PAGE_CDP batch lab: http://${HOST}:${PORT}/`);
-  console.log(`waitAndObserve case: http://${HOST}:${PORT}/?case=wait`);
-  console.log(`Recovery self-learning case: http://${HOST}:${PORT}/recovery`);
-  console.log(`Recovery drift case: http://${HOST}:${PORT}/recovery?variant=horizontal`);
-  console.log(`Browser UI tabs: http://${HOST}:${PORT}/?tab=alpha | ?tab=beta | ?tab=disposable`);
-  console.log('Opaque discovery challenge: Discovery Alpha/Beta/Gamma → DISCOVERY PASS');
-  console.log('Nested frame gate: TOP → /frame-level1 → /frame-level2 → Nested Frame Action Target');
-  console.log('Stop with Ctrl+C. Keep this fixed port for all batch gates.');
-});
+function main() {
+  const server = createServer();
+  server.listen(PORT, HOST, () => {
+    console.log(`PAGE_CDP shared batch lab: http://${HOST}:${PORT}/`);
+    console.log(`waitAndObserve: http://${HOST}:${PORT}/?case=wait`);
+    console.log(`Recovery: http://${HOST}:${PORT}/recovery`);
+    console.log(`Moving target guard: http://${HOST}:${PORT}/guard`);
+    console.log(`Semantic mission fixture: http://${HOST}:${PORT}/mission`);
+    console.log(`Browser UI tabs: http://${HOST}:${PORT}/?tab=alpha | ?tab=beta | ?tab=disposable`);
+    console.log('Stop with Ctrl+C. Port 8091 is the single regression-fixture server.');
+  });
+  return server;
+}
+
+if (require.main === module) main();
+
+module.exports = {
+  HOST,
+  PORT,
+  frameHtml,
+  nestedFrameLevel1Html,
+  nestedFrameLevel2Html,
+  recoveryHtml,
+  movingGuardHtml,
+  semanticMissionHtml,
+  mainHtml,
+  createServer,
+  main
+};
