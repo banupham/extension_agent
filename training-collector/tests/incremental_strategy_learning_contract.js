@@ -8,6 +8,10 @@ const {
   prepareIncrementalStrategyLearning,
   finalizeIncrementalStrategyLearning,
   finalizeMachineAcceptedStrategyLearning,
+  applyCandidateProtectionResult,
+  collectBaseDatasetEpisodeIds,
+  combinedExcludedEpisodeIds,
+  filterLearningManifest,
   resolveReviewInput,
   nextPatchVersion,
   INCREMENTAL_STRATEGY_LEARNING_VERSION
@@ -303,6 +307,7 @@ function main() {
     assert.equal(bundle.invariants.privacyBatchAppliedBeforeStrategyCandidate, true);
     assert.equal(bundle.invariants.previouslyProcessedEpisodesExcludedBeforeReviewPack, true);
     assert.equal(bundle.invariants.baseDatasetEpisodesExcludedBeforeReviewPack, null);
+    assert.equal(bundle.invariants.baseDatasetProvenanceAliasesExcludedBeforeReviewPack, null);
     assert.equal(bundle.invariants.duplicateCurrentEpisodeExportsDeduplicated, true);
     assert.equal(bundle.invariants.resolverOutputsAreReviewAidsOnly, true);
     assert.equal(bundle.invariants.candidateDigestVerified, true);
@@ -357,6 +362,7 @@ function main() {
     assert.equal(e2ePrepared.bundle.machineQuarantineEpisodeCount, 1);
     assert.equal(e2ePrepared.bundle.machineFinalizationAvailable, false);
     assert.equal(e2ePrepared.bundle.invariants.baseDatasetEpisodesExcludedBeforeReviewPack, true);
+    assert.equal(e2ePrepared.bundle.invariants.baseDatasetProvenanceAliasesExcludedBeforeReviewPack, true);
 
     const finalized = finalizeIncrementalStrategyLearning(e2ePrepared, {
       baseDatasetDir: baseDataset,
@@ -426,6 +432,55 @@ function main() {
     assert.equal(fs.existsSync(machineFinalized.candidate.modelFile), true);
     assert.equal(fs.existsSync(machineFinalized.dataset.manifestFile), true);
     assert.equal(fs.existsSync(machineFinalized.finalManifestFile), true);
+
+    const combinedMachineDatasetDir = path.join(path.dirname(machineFinalized.dataset.manifestFile), 'dataset');
+    const baseIdsOnly = collectBaseDatasetEpisodeIds(combinedMachineDatasetDir);
+    const processedIds = collectBaseDatasetEpisodeIds(combinedMachineDatasetDir, { includeProvenanceAliases: true });
+    assert.equal(baseIdsOnly.has('machine-ep-machine-e2e'), true);
+    assert.equal(baseIdsOnly.has('ep-machine-e2e'), false);
+    assert.equal(processedIds.has('ep-machine-e2e'), true, 'source provenance must block replay of original episode id');
+    const replayExcluded = combinedExcludedEpisodeIds({ baseDatasetDir: combinedMachineDatasetDir });
+    assert.equal(replayExcluded.has('ep-machine-e2e'), true);
+    const replayFiltered = filterLearningManifest({
+      strategy: {
+        reviewFileCount: 1,
+        queue: [{ episodeId: 'ep-machine-e2e', queueStatus: 'ready-for-human-review' }]
+      }
+    }, replayExcluded);
+    assert.equal(replayFiltered.strategy.reviewFileCount, 0);
+    assert.equal(replayFiltered.incrementalFilter.excludedPreviouslyProcessedCount, 1);
+
+    const protectedFinalized = applyCandidateProtectionResult(machineFinalized, {
+      candidateProtectionVersion: '0.1.0-test',
+      pass: true,
+      status: 'candidate-protected-ready-for-manual-promotion',
+      reasons: [],
+      baseScore: 96.3,
+      candidateScore: 96.3,
+      ambiguitySafeBlockPass: true,
+      nativeResults: {
+        cargo: { result: 'PASS' },
+        signal: { result: 'PASS' },
+        harbor: { result: 'PASS' }
+      },
+      baseBenchmark: { ok: true, score: { total: 96.3 } },
+      candidateBenchmark: { ok: true, score: { total: 96.3 } },
+      modelIntegrity: {
+        baseMutated: false,
+        candidateMutated: false
+      },
+      productionPromotionApplied: false
+    }, { outputDir: machineOut });
+    assert.equal(protectedFinalized.finalManifest.status, 'candidate-protected-ready-for-manual-promotion');
+    assert.equal(protectedFinalized.finalManifest.candidateProtection.pass, true);
+    assert.equal(protectedFinalized.finalManifest.candidateProtection.baseScore, 96.3);
+    assert.equal(protectedFinalized.finalManifest.candidateProtection.candidateScore, 96.3);
+    assert.equal(protectedFinalized.finalManifest.promotion.applied, false);
+    assert.equal(protectedFinalized.finalManifest.promotion.runtimeRegressionPerformed, true);
+    assert.equal(protectedFinalized.finalManifest.promotion.freshUnseenPerformed, true);
+    assert.equal(protectedFinalized.finalManifest.promotion.reason, 'candidate_protected_ready_for_manual_promotion_only');
+    assert.equal(fs.existsSync(protectedFinalized.protectionFile), true);
+    assert.equal(fs.readFileSync(baseModelFile, 'utf8'), baseModelBefore);
 
     console.log('Incremental Strategy learning contract: PASS');
   } finally {
