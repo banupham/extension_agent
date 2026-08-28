@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { validateAgentAction } = require('../../control-center/manager/strategy/agent_action_contract.js');
 
-const AMBIGUITY_RESOLVER_VERSION = '0.3.0';
+const AMBIGUITY_RESOLVER_VERSION = '0.4.0';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -36,6 +36,30 @@ function taskRequestsDoubleClick(task) {
     (tokens.has('click') && tokens.has('dup'));
 }
 
+function cleanDeclaredValue(value) {
+  const text = String(value || '').replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').replace(/[,.!?:;]+$/g, '').trim();
+  return text && text.length <= 120 ? text : null;
+}
+
+function taskDeclaredSelection(task) {
+  const instruction = String(task?.instruction || '');
+  const patterns = [
+    /(?:^|[,.;:]\s*|\s)chọn\s+(.+?)(?=\s+rồi\b|\s+và\b|,|\.|;|$)/i,
+    /(?:^|[,.;:]\s*|\s)(?:select|choose)\s+(.+?)(?=\s+then\b|\s+and\b|,|\.|;|$)/i
+  ];
+  for (const pattern of patterns) {
+    const value = cleanDeclaredValue(instruction.match(pattern)?.[1]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function taskDeclaredPlaybackRate(task) {
+  const instruction = String(task?.instruction || '');
+  const match = instruction.match(/(?:tốc\s*độ|toc\s*do|speed|playback\s*rate)\s*([0-9]+(?:\.[0-9]+)?)\s*x?/i);
+  return match ? Number(match[1]) : null;
+}
+
 function transitionById(review, transitionId) {
   return (Array.isArray(review?.transitions) ? review.transitions : [])
     .find(item => String(item?.transitionId || '') === String(transitionId || '')) || null;
@@ -47,17 +71,39 @@ function observationElements(observation) {
   return direct.length ? direct : nested;
 }
 
+function finiteOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizedMediaState(value) {
+  if (!value || typeof value !== 'object') return null;
+  return {
+    paused: value.paused === true,
+    muted: value.muted === true,
+    volume: finiteOrNull(value.volume),
+    currentTime: finiteOrNull(value.currentTime),
+    duration: finiteOrNull(value.duration),
+    playbackRate: finiteOrNull(value.playbackRate)
+  };
+}
+
 function observationFingerprint(observation) {
   const elements = observationElements(observation).map(element => ({
     ref: element?.ref || element?.elementRef || null,
     label: typeof element?.label === 'string' ? element.label : null,
     role: typeof element?.role === 'string' ? element.role : null,
     tag: typeof element?.tag === 'string' ? element.tag : null,
+    inputType: typeof element?.inputType === 'string' ? element.inputType : null,
     visible: element?.visible !== false && element?.rendered !== false,
     enabled: element?.enabled !== false,
+    draggable: element?.draggable === true,
     checked: typeof element?.checked === 'boolean' ? element.checked : null,
     selectedIndex: Number.isInteger(Number(element?.selectedIndex)) ? Number(element.selectedIndex) : null,
-    rangeValue: Number.isFinite(Number(element?.rangeValue)) ? Number(element.rangeValue) : null
+    rangeValue: finiteOrNull(element?.rangeValue),
+    rangeMin: finiteOrNull(element?.rangeMin),
+    rangeMax: finiteOrNull(element?.rangeMax),
+    mediaState: normalizedMediaState(element?.mediaState)
   })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   return JSON.stringify({
     url: String(observation?.url || observation?.page?.url || ''),
@@ -81,6 +127,13 @@ function targetForTransition(transition) {
   return { ref, element };
 }
 
+function targetAfterForTransition(transition, ref = null) {
+  const targetRef = ref || transition?.rawAction?.targetRef || null;
+  if (!targetRef) return null;
+  return observationElements(transition?.strategyObservationAfter)
+    .find(item => item?.ref === targetRef || item?.elementRef === targetRef || item?.targetRef === targetRef) || null;
+}
+
 function semanticTarget(element) {
   if (!element) return null;
   return {
@@ -89,12 +142,17 @@ function semanticTarget(element) {
     tag: typeof element.tag === 'string' ? element.tag : null,
     inputType: typeof element.inputType === 'string' ? element.inputType : null,
     editable: element.editable === true,
+    draggable: element.draggable === true,
     enabled: element.enabled !== false,
     visible: element.visible !== false && element.rendered !== false,
     checked: typeof element.checked === 'boolean' ? element.checked : null,
     selected: typeof element.selected === 'boolean' ? element.selected : null,
     selectedIndex: Number.isInteger(Number(element.selectedIndex)) ? Number(element.selectedIndex) : null,
-    rangeValue: Number.isFinite(Number(element.rangeValue)) ? Number(element.rangeValue) : null
+    rangeValue: finiteOrNull(element.rangeValue),
+    rangeMin: finiteOrNull(element.rangeMin),
+    rangeMax: finiteOrNull(element.rangeMax),
+    rangeStep: finiteOrNull(element.rangeStep),
+    mediaState: normalizedMediaState(element.mediaState)
   };
 }
 
@@ -152,6 +210,27 @@ function targetKind(element) {
   return 'other';
 }
 
+function targetLabelWords(target) {
+  return new Set(words(target?.label));
+}
+
+function mediaRangeActionType(target) {
+  const tokens = targetLabelWords(target);
+  if (tokens.has('volume') || tokens.has('am') || tokens.has('luong')) return 'setVolume';
+  if (tokens.has('seek') || tokens.has('timeline') || tokens.has('position') || tokens.has('tua')) return 'seek';
+  return null;
+}
+
+function normalizedRangeRequest(type, rawAction = {}) {
+  const value = finiteOrNull(rawAction.rangeValue);
+  const min = finiteOrNull(rawAction.rangeMin);
+  const max = finiteOrNull(rawAction.rangeMax);
+  if (value == null) return null;
+  if (type === 'setVolume' && min === 0 && max === 100) return value;
+  if (type === 'seek' && min === 0 && max === 100) return value;
+  return value;
+}
+
 function resolved(transitionId, hint, action, target, reasonCode) {
   return {
     transitionId,
@@ -197,6 +276,63 @@ function unresolved(transitionId, hint, target, reasonCode, semanticActionType =
   };
 }
 
+function resolveFormChange({ transitionId, hint, transition, task, ref, element, target }) {
+  const raw = transition?.rawAction || {};
+  const afterElement = targetAfterForTransition(transition, ref);
+  const afterTarget = semanticTarget(afterElement) || target;
+  const kind = targetKind(element || target || afterTarget || {});
+
+  if ((kind === 'toggle' || kind === 'radio') && ref) {
+    const desired = typeof raw.checked === 'boolean'
+      ? raw.checked
+      : typeof afterTarget?.checked === 'boolean' ? afterTarget.checked : null;
+    if (desired == null) return unresolved(transitionId, hint, target, 'checkable_desired_state_missing', 'setChecked');
+    return resolved(
+      transitionId,
+      hint,
+      safeAction('setChecked', ref, { value: desired }, 'captured-checkable-state-change'),
+      target,
+      'captured_checkable_desired_state'
+    );
+  }
+
+  if (kind === 'select' && ref) {
+    const labelTokens = targetLabelWords(target);
+    const isPlaybackRate = labelTokens.has('playback') || labelTokens.has('speed') || labelTokens.has('rate') || (labelTokens.has('toc') && labelTokens.has('do'));
+    if (isPlaybackRate) {
+      const rate = taskDeclaredPlaybackRate(task);
+      if (rate == null) return unresolved(transitionId, hint, target, 'playback_rate_value_requires_human_review', 'changePlaybackRate');
+      return resolved(transitionId, hint, safeAction('changePlaybackRate', ref, { value: rate }, 'task-declared-playback-rate'), target, 'task_declared_playback_rate');
+    }
+    const selection = taskDeclaredSelection(task);
+    if (!selection) return unresolved(transitionId, hint, target, 'selection_value_requires_human_review', 'selectOption');
+    return resolved(transitionId, hint, safeAction('selectOption', ref, { value: selection }, 'task-declared-select-option'), target, 'task_declared_selection_value');
+  }
+
+  if (kind === 'range' && ref) {
+    const mediaType = mediaRangeActionType(target);
+    if (!mediaType) return unresolved(transitionId, hint, target, 'range_semantic_requires_human_review');
+    const requested = normalizedRangeRequest(mediaType, raw);
+    if (requested == null) return unresolved(transitionId, hint, target, 'media_range_value_missing', mediaType);
+    return resolved(transitionId, hint, safeAction(mediaType, ref, { value: requested }, 'captured-media-range-change'), target, 'captured_media_range_value');
+  }
+
+  return unresolved(transitionId, hint, target, 'form_control_semantics_insufficient');
+}
+
+function resolveMediaAction({ transitionId, hint, transition, ref, target }) {
+  const raw = transition?.rawAction || {};
+  const operation = String(raw.operation || '').trim();
+  if (!ref) return unresolved(transitionId, hint, target, 'media_target_required');
+  if (['play', 'pause', 'mute', 'unmute'].includes(operation)) {
+    return resolved(transitionId, hint, safeAction(operation, ref, {}, `captured-media-${operation}`), target, 'captured_media_operation');
+  }
+  if (operation === 'changePlaybackRate' && finiteOrNull(raw.playbackRate) != null) {
+    return resolved(transitionId, hint, safeAction('changePlaybackRate', ref, { value: Number(raw.playbackRate) }, 'captured-playback-rate'), target, 'captured_playback_rate');
+  }
+  return unresolved(transitionId, hint, target, operation ? `unsupported_media_operation_${operation}` : 'media_operation_missing');
+}
+
 function resolveAmbiguousTransition({ proposal, transition, task }) {
   const transitionId = proposal?.transitionId || transition?.transitionId || null;
   const hint = proposal?.proposal?.actionTypeHint || null;
@@ -205,6 +341,10 @@ function resolveAmbiguousTransition({ proposal, transition, task }) {
   const capturedSuccess = proposal?.evidence?.actionSucceededCaptured !== false && transition?.outcome?.actionSucceeded !== false;
 
   if (!capturedSuccess) return unresolved(transitionId, hint, target, 'captured_action_failure_requires_human_review');
+
+  if (hint === 'form-control-click-review-required') {
+    return noise(transitionId, hint, target, 'form_control_surface_click_how_not_strategy');
+  }
 
   if (hint === 'click' && taskRequestsDoubleClick(task)) {
     return noise(transitionId, hint, target, 'component_click_of_explicit_double_click_how_not_strategy');
@@ -215,7 +355,7 @@ function resolveAmbiguousTransition({ proposal, transition, task }) {
     return resolved(transitionId, hint, safeAction('doubleClick', ref, {}, 'captured-semantic-double-click'), target, 'captured_double_click_with_semantic_target');
   }
 
-  if (hint === 'hoverAndObserve') {
+  if (hint === 'hoverAndObserve' || hint === 'hover-review-required') {
     if (!ref) return unresolved(transitionId, hint, target, 'hover_target_required', 'hoverAndObserve');
     if (!observableSemanticStateChanged(transition)) {
       return noise(transitionId, hint, target, 'incidental_hover_without_semantic_state_change_how_not_strategy');
@@ -223,7 +363,7 @@ function resolveAmbiguousTransition({ proposal, transition, task }) {
     return resolved(transitionId, hint, safeAction('hoverAndObserve', ref, {}, 'captured-hover-semantic-state-change'), target, 'hover_revealed_or_changed_semantic_state');
   }
 
-  if (hint === 'drag') {
+  if (hint === 'drag' || hint === 'drag-review-required') {
     const destinationRef = typeof transition?.rawAction?.destinationRef === 'string'
       ? transition.rawAction.destinationRef.trim()
       : '';
@@ -232,18 +372,12 @@ function resolveAmbiguousTransition({ proposal, transition, task }) {
     return resolved(transitionId, hint, safeAction('drag', ref, { destinationRef }, 'captured-semantic-drag'), target, 'captured_drag_source_and_destination_refs');
   }
 
-  if (hint === 'form-control-review-required') {
-    const kind = targetKind(element || target || {});
-    if (kind === 'toggle' && ref) {
-      return resolved(transitionId, hint, safeAction('toggle', ref), target, 'checkable_control_semantic_toggle');
-    }
-    if (kind === 'radio' && ref) {
-      return resolved(transitionId, hint, safeAction('setChecked', ref, { value: true }), target, 'radio_control_semantic_set_checked');
-    }
-    if (kind === 'select') {
-      return unresolved(transitionId, hint, target, 'selection_value_requires_human_review', 'selectOption');
-    }
-    return unresolved(transitionId, hint, target, 'form_control_semantics_insufficient');
+  if (hint === 'form-control-review-required' || hint === 'media-range-review-required') {
+    return resolveFormChange({ transitionId, hint, transition, task, ref, element, target });
+  }
+
+  if (hint === 'media-action-review-required') {
+    return resolveMediaAction({ transitionId, hint, transition, ref, target });
   }
 
   if (hint === 'text-action-review-required') {
@@ -256,10 +390,11 @@ function resolveAmbiguousTransition({ proposal, transition, task }) {
 
   if (hint === 'keyboard-action-review-required') {
     const key = controlKey(transition?.rawAction || {});
-    if (key === 'Tab' && !taskMentions(task, ['tab', 'focus'])) {
-      return noise(transitionId, hint, target, 'keyboard_tab_focus_acquisition_how_not_strategy');
+    if (key === 'Tab') {
+      if (!taskMentions(task, ['tab'])) return noise(transitionId, hint, target, 'keyboard_tab_focus_acquisition_how_not_strategy');
+      return resolved(transitionId, hint, safeAction('pressKey', ref, { key: 'Tab' }, 'task-explicit-tab-navigation'), target, 'task_explicit_tab_key');
     }
-    if (key === 'Enter' && ref && taskMentions(task, ['submit', 'search', 'send', 'go', 'tim', 'gui'])) {
+    if (key === 'Enter' && ref && taskMentions(task, ['submit', 'search', 'send', 'go', 'tim', 'gui', 'nhan'])) {
       return resolved(transitionId, hint, safeAction('submit', ref, {}, 'semantic-submit-via-enter'), target, 'enter_key_semantic_submit');
     }
     if (key === 'Escape' && ref && taskMentions(task, ['dismiss', 'close', 'cancel', 'dong', 'huy'])) {
@@ -377,6 +512,11 @@ function resolveReviewPack(packFile, triageFile, outputDir) {
       componentClicksOfExplicitDoubleClickAreNoise: true,
       capturedHoverRequiresObservableSemanticStateChange: true,
       capturedDragRequiresSourceAndDestinationRefs: true,
+      formControlSurfaceClicksExcludedAsHowNoise: true,
+      checkableChangeUsesObservedDesiredState: true,
+      taskDeclaredSelectionMayResolveSelectOption: true,
+      mediaRangeChangeRequiresSemanticRangeLabelAndObservedValue: true,
+      explicitTabMayResolveToPressKey: true,
       incidentalScrollDefaultsToHowNoiseUnlessTaskExplicitlyRequestsScroll: true,
       textContentRequiresHumanReviewBecauseValueIsRedacted: true,
       autoTrainEligible: false
@@ -440,16 +580,22 @@ module.exports = {
   words,
   taskMentions,
   taskRequestsDoubleClick,
+  taskDeclaredSelection,
+  taskDeclaredPlaybackRate,
   transitionById,
   observationElements,
   observationFingerprint,
   observableSemanticStateChanged,
   targetForTransition,
+  targetAfterForTransition,
   semanticTarget,
   safeAction,
   controlKey,
   scrollDirection,
   targetKind,
+  mediaRangeActionType,
+  resolveFormChange,
+  resolveMediaAction,
   resolveAmbiguousTransition,
   resolutionForItem,
   markdownFor,
