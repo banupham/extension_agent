@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const REVIEW_CONTRACT = require('../../control-center/HUMAN_STRATEGY_REVIEW_CONTRACT.json');
 
-const REVIEW_PACK_VERSION = '0.1.1';
+const REVIEW_PACK_VERSION = '0.1.2';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -22,6 +22,11 @@ function semanticElements(observation) {
   return direct.length ? direct : nested;
 }
 
+function finiteOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function semanticTarget(observation, targetRef) {
   if (!targetRef) return null;
   const target = semanticElements(observation).find(item => item?.ref === targetRef || item?.elementRef === targetRef || item?.targetRef === targetRef);
@@ -31,20 +36,62 @@ function semanticTarget(observation, targetRef) {
     role: typeof target.role === 'string' ? target.role : null,
     tag: typeof target.tag === 'string' ? target.tag : null,
     editable: target.editable === true,
+    inputType: typeof target.inputType === 'string' ? target.inputType : null,
+    draggable: target.draggable === true,
+    checked: typeof target.checked === 'boolean' ? target.checked : null,
+    selectedIndex: Number.isInteger(Number(target.selectedIndex)) ? Number(target.selectedIndex) : null,
+    rangeValue: finiteOrNull(target.rangeValue),
+    rangeMin: finiteOrNull(target.rangeMin),
+    rangeMax: finiteOrNull(target.rangeMax),
+    rangeStep: finiteOrNull(target.rangeStep),
+    mediaState: target.mediaState && typeof target.mediaState === 'object' ? { ...target.mediaState } : null,
     enabled: target.enabled !== false,
     visible: target.visible !== false && target.rendered !== false
   };
 }
 
-function actionTypeHint(rawAction = {}) {
+function lowerWords(value) {
+  return new Set((String(value || '').toLowerCase().match(/[a-z0-9]+/g) || []).filter(Boolean));
+}
+
+function isCheckable(target) {
+  const role = String(target?.role || '').toLowerCase();
+  const type = String(target?.inputType || '').toLowerCase();
+  return role === 'checkbox' || role === 'radio' || role === 'switch' || ['checkbox', 'radio'].includes(type);
+}
+
+function isSelect(target) {
+  const role = String(target?.role || '').toLowerCase();
+  return String(target?.tag || '').toLowerCase() === 'select' || ['combobox', 'listbox'].includes(role);
+}
+
+function isRange(target) {
+  return String(target?.tag || '').toLowerCase() === 'input' && String(target?.inputType || '').toLowerCase() === 'range';
+}
+
+function isMediaRange(target) {
+  if (!isRange(target)) return false;
+  const words = lowerWords(target?.label);
+  return words.has('volume') || words.has('seek') || words.has('timeline') || words.has('position');
+}
+
+function actionTypeHint(rawAction = {}, targetBefore = null, targetAfter = null) {
   const kind = String(rawAction.kind || '').toLowerCase();
+  const target = targetBefore || targetAfter || null;
   if (kind === 'double-click' || kind === 'dblclick') return 'doubleClick';
-  if (kind === 'drag') return 'drag';
-  if (kind === 'dom-click' || kind === 'click') return 'click';
+  if (kind === 'drag') return 'drag-review-required';
+  if (kind === 'hover') return 'hover-review-required';
+  if (kind === 'dom-click' || kind === 'click') {
+    if (isCheckable(target) || isSelect(target) || isRange(target)) return 'form-control-click-review-required';
+    return 'click';
+  }
   if (kind === 'dom-focus' || kind === 'focus') return 'focus';
   if (kind === 'dom-submit' || kind === 'submit') return 'submit';
-  if (kind.startsWith('dom-hover') || kind.includes('hover')) return 'hoverAndObserve';
-  if (kind === 'dom-change' || kind === 'change') return 'form-control-review-required';
+  if (kind.startsWith('dom-hover')) return 'hoverAndObserve';
+  if (kind === 'dom-change' || kind === 'change') {
+    if (isMediaRange(target)) return 'media-range-review-required';
+    return 'form-control-review-required';
+  }
   if (kind === 'media') return 'media-action-review-required';
   if (kind === 'dom-input' || kind === 'text-change') return 'text-action-review-required';
   if (kind === 'keyboard' || kind === 'key' || kind === 'text-key') return 'keyboard-action-review-required';
@@ -55,6 +102,8 @@ function actionTypeHint(rawAction = {}) {
 function transitionProposal(transition) {
   const rawAction = transition?.rawAction || {};
   const targetRef = typeof rawAction.targetRef === 'string' ? rawAction.targetRef : null;
+  const targetBefore = semanticTarget(transition?.strategyObservationBefore, targetRef);
+  const targetAfter = semanticTarget(transition?.strategyObservationAfter, targetRef);
   return {
     transitionId: transition?.transitionId || null,
     status: transition?.status || null,
@@ -62,12 +111,12 @@ function transitionProposal(transition) {
       rawActionKind: rawAction.kind || null,
       rawActionOperation: rawAction.operation || null,
       destinationRef: rawAction.destinationRef || null,
-      targetBefore: semanticTarget(transition?.strategyObservationBefore, targetRef),
-      targetAfter: semanticTarget(transition?.strategyObservationAfter, targetRef),
+      targetBefore,
+      targetAfter,
       actionSucceededCaptured: transition?.outcome?.actionSucceeded !== false
     },
     proposal: {
-      actionTypeHint: actionTypeHint(rawAction),
+      actionTypeHint: actionTypeHint(rawAction, targetBefore, targetAfter),
       include: null,
       action: null,
       outcome: null,
