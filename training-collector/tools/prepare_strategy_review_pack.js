@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const REVIEW_CONTRACT = require('../../control-center/HUMAN_STRATEGY_REVIEW_CONTRACT.json');
 
-const REVIEW_PACK_VERSION = '0.1.0';
+const REVIEW_PACK_VERSION = '0.1.1';
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -38,11 +38,14 @@ function semanticTarget(observation, targetRef) {
 
 function actionTypeHint(rawAction = {}) {
   const kind = String(rawAction.kind || '').toLowerCase();
+  if (kind === 'double-click' || kind === 'dblclick') return 'doubleClick';
+  if (kind === 'drag') return 'drag';
   if (kind === 'dom-click' || kind === 'click') return 'click';
   if (kind === 'dom-focus' || kind === 'focus') return 'focus';
   if (kind === 'dom-submit' || kind === 'submit') return 'submit';
   if (kind.startsWith('dom-hover') || kind.includes('hover')) return 'hoverAndObserve';
   if (kind === 'dom-change' || kind === 'change') return 'form-control-review-required';
+  if (kind === 'media') return 'media-action-review-required';
   if (kind === 'dom-input' || kind === 'text-change') return 'text-action-review-required';
   if (kind === 'keyboard' || kind === 'key' || kind === 'text-key') return 'keyboard-action-review-required';
   if (kind === 'wheel' || kind.includes('scroll')) return 'scroll-direction-review-required';
@@ -58,6 +61,7 @@ function transitionProposal(transition) {
     evidence: {
       rawActionKind: rawAction.kind || null,
       rawActionOperation: rawAction.operation || null,
+      destinationRef: rawAction.destinationRef || null,
       targetBefore: semanticTarget(transition?.strategyObservationBefore, targetRef),
       targetAfter: semanticTarget(transition?.strategyObservationAfter, targetRef),
       actionSucceededCaptured: transition?.outcome?.actionSucceeded !== false
