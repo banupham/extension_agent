@@ -15,6 +15,10 @@ const {
   verifyDigest,
   HUMAN_CONFIRMATION_PHRASE
 } = require('../tools/prepare_strategy_approval_candidates.js');
+const {
+  verifyTaskOutcome,
+  MACHINE_TRAINING_ELIGIBILITY_VERSION
+} = require('../tools/evaluate_machine_training_eligibility.js');
 
 function observation(id, label) {
   return {
@@ -202,6 +206,23 @@ function main() {
     assert.equal(resolvedDirectory.kind, 'directory');
     assert.equal(resolvedDirectory.reviewRoot, path.resolve(reviews));
 
+    const explicitVerified = reviewExport('ep-machine-verified', 'Machine Verified');
+    explicitVerified.task.successCriteria = [{ type: 'page', field: 'title', operator: 'equals', value: 'PASS_MACHINE' }];
+    explicitVerified.transitions[0].strategyObservationAfter.title = 'PASS_MACHINE';
+    const verifiedOutcome = verifyTaskOutcome(explicitVerified);
+    assert.equal(verifiedOutcome.status, 'verified');
+    assert.equal(verifiedOutcome.source, 'explicit-success-criteria');
+
+    const explicitContradicted = reviewExport('ep-machine-contradicted', 'Machine Contradicted');
+    explicitContradicted.task.successCriteria = [{ type: 'page', field: 'title', operator: 'equals', value: 'PASS_EXPECTED' }];
+    const contradictedOutcome = verifyTaskOutcome(explicitContradicted);
+    assert.equal(contradictedOutcome.status, 'contradicted');
+
+    const genericOnly = reviewExport('ep-machine-generic', 'Generic Evidence');
+    genericOnly.transitions[0].strategyObservationAfter.title = 'Changed But Not Goal Verified';
+    const genericOutcome = verifyTaskOutcome(genericOnly);
+    assert.equal(genericOutcome.status, 'supported');
+
     const processedId = 'ep-already-approved';
     const newId = 'ep-new-safe';
     const unsafeId = 'ep-privacy-unsafe';
@@ -235,6 +256,13 @@ function main() {
     assert.equal(bundle.blockedEpisodeCount, 0);
     assert.equal(bundle.unresolvedHumanReviewCount, 0);
     assert.equal(bundle.fullyResolvedEpisodeCount, 1);
+    assert.equal(prepared.machineEligibility.machineTrainingEligibilityVersion, MACHINE_TRAINING_ELIGIBILITY_VERSION);
+    assert.equal(bundle.machineAcceptEpisodeCount, 0);
+    assert.equal(bundle.machineQuarantineEpisodeCount, 1);
+    assert.equal(bundle.machineRejectEpisodeCount, 1);
+    assert.deepEqual(prepared.machineEligibility.machineAcceptEpisodeIds, []);
+    assert.deepEqual(prepared.machineEligibility.quarantineEpisodeIds, [newId]);
+    assert.deepEqual(prepared.machineEligibility.rejectEpisodeIds, [unsafeId]);
 
     assert.equal(prepared.candidates.result.candidateEpisodeCount, 1);
     assert.equal(prepared.candidates.result.candidates[0].episodeId, newId);
@@ -250,6 +278,9 @@ function main() {
     assert.equal(bundle.invariants.duplicateCurrentEpisodeExportsDeduplicated, true);
     assert.equal(bundle.invariants.resolverOutputsAreReviewAidsOnly, true);
     assert.equal(bundle.invariants.candidateDigestVerified, true);
+    assert.equal(bundle.invariants.machineEligibilityGateApplied, true);
+    assert.equal(bundle.invariants.machineEligibilityFailClosed, true);
+    assert.equal(bundle.invariants.machineAcceptedEpisodesAutoTrained, false);
     assert.equal(bundle.invariants.explicitHumanDigestApprovalRequired, true);
     assert.equal(bundle.invariants.approvalApplied, false);
     assert.equal(bundle.invariants.datasetBuilt, false);
@@ -258,6 +289,7 @@ function main() {
     assert.equal(bundle.invariants.approvalApplicatorImported, false);
     assert.equal(bundle.invariants.datasetBuilderImported, false);
     assert.equal(bundle.invariants.fitterImported, false);
+    assert.equal(fs.existsSync(prepared.machineEligibilityFile), true);
 
     const cacheFiles = Object.keys(require.cache);
     assert.equal(cacheFiles.some(file => /apply_strategy_approval_candidates\.js$/i.test(file)), false);
@@ -291,6 +323,8 @@ function main() {
     });
     assert.equal(e2ePrepared.bundle.baseDatasetEpisodeCount, 3);
     assert.equal(e2ePrepared.bundle.candidateEpisodeCount, 1);
+    assert.equal(e2ePrepared.bundle.machineAcceptEpisodeCount, 0);
+    assert.equal(e2ePrepared.bundle.machineQuarantineEpisodeCount, 1);
     assert.equal(e2ePrepared.bundle.invariants.baseDatasetEpisodesExcludedBeforeReviewPack, true);
 
     const finalized = finalizeIncrementalStrategyLearning(e2ePrepared, {
@@ -298,7 +332,7 @@ function main() {
       baseModelFile,
       confirmationPhrase: HUMAN_CONFIRMATION_PHRASE
     });
-    assert.equal(finalized.finalManifest.status, 'candidate-ready-offline-heldout-pass');
+    assert.equal(finalized.finalManifest.status, 'candidate-awaiting-runtime-protection');
     assert.equal(finalized.finalManifest.approvedEpisodeCount, 1);
     assert.equal(finalized.finalManifest.baseModel.modelVersion, '0.3.5');
     assert.equal(finalized.finalManifest.baseModel.mutated, false);
@@ -306,6 +340,8 @@ function main() {
     assert.equal(finalized.finalManifest.candidateModel.heldOutPass, true);
     assert.equal(finalized.finalManifest.dataset.baseSplitAssignmentsPreserved, true);
     assert.equal(finalized.finalManifest.promotion.applied, false);
+    assert.equal(finalized.finalManifest.promotion.runtimeRegressionPerformed, false);
+    assert.equal(finalized.finalManifest.promotion.freshUnseenPerformed, false);
     assert.equal(fs.readFileSync(baseModelFile, 'utf8'), baseModelBefore);
     assert.equal(fs.existsSync(finalized.candidate.modelFile), true);
     assert.equal(fs.existsSync(finalized.dataset.manifestFile), true);
