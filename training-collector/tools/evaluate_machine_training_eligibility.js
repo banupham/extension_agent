@@ -5,7 +5,7 @@ const path = require('path');
 const { evaluateGoal } = require('../../control-center/manager/goal/goal_checker.js');
 const { SCENARIOS, successTitleFor } = require('../../control-center/script/teaching_lab_server.js');
 
-const MACHINE_TRAINING_ELIGIBILITY_VERSION = '0.2.0';
+const MACHINE_TRAINING_ELIGIBILITY_VERSION = '0.2.1';
 const MACHINE_STATUSES = Object.freeze(['accept', 'quarantine', 'reject']);
 
 function readJson(file) {
@@ -236,20 +236,23 @@ function verifyTaskOutcome(review) {
   return genericOutcomeSupport(review);
 }
 
-function candidateSemanticSafety(candidate) {
+function candidateSemanticSafety(candidate, candidatePolicy = null) {
   if (!candidate) return { ok: false, reasons: ['no_fully_resolved_strategy_candidate'] };
+  const reasons = [];
+  if (candidatePolicy?.onlyCapturedSuccessfulIncludedActionsEligible !== true) {
+    reasons.push('captured_success_candidate_policy_not_verified');
+  }
   const steps = (Array.isArray(candidate?.proposedSteps) ? candidate.proposedSteps : [])
     .filter(step => step?.proposedInclude === true);
-  const reasons = [];
   if (!steps.length) reasons.push('no_included_strategy_steps');
   if (steps.some(step => !step?.proposedAction)) reasons.push('semantic_action_missing');
-  if (steps.some(step => step?.capturedActionSucceeded !== true)) reasons.push('captured_action_not_successful');
+  if (steps.some(step => step?.capturedActionSucceeded === false)) reasons.push('captured_action_not_successful');
   if (steps.some(step => step?.proposedAction?.type === 'focus')) reasons.push('focus_surface_action_not_strategy_semantic');
   if (steps.some(step => step?.ambiguityResolutionStatus === 'needs-human-review')) reasons.push('unresolved_ambiguity_present');
   return { ok: reasons.length === 0, reasons };
 }
 
-function classifyEpisode({ queueItem, packItem, resolutionItem, candidate, blockedCandidate, review }) {
+function classifyEpisode({ queueItem, packItem, resolutionItem, candidate, blockedCandidate, candidatePolicy, review }) {
   const episodeId = String(queueItem?.episodeId || packItem?.episodeId || candidate?.episodeId || '');
   const reasons = [];
 
@@ -261,12 +264,12 @@ function classifyEpisode({ queueItem, packItem, resolutionItem, candidate, block
   }
 
   const outcomeVerification = verifyTaskOutcome(review);
+  const semantic = candidateSemanticSafety(candidate, candidatePolicy);
   if (outcomeVerification.status === 'contradicted') {
-    return { episodeId, status: 'reject', reasons: [...outcomeVerification.reasons], outcomeVerification, semantic: candidateSemanticSafety(candidate) };
+    return { episodeId, status: 'reject', reasons: [...outcomeVerification.reasons], outcomeVerification, semantic };
   }
 
   const unresolved = Number(resolutionItem?.unresolvedHumanReviewCount || 0);
-  const semantic = candidateSemanticSafety(candidate);
   if (blockedCandidate) reasons.push(...(Array.isArray(blockedCandidate.reasons) ? blockedCandidate.reasons : ['candidate_blocked']));
   if (unresolved > 0) reasons.push('unresolved_semantic_ambiguity');
   if (!semantic.ok) reasons.push(...semantic.reasons);
@@ -275,7 +278,7 @@ function classifyEpisode({ queueItem, packItem, resolutionItem, candidate, block
     return {
       episodeId,
       status: 'accept',
-      reasons: ['semantic_candidate_resolved', 'independent_task_outcome_verified'],
+      reasons: ['semantic_candidate_resolved', 'captured_success_policy_verified', 'independent_task_outcome_verified'],
       outcomeVerification,
       semantic
     };
@@ -297,6 +300,7 @@ function evaluateMachineTrainingEligibility({ manifest, reviewPack, resolution, 
   const resolutionItems = byEpisode(resolution?.items);
   const candidateItems = byEpisode(candidates?.candidates);
   const blockedItems = byEpisode(candidates?.blocked);
+  const candidatePolicy = candidates?.policy || null;
   const items = [];
 
   for (const queueItem of queue) {
@@ -327,6 +331,7 @@ function evaluateMachineTrainingEligibility({ manifest, reviewPack, resolution, 
       resolutionItem: resolutionItems.get(episodeId) || null,
       candidate: candidateItems.get(episodeId) || null,
       blockedCandidate: blockedItems.get(episodeId) || null,
+      candidatePolicy,
       review
     }));
   }
@@ -344,6 +349,7 @@ function evaluateMachineTrainingEligibility({ manifest, reviewPack, resolution, 
       userTaskLevelOutcomeIsNotSemanticLabelApproval: true,
       independentOutcomeVerificationRequiredForAccept: true,
       deterministicTeachingLabSignalSupported: true,
+      capturedSuccessTrustRequiresUpstreamCandidatePolicy: true,
       unresolvedSemanticAmbiguityQuarantined: true,
       privacyOrInvalidReviewRejected: true,
       supportedButUnverifiedOutcomeQuarantined: true,
