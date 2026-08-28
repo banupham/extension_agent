@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { validateAgentAction } = require('../../control-center/manager/strategy/agent_action_contract.js');
 
-const AMBIGUITY_RESOLVER_VERSION = '0.5.0';
+const AMBIGUITY_RESOLVER_VERSION = '0.5.1';
 const MIN_SEMANTIC_WAIT_MS = 500;
 
 function readJson(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
@@ -222,8 +222,19 @@ function resolveBrowserLifecycle({ transitionId, hint, transition, task, target 
     return resolved(transitionId, hint, safeAction('switchTab', null, {}, 'captured-browser-switch-tab'), target, 'captured_explicit_tab_switch');
   }
   if (operation === 'closeTab') {
-    if (!(has('tab') && (has('close') || has('dong')))) return unresolved(transitionId, hint, target, 'close_tab_not_explicit_in_task', 'closeTab');
-    return resolved(transitionId, hint, safeAction('closeTab', null, {}, 'captured-browser-close-tab'), target, 'captured_explicit_tab_close');
+    const directClose = has('tab') && (has('close') || has('dong'));
+    const temporaryTabReturn = has('tab') &&
+      (has('quay') || has('return')) &&
+      (has('xong') || has('done')) &&
+      (has('open') || has('mo') || has('new') || has('moi'));
+    if (!(directClose || temporaryTabReturn)) return unresolved(transitionId, hint, target, 'close_tab_not_explicit_in_task', 'closeTab');
+    return resolved(
+      transitionId,
+      hint,
+      safeAction('closeTab', null, {}, temporaryTabReturn ? 'captured-temporary-tab-return-close' : 'captured-browser-close-tab'),
+      target,
+      temporaryTabReturn ? 'captured_temporary_tab_return_close' : 'captured_explicit_tab_close'
+    );
   }
   if (operation === 'back') {
     if (!(has('back') || has('quay') || has('truoc'))) return unresolved(transitionId, hint, target, 'browser_back_not_explicit_in_task', 'back');
@@ -337,7 +348,7 @@ function resolveReviewPack(packFile, triageFile, outputDir) {
   const result = {
     ambiguityResolverVersion: AMBIGUITY_RESOLVER_VERSION, generatedAt: new Date().toISOString(), sourcePack: path.relative(process.cwd(), fullPack), sourceTriage: path.relative(process.cwd(), fullTriage), episodeCount: items.length,
     ambiguousTransitionCount: items.reduce((sum, item) => sum + item.ambiguousTransitionCount, 0), resolvedSemanticActionCount: items.reduce((sum, item) => sum + item.resolvedSemanticActionCount, 0), captureNoiseCount: items.reduce((sum, item) => sum + item.captureNoiseCount, 0), unresolvedHumanReviewCount: items.reduce((sum, item) => sum + item.unresolvedHumanReviewCount, 0), fullyResolvedEpisodeCount: items.filter(item => item.allAmbiguityResolvedForApprovalAid).length,
-    policy: { reviewAidOnly: true, noRawTextValuesStored: true, arbitraryKeyboardCharactersNeverStored: true, capturedDoubleClickCanResolveWithSemanticTarget: true, componentClicksOfExplicitDoubleClickAreNoise: true, capturedHoverRequiresObservableSemanticStateChange: true, capturedDragRequiresSourceAndDestinationRefs: true, formControlSurfaceClicksExcludedAsHowNoise: true, checkableChangeUsesObservedDesiredState: true, taskDeclaredSelectionMayResolveSelectOption: true, mediaRangeChangeRequiresSemanticRangeLabelAndObservedValue: true, explicitTabMayResolveToPressKey: true, delayedSemanticChangeMayResolveWaitAndObserveOnlyWhenTaskExplicitlyWaits: true, browserLifecycleRequiresExplicitTaskIntentAndNeverExportsTabId: true, incidentalScrollDefaultsToHowNoiseUnlessTaskExplicitlyRequestsScroll: true, textContentRequiresHumanReviewBecauseValueIsRedacted: true, autoTrainEligible: false },
+    policy: { reviewAidOnly: true, noRawTextValuesStored: true, arbitraryKeyboardCharactersNeverStored: true, capturedDoubleClickCanResolveWithSemanticTarget: true, componentClicksOfExplicitDoubleClickAreNoise: true, capturedHoverRequiresObservableSemanticStateChange: true, capturedDragRequiresSourceAndDestinationRefs: true, formControlSurfaceClicksExcludedAsHowNoise: true, checkableChangeUsesObservedDesiredState: true, taskDeclaredSelectionMayResolveSelectOption: true, mediaRangeChangeRequiresSemanticRangeLabelAndObservedValue: true, explicitTabMayResolveToPressKey: true, delayedSemanticChangeMayResolveWaitAndObserveOnlyWhenTaskExplicitlyWaits: true, browserLifecycleRequiresExplicitTaskIntentAndNeverExportsTabId: true, temporaryTabReturnMayResolveCloseOnlyWithOpenCompleteReturnIntent: true, incidentalScrollDefaultsToHowNoiseUnlessTaskExplicitlyRequestsScroll: true, textContentRequiresHumanReviewBecauseValueIsRedacted: true, autoTrainEligible: false },
     items
   };
   const outDir = path.resolve(outputDir || path.join(path.dirname(fullTriage), 'strategy-ambiguity-resolution-v01'));
