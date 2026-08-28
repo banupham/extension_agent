@@ -7,11 +7,13 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { WebSocket } = require('ws');
+const { buildReviewExport } = require('../core/task_episode_review_export.js');
 
 const SERVER = path.join(__dirname, 'server.js');
 const PORT = 20000 + (process.pid % 20000);
 const ENDPOINT = `ws://127.0.0.1:${PORT}/training-collector`;
 const SESSION_ID = `integration-${process.pid}`;
+const TASK_EPISODE_ID = `task-integration-${process.pid}`;
 const PROTOCOL = 'training-collector-v1';
 
 function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -24,7 +26,9 @@ function startServer(dataDir) {
       TC_SOCKET_HOST: '127.0.0.1',
       TC_SOCKET_PORT: String(PORT),
       TC_SOCKET_DATA_DIR: dataDir,
-      TC_SOCKET_FINALIZE_GRACE_MS: '5000'
+      TC_SOCKET_FINALIZE_GRACE_MS: '5000',
+      TC_STRATEGY_PIPELINE_ENABLED: '1',
+      TC_STRATEGY_BATCH_THRESHOLD: '100'
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -35,7 +39,7 @@ function startServer(dataDir) {
   child.stderr.on('data', chunk => { stderr += String(chunk); });
 
   const ready = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(`server_start_timeout\nstdout=${stdout}\nstderr=${stderr}`)), 8000);
+    const timeout = setTimeout(() => reject(new Error(`server_start_timeout\nstdout=${stdout}\nstderr=${stderr}`)), 10000);
     const check = () => {
       if (stdout.includes('[collector] listening')) {
         clearTimeout(timeout);
@@ -121,8 +125,8 @@ function waitFor(ws, predicate, timeoutMs = 5000) {
   });
 }
 
-async function roundTrip(ws, payload, predicate) {
-  const waiting = waitFor(ws, predicate);
+async function roundTrip(ws, payload, predicate, timeoutMs = 5000) {
+  const waiting = waitFor(ws, predicate, timeoutMs);
   send(ws, payload);
   return waiting;
 }
@@ -155,6 +159,78 @@ async function openSession(ws, eventCount) {
       storageBackend: 'indexeddb'
     }
   }, message => message.type === 'session-ack' && message.sessionId === SESSION_ID);
+}
+
+function observation(title) {
+  return {
+    url: 'http://127.0.0.1:8791/teaching/TL04',
+    title,
+    interactiveElements: [{
+      ref: 'target-1',
+      role: 'button',
+      tag: 'button',
+      label: 'Track Package',
+      visible: true,
+      enabled: true,
+      editable: false
+    }],
+    pageSignals: {}
+  };
+}
+
+function taskReview() {
+  return buildReviewExport({
+    schemaVersion: '0.3.0',
+    episodeId: TASK_EPISODE_ID,
+    task: {
+      instruction: 'TL04 | Mở Track Package.',
+      type: 'unspecified',
+      args: {}
+    },
+    startedAt: '2026-08-28T00:00:00.000Z',
+    endedAt: '2026-08-28T00:00:02.000Z',
+    privacy: {
+      policyVersion: 'integration-safe',
+      rawTextValuesStored: false,
+      passwordValuesStored: false,
+      cookiesStored: false,
+      storageSecretsStored: false,
+      authorizationDataStored: false
+    },
+    transitions: [{
+      transitionId: 'transition-1',
+      status: 'complete',
+      startedAtMs: 1000,
+      endedAtMs: 1500,
+      action: {
+        actionVersion: '0.7.2',
+        kind: 'click',
+        targetRef: 'target-1',
+        t: 1000
+      },
+      strategyObservationBefore: observation('TL04 · Moving target'),
+      strategyObservationAfter: observation('PASS_TL04'),
+      outcome: { actionSucceeded: true, partial: false }
+    }],
+    finalOutcome: { status: 'success' }
+  }, { exportedAt: '2026-08-28T00:00:03.000Z' });
+}
+
+async function waitForTaskPipeline(ws, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  let latest = null;
+  while (Date.now() < deadline) {
+    latest = await roundTrip(
+      ws,
+      { type: 'pipeline-status-request' },
+      message => message.type === 'pipeline-status',
+      5000
+    );
+    const pipeline = latest.pipeline || {};
+    if (Number(pipeline.processedReviewCount || 0) >= 1 && Number(pipeline.counts?.accept || 0) >= 1) return latest;
+    await delay(100);
+  }
+  throw new Error(`task_pipeline_timeout:${JSON.stringify(latest?.pipeline || null)}`);
 }
 
 async function main() {
@@ -198,6 +274,34 @@ async function main() {
     assert.strictEqual(ack.lastSeq, 3);
     assert.strictEqual(ack.appended, 1);
 
+    const review = taskReview();
+    assert.strictEqual(review.strategyReady, true);
+    let reviewAck = await roundTrip(ws, {
+      type: 'task-episode-review', episodeId: TASK_EPISODE_ID, review
+    }, message => message.type === 'task-episode-review-ack' && message.episodeId === TASK_EPISODE_ID, 10000);
+    assert.strictEqual(reviewAck.persisted, true);
+    assert.strictEqual(reviewAck.duplicate, false);
+
+    reviewAck = await roundTrip(ws, {
+      type: 'task-episode-review', episodeId: TASK_EPISODE_ID, review
+    }, message => message.type === 'task-episode-review-ack' && message.episodeId === TASK_EPISODE_ID, 10000);
+    assert.strictEqual(reviewAck.persisted, true);
+    assert.strictEqual(reviewAck.duplicate, true);
+
+    const pipelineMessage = await waitForTaskPipeline(ws);
+    assert.strictEqual(pipelineMessage.pipeline.baseDatasetConfigured, false);
+    assert.strictEqual(pipelineMessage.pipeline.baseModelConfigured, false);
+    assert.strictEqual(pipelineMessage.pipeline.candidate, null);
+    assert.strictEqual(pipelineMessage.pipeline.productionPromotionAllowed, false);
+
+    const reviewFile = path.join(dataDir, 'task-episode-reviews', `${TASK_EPISODE_ID}.task-episode-review.json`);
+    const receiptFile = path.join(dataDir, 'pipeline', 'receipts', `${TASK_EPISODE_ID}.machine-eligibility.json`);
+    assert.ok(fs.existsSync(reviewFile), 'review must be persisted before durable ack/recovery');
+    assert.ok(fs.existsSync(receiptFile), 'machine eligibility receipt must be persisted');
+    const receipt = JSON.parse(await fsp.readFile(receiptFile, 'utf8'));
+    assert.strictEqual(receipt.status, 'accept');
+    assert.strictEqual(receipt.productionPromotionApplied, false);
+
     const closed = await roundTrip(ws, {
       type: 'session-close', sessionId: SESSION_ID, expectedLastSeq: 3,
       endedAt: '2026-08-25T00:01:00.000Z', reason: 'integration_test_close'
@@ -223,12 +327,22 @@ async function main() {
     assert.strictEqual(meta.lastSeq, 3);
     assert.strictEqual(meta.eventCount, 3);
 
-    // Restart server against the same archive. It must scan/recover lastSeq and resume.
+    // Restart server against the same archive. It must scan/recover lastSeq and pipeline receipts.
     server = startServer(dataDir);
     await server.ready;
     ws = await connect();
     ack = await openSession(ws, 4);
     assert.strictEqual(ack.resumeFromSeq, 3);
+
+    const restartedPipeline = await roundTrip(
+      ws,
+      { type: 'pipeline-status-request' },
+      message => message.type === 'pipeline-status',
+      10000
+    );
+    assert.strictEqual(restartedPipeline.pipeline.processedReviewCount, 1);
+    assert.strictEqual(restartedPipeline.pipeline.counts.accept, 1);
+    assert.strictEqual(restartedPipeline.pipeline.productionPromotionAllowed, false);
 
     ack = await roundTrip(ws, {
       type: 'event-batch', sessionId: SESSION_ID, firstSeq: 4, lastSeq: 4,
@@ -251,7 +365,7 @@ async function main() {
     assert.deepStrictEqual(finalRecords.filter(record => record.recordType === 'event').map(item => item.sessionSeq), [1, 2, 3, 4]);
     assert.ok(finalRecords.some(record => record.recordType === 'session-resume'));
 
-    console.log('Training Collector V0.8 socket server integration test OK');
+    console.log('Training Collector V0.8 socket + automatic task review pipeline integration test OK');
   } finally {
     try { ws?.close(); } catch {}
     await stopServer(server);
