@@ -6,11 +6,15 @@ const os = require('os');
 const path = require('path');
 const {
   prepareIncrementalStrategyLearning,
+  finalizeIncrementalStrategyLearning,
   resolveReviewInput,
   nextPatchVersion,
   INCREMENTAL_STRATEGY_LEARNING_VERSION
 } = require('../tools/prepare_incremental_strategy_learning.js');
-const { verifyDigest } = require('../tools/prepare_strategy_approval_candidates.js');
+const {
+  verifyDigest,
+  HUMAN_CONFIRMATION_PHRASE
+} = require('../tools/prepare_strategy_approval_candidates.js');
 
 function observation(id, label) {
   return {
@@ -73,10 +77,99 @@ function reviewExport(episodeId, label, options = {}) {
   };
 }
 
+function datasetEpisode(id, splitGroup, split) {
+  const action = { type: 'click', targetRef: 'e1', args: {} };
+  return {
+    episodeId: id,
+    source: {
+      kind: 'human-demonstration',
+      labelVerified: true,
+      outcomeVerified: true,
+      provenanceId: `prov-${id}`
+    },
+    task: {
+      taskId: `task-${id}`,
+      type: 'test',
+      instruction: 'Click Semantic Target',
+      args: {},
+      successCriteria: [],
+      constraints: {},
+      metadata: {}
+    },
+    steps: [{
+      stepIndex: 0,
+      observation: {
+        observationId: `obs-${id}`,
+        capturedAt: '2026-08-27T00:00:00.000Z',
+        url: 'https://incremental.test/lab',
+        title: 'Incremental Lab',
+        viewport: { width: 1000, height: 700 },
+        scroll: { x: 0, y: 0 },
+        focusedElement: null,
+        interactiveElements: [{
+          ref: 'e1',
+          role: 'button',
+          tag: 'button',
+          label: 'Semantic Target',
+          rect: { x: 10, y: 20, width: 100, height: 40 },
+          visible: true,
+          enabled: true
+        }],
+        pageSignals: {},
+        privacy: { redacted: true }
+      },
+      decision: { status: 'act', reasonCode: 'verified_click', action },
+      action,
+      outcome: {
+        actionSucceeded: true,
+        taskSucceeded: true,
+        progress: 1,
+        evidence: [],
+        errorCode: null,
+        metadata: { progressBefore: 0, progressDelta: 1 }
+      },
+      control: {
+        status: 'done', terminal: true, shouldReplan: false,
+        reasonCode: 'goal_satisfied', errorCode: null
+      },
+      budget: {
+        status: 'done', terminal: true, shouldReplan: false,
+        reasonCode: 'goal_satisfied',
+        usage: { steps: 1, replansRequested: 0, consecutiveFailures: 0, stalledSteps: 0, elapsedMs: 50 }
+      },
+      progress: { before: 0, after: 1, delta: 1 }
+    }],
+    terminalResult: {
+      status: 'done', reasonCode: 'goal_satisfied',
+      taskSucceeded: true, finalProgress: 1, verified: true
+    },
+    split,
+    splitGroup,
+    privacy: {
+      redacted: true,
+      credentialsExcluded: true,
+      secretsExcluded: true,
+      policyVersion: '0.1.0-test'
+    }
+  };
+}
+
 function writeReview(dir, name, review) {
   const file = path.join(dir, name);
   fs.writeFileSync(file, `${JSON.stringify(review, null, 2)}\n`, 'utf8');
   return file;
+}
+
+function writeBaseDataset(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const records = {
+    'train.jsonl': datasetEpisode('base-train', 'base-group-train', 'train'),
+    'validation.jsonl': datasetEpisode('base-validation', 'base-group-validation', 'validation'),
+    'test.jsonl': datasetEpisode('base-test', 'base-group-test', 'test')
+  };
+  for (const [name, record] of Object.entries(records)) {
+    fs.writeFileSync(path.join(dir, name), `${JSON.stringify(record)}\n`, 'utf8');
+  }
 }
 
 function allFiles(root) {
@@ -181,6 +274,43 @@ function main() {
     assert.deepEqual(filteredManifest.strategy.queue.map(item => item.episodeId).sort(), [newId, unsafeId].sort());
     assert.equal(filteredManifest.strategy.queue.find(item => item.episodeId === unsafeId).queueStatus, 'blocked-before-review');
 
+    const e2eReviews = path.join(temp, 'e2e-reviews');
+    const baseDataset = path.join(temp, 'base-dataset');
+    const baseModelFile = path.join(temp, 'base-model.json');
+    const e2eOut = path.join(temp, 'e2e-out');
+    fs.mkdirSync(e2eReviews, { recursive: true });
+    writeReview(e2eReviews, '01-new.task-episode-review.json', reviewExport('ep-e2e-new', 'Semantic Target'));
+    writeBaseDataset(baseDataset);
+    fs.writeFileSync(baseModelFile, `${JSON.stringify({ modelVersion: '0.3.5', kind: 'test-base-model' }, null, 2)}\n`, 'utf8');
+    const baseModelBefore = fs.readFileSync(baseModelFile, 'utf8');
+
+    const e2ePrepared = prepareIncrementalStrategyLearning({
+      reviewRoot: e2eReviews,
+      baseDatasetDir: baseDataset,
+      outputDir: e2eOut
+    });
+    assert.equal(e2ePrepared.bundle.baseDatasetEpisodeCount, 3);
+    assert.equal(e2ePrepared.bundle.candidateEpisodeCount, 1);
+    assert.equal(e2ePrepared.bundle.invariants.baseDatasetEpisodesExcludedBeforeReviewPack, true);
+
+    const finalized = finalizeIncrementalStrategyLearning(e2ePrepared, {
+      baseDatasetDir: baseDataset,
+      baseModelFile,
+      confirmationPhrase: HUMAN_CONFIRMATION_PHRASE
+    });
+    assert.equal(finalized.finalManifest.status, 'candidate-ready-offline-heldout-pass');
+    assert.equal(finalized.finalManifest.approvedEpisodeCount, 1);
+    assert.equal(finalized.finalManifest.baseModel.modelVersion, '0.3.5');
+    assert.equal(finalized.finalManifest.baseModel.mutated, false);
+    assert.equal(finalized.finalManifest.candidateModel.modelVersion, '0.3.6');
+    assert.equal(finalized.finalManifest.candidateModel.heldOutPass, true);
+    assert.equal(finalized.finalManifest.dataset.baseSplitAssignmentsPreserved, true);
+    assert.equal(finalized.finalManifest.promotion.applied, false);
+    assert.equal(fs.readFileSync(baseModelFile, 'utf8'), baseModelBefore);
+    assert.equal(fs.existsSync(finalized.candidate.modelFile), true);
+    assert.equal(fs.existsSync(finalized.dataset.manifestFile), true);
+    assert.equal(fs.existsSync(finalized.finalManifestFile), true);
+
     console.log('Incremental Strategy learning contract: PASS');
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
@@ -196,4 +326,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { observation, reviewExport, writeReview, allFiles, main };
+module.exports = { observation, reviewExport, datasetEpisode, writeReview, writeBaseDataset, allFiles, main };
