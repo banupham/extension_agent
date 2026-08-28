@@ -6,6 +6,8 @@ const os = require('os');
 const path = require('path');
 const {
   prepareIncrementalStrategyLearning,
+  resolveReviewInput,
+  nextPatchVersion,
   INCREMENTAL_STRATEGY_LEARNING_VERSION
 } = require('../tools/prepare_incremental_strategy_learning.js');
 const { verifyDigest } = require('../tools/prepare_strategy_approval_candidates.js');
@@ -101,6 +103,12 @@ function main() {
   fs.mkdirSync(approved, { recursive: true });
 
   try {
+    assert.equal(nextPatchVersion('0.3.5'), '0.3.6');
+    assert.throws(() => nextPatchVersion('candidate'), /base_model_semver_required/);
+    const resolvedDirectory = resolveReviewInput(reviews, out);
+    assert.equal(resolvedDirectory.kind, 'directory');
+    assert.equal(resolvedDirectory.reviewRoot, path.resolve(reviews));
+
     const processedId = 'ep-already-approved';
     const newId = 'ep-new-safe';
     const unsafeId = 'ep-privacy-unsafe';
@@ -127,6 +135,7 @@ function main() {
     assert.equal(bundle.sourceReviewFileCount, 4);
     assert.equal(bundle.retainedReviewFileCount, 2);
     assert.equal(bundle.readyForHumanReviewCount, 1);
+    assert.equal(bundle.baseDatasetEpisodeCount, 0);
     assert.equal(bundle.excludedPreviouslyProcessedCount, 1);
     assert.equal(bundle.duplicateCurrentEpisodeCount, 1);
     assert.equal(bundle.candidateEpisodeCount, 1);
@@ -144,6 +153,7 @@ function main() {
     assert.equal(bundle.invariants.rawInteractionAutoPromotedToStrategyTraining, false);
     assert.equal(bundle.invariants.privacyBatchAppliedBeforeStrategyCandidate, true);
     assert.equal(bundle.invariants.previouslyProcessedEpisodesExcludedBeforeReviewPack, true);
+    assert.equal(bundle.invariants.baseDatasetEpisodesExcludedBeforeReviewPack, null);
     assert.equal(bundle.invariants.duplicateCurrentEpisodeExportsDeduplicated, true);
     assert.equal(bundle.invariants.resolverOutputsAreReviewAidsOnly, true);
     assert.equal(bundle.invariants.candidateDigestVerified, true);
@@ -158,7 +168,7 @@ function main() {
 
     const cacheFiles = Object.keys(require.cache);
     assert.equal(cacheFiles.some(file => /apply_strategy_approval_candidates\.js$/i.test(file)), false);
-    assert.equal(cacheFiles.some(file => /build_strategy_dataset_from_approvals\.js$/i.test(file)), false);
+    assert.equal(cacheFiles.some(file => /build_(?:incremental_)?strategy_dataset.*\.js$/i.test(file)), false);
     assert.equal(cacheFiles.some(file => /fit_strategy_offline_baseline\.js$/i.test(file)), false);
 
     const outputs = allFiles(out).map(file => path.basename(file));
