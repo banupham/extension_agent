@@ -2,10 +2,25 @@
 
 (function initTaskEpisodeReviewExport(root) {
   const NS = root.TrainingCollectorV09 = root.TrainingCollectorV09 || {};
-  const REVIEW_EXPORT_VERSION = '0.1.0';
+  const REVIEW_EXPORT_VERSION = '0.2.0';
 
   function isObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function finiteOrNull(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function safeModifiers(value) {
+    if (!isObject(value)) return null;
+    return {
+      alt: value.alt === true,
+      ctrl: value.ctrl === true,
+      meta: value.meta === true,
+      shift: value.shift === true
+    };
   }
 
   function rawActionSummary(action = {}) {
@@ -16,12 +31,21 @@
       targetRef: typeof action.targetRef === 'string' ? action.targetRef : null,
       t: Number.isFinite(Number(action.t)) ? Number(action.t) : null
     };
-    for (const key of ['operation', 'keyClass', 'code', 'inputType']) {
+    for (const key of ['operation', 'keyClass', 'code', 'inputType', 'controlType', 'destinationRef']) {
       if (typeof action[key] === 'string') out[key] = action[key];
     }
     if (typeof action.repeat === 'boolean') out.repeat = action.repeat;
     if (typeof action.focused === 'boolean') out.focused = action.focused;
+    if (typeof action.checked === 'boolean') out.checked = action.checked;
+    if (typeof action.muted === 'boolean') out.muted = action.muted;
     if (Number.isFinite(Number(action.length))) out.length = Math.max(0, Number(action.length));
+    if (Number.isInteger(Number(action.selectedIndex))) out.selectedIndex = Number(action.selectedIndex);
+    for (const key of ['rangeValue', 'rangeMin', 'rangeMax', 'rangeStep', 'volume', 'currentTime', 'duration', 'playbackRate', 'waitedMs']) {
+      const value = finiteOrNull(action[key]);
+      if (value != null) out[key] = value;
+    }
+    const modifiers = safeModifiers(action.modifiers);
+    if (modifiers) out.modifiers = modifiers;
     return out;
   }
 
@@ -75,7 +99,8 @@
         authorizationDataStored: episode.privacy?.authorizationDataStored === true,
         selectorsExported: false,
         tabIdExported: false,
-        rawActionCoordinatesExported: false
+        rawActionCoordinatesExported: false,
+        privacySafeMotorMetadataExported: true
       },
       trainingEligibility: {
         eligible: false,
