@@ -8,6 +8,11 @@ const { buildEpisodeRecord } = require('./episode_outcome_dataset.js');
 
 const HUMAN_REVIEW_CONTRACT_VERSION = REVIEW_CONTRACT.contractVersion;
 const MACHINE_VERIFICATION_KIND = 'machine-verified';
+const SUPPORTED_REVIEW_EXPORT_VERSIONS = Object.freeze(
+  Array.isArray(REVIEW_CONTRACT?.input?.reviewExportVersions) && REVIEW_CONTRACT.input.reviewExportVersions.length
+    ? REVIEW_CONTRACT.input.reviewExportVersions.map(value => String(value))
+    : [String(REVIEW_CONTRACT?.input?.reviewExportVersion || '')].filter(Boolean)
+);
 
 function isPlainObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -26,7 +31,7 @@ function finite01(value, name) {
 
 function assertReviewExport(reviewExport) {
   if (!isPlainObject(reviewExport)) throw new Error('review export object required');
-  if (reviewExport.reviewExportVersion !== REVIEW_CONTRACT.input.reviewExportVersion) {
+  if (!SUPPORTED_REVIEW_EXPORT_VERSIONS.includes(String(reviewExport.reviewExportVersion || ''))) {
     throw new Error(`unsupported reviewExportVersion: ${reviewExport.reviewExportVersion || '<missing>'}`);
   }
   if (reviewExport.strategyReady !== true) throw new Error('review export must be strategyReady=true');
@@ -296,6 +301,7 @@ function adaptHumanReviewToStrategyEpisode(reviewExport, annotation, options = {
 module.exports = {
   HUMAN_REVIEW_CONTRACT_VERSION,
   MACHINE_VERIFICATION_KIND,
+  SUPPORTED_REVIEW_EXPORT_VERSIONS,
   assertReviewExport,
   normalizeReviewConfirmations,
   normalizeMachineVerification,
